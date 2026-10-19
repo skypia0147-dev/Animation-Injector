@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Letters, digits and the symbols Windows allows in names: every one below is accepted. -->
+<AnimationSet version="4" id="HkxPathSymbols">
+  <Inputs><Input id="Use" key="G"/></Inputs>
+  <Action id="Symbols" clip="Animations\Test Mod-1\Attack_2+Alt (A)[b]!#$%&amp;',;=@^~{}`.hkx">
+    <Start input="Use"/>
+    <Require cooldown="0.2"/>
+    <Advanced safety="0.7"/>
+  </Action>
+</AnimationSet>

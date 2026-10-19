@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- No clip and no Flow: only a selecting action may leave the clip out. -->
+<AnimationSet version="4" id="SelectingNoFlow">
+  <Inputs><Input id="Use" key="G"/></Inputs>
+  <Action id="Bare">
+    <Start input="Use"/>
+  </Action>
+</AnimationSet>

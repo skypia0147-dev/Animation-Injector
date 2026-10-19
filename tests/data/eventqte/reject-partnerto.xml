@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An event's QTE asked during a pair sends the partner to an ordinary action, never a pair (0.12.264). -->
+<AnimationSet version="4" id="EventQtePartnerTo">
+  <EventRegistry>
+    <Event name="GetUpBack"><QTE id="Ask"><Success to="Up" partnerTo="Hug"/></QTE></Event>
+  </EventRegistry>
+  <Action id="Up" clip="Animations\EventQte\Up.hkx"/>
+  <Pair id="Hug" clip="Animations\EventQte\Hug.hkx">
+    <Start key="G"/>
+    <Target rig="chicken" range="250" angle="160"/>
+  </Pair>
+</AnimationSet>

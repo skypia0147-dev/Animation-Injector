@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Selecting actions without a clip (0.12.244): the Flow sends every route to another action. -->
+<AnimationSet version="4" id="SelectingNoClip">
+  <Inputs><Input id="Use" key="G"/></Inputs>
+  <Action id="Pick" view="both">
+    <Start input="Use"/>
+    <Require weapon="any" air="allow"/>
+    <Suppress events="SprintStop"/>
+    <Flow entry="Held">
+      <Test id="Held" kind="global" subject="self" plugin="Skyrim.esm" form="38" equals="1" pass="ToA" fail="ToB"/>
+      <Play id="ToA" action="A"/>
+      <Play id="ToB" action="B"/>
+    </Flow>
+  </Action>
+  <Action id="A" clip="Animations\Selecting\A.hkx"/>
+  <Action id="B" clip="Animations\Selecting\B.hkx"/>
+  <Pair id="PairPick">
+    <Start event="Pick_Contact" actor="both" target="combatTarget"/>
+    <Require weapon="any" air="allow"/>
+    <Flow entry="Held">
+      <Test id="Held" kind="global" subject="self" plugin="Skyrim.esm" form="38" equals="1" pass="ToPair" fail="None"/>
+      <Play id="ToPair" action="PairA"/>
+      <Stop id="None"/>
+    </Flow>
+  </Pair>
+  <Pair id="PairA" clip="Animations\Selecting\PairA.hkx"/>
+</AnimationSet>

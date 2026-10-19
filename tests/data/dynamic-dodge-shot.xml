@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="4" id="DynamicDodgeShot">
+  <Inputs>
+    <Input id="a1_i1" key="Mouse2"/>
+  </Inputs>
+  <EventRegistry>
+    <Event name="SoundPlay.WPNBowPullLPM"/>
+    <Event name="SoundStop.WPNBowPullLPM"/>
+    <Event name="SoundPlay.WPNBowFire"/>
+    <Event name="DodgeShotFire">
+      <Do op="fireArrow" from="player"/>
+    </Event>
+  </EventRegistry>
+  <Action id="BowDodge" clip="Animations\DynamicDodgeShot\BowDodgeBack.hkx">
+    <Start input="a1_i1" onKeyUp="false"/>
+    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Exit at="end-0.05" blend="0.3"/>
+    <IFrame from="0" until="0.8"/>
+    <Recovery at="1.647" blend="0.35"/>
+    <FireArrow/>
+    <Suppress events="blockStart,bashStart" when="startable"/>
+    <Advanced safety="2.5"/>
+    <Flow entry="bow">
+      <Test id="bow" kind="equippedType" subject="self" hand="left" type="bow" pass="drawn"/>
+      <Any id="drawn" pass="sneak">
+        <Use node="attached"/>
+        <Use node="pulled"/>
+      </Any>
+      <Test id="attached" kind="attackState" subject="self" state="bowAttached"/>
+      <Test id="pulled" kind="attackState" subject="self" state="bowDrawn"/>
+      <Test id="sneak" kind="sneaking" subject="self" pass="direction_a2_B1" fail="direction_a1_B1"/>
+      <Test id="direction_a2_B1" kind="movementDirection" subject="self" option="back" pass="Destination1" fail="direction_a2_L1"/>
+      <Play id="Destination1" action="SneakBowDodge_B1"/>
+      <Test id="direction_a2_L1" kind="movementDirection" subject="self" option="left" pass="Destination2" fail="direction_a2_R1"/>
+      <Play id="Destination2" action="SneakBowDodge_L1"/>
+      <Test id="direction_a2_R1" kind="movementDirection" subject="self" option="right" pass="Destination3"/>
+      <Play id="Destination3" action="SneakBowDodge_R1"/>
+      <Test id="direction_a1_B1" kind="movementDirection" subject="self" option="back" pass="Destination4" fail="direction_a1_L1"/>
+      <Play id="Destination4" action="BowDodge_B1"/>
+      <Test id="direction_a1_L1" kind="movementDirection" subject="self" option="left" pass="Destination5" fail="direction_a1_R1"/>
+      <Play id="Destination5" action="BowDodge_L1"/>
+      <Test id="direction_a1_R1" kind="movementDirection" subject="self" option="right" pass="Destination6"/>
+      <Play id="Destination6" action="BowDodge_R1"/>
+    </Flow>
+  </Action>
+  <Action id="BowDodge_B1" clip="Animations\DynamicDodgeShot\BowDodgeBack.hkx">
+    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Exit at="end-0.05" blend="0.3"/>
+    <IFrame from="0" until="0.8"/>
+    <Recovery at="1.647" blend="0.35"/>
+    <FireArrow/>
+    <Advanced safety="2.5"/>
+  </Action>
+  <Action id="BowDodge_L1" clip="Animations\DynamicDodgeShot\BowDodgeLeft.hkx">
+    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Exit at="end-0.05" blend="0.3"/>
+    <IFrame from="0" until="0.8"/>
+    <Recovery at="1.397" blend="0.35"/>
+    <FireArrow/>
+    <Advanced safety="2.5"/>
+  </Action>
+  <Action id="BowDodge_R1" clip="Animations\DynamicDodgeShot\BowDodgeRight.hkx">
+    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Exit at="end-0.05" blend="0.3"/>
+    <IFrame from="0" until="0.8"/>
+    <Recovery at="1.647" blend="0.35"/>
+    <FireArrow/>
+    <Advanced safety="2.5"/>
+  </Action>
+  <Action id="SneakBowDodge_B1" clip="Animations\DynamicDodgeShot\SneakBowDodgeBack.hkx">
+    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Exit at="end-0.05" blend="0.3"/>
+    <IFrame from="0" until="0.8"/>
+    <Recovery at="1.647" blend="0.35"/>
+    <FireArrow/>
+    <Advanced safety="2.5"/>
+  </Action>
+  <Action id="SneakBowDodge_L1" clip="Animations\DynamicDodgeShot\SneakBowDodgeLeft.hkx">
+    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Exit at="end-0.05" blend="0.3"/>
+    <IFrame from="0" until="0.8"/>
+    <Recovery at="1.397" blend="0.35"/>
+    <FireArrow/>
+    <Advanced safety="2.5"/>
+  </Action>
+  <Action id="SneakBowDodge_R1" clip="Animations\DynamicDodgeShot\SneakBowDodgeRight.hkx">
+    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Exit at="end-0.05" blend="0.3"/>
+    <IFrame from="0" until="0.8"/>
+    <Recovery at="1.647" blend="0.35"/>
+    <FireArrow/>
+    <Advanced safety="2.5"/>
+  </Action>
+</AnimationSet>

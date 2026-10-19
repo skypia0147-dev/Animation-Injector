@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ragdoll recovery (0.12.253): the Ragdoll Recovery plugin (1.4.0) sends GetUpQTE when the ragdoll has nearly come
+     to rest and holds the engine's GetUpBegin. The QTE's success goes to the selecting action GetUp; when the body
+     rests, the engine aligns the actor to it for 0.1 s (GetUpBegin) and the get-up starts (GetUpStart), and at the
+     handoff GetUp's flow reads how the body lies (the engine's matched get-up pose) and plays GetUpBack or
+     GetUpFront in the engine clip's place. A failure sends GetUpRelease: the engine's own get-up follows. The get-up
+     actions keep no entry blend: GetUpExit's 0.2 s blend goes from the engine's first frames to theirs. -->
+<AnimationSet version="4" id="RagdollRecoveryQTE">
+  <EventRegistry>
+    <Event name="GetUpQTE">
+      <QTE id="GetUp" key="E" speed="3.7391" successWindow="0.23369" perfectWindow="0.09347" feedback="1.2" anchor="center" y="0.15" design="converge">
+        <Success to="GetUp"/>
+        <Failure event="GetUpRelease"/>
+      </QTE>
+    </Event>
+  </EventRegistry>
+  <Action id="GetUp">
+    <Flow entry="Side">
+      <Test id="Side" kind="lying" option="back" pass="Back" fail="Front"/>
+      <Play id="Back" action="GetUpBack"/>
+      <Play id="Front" action="GetUpFront"/>
+    </Flow>
+  </Action>
+  <Action id="GetUpBack" clip="Animations\RagdollRecoveryQTE\GetUpBack.hkx"/>
+  <Action id="GetUpFront" clip="Animations\RagdollRecoveryQTE\GetUpFront.hkx"/>
+</AnimationSet>

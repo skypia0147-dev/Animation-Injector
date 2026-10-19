@@ -1,0 +1,39 @@
+# Runtime C++ layout (review E-8).
+#   check: ctest --test-dir build -C Release -R Format
+#   apply: cmake --build build --target AnimationInjectorFormat
+# Only whitespace may change. Includes and using-declarations keep their order (PCH and
+# Windows.h order matter), and comments and string literals are never rewritten.
+BasedOnStyle: LLVM
+Standard: Latest
+LineEnding: LF
+InsertNewlineAtEOF: true
+IndentWidth: 4
+ColumnLimit: 120
+AccessModifierOffset: -4
+NamespaceIndentation: None
+PointerAlignment: Left
+DerivePointerAlignment: false
+AlignAfterOpenBracket: DontAlign
+ContinuationIndentWidth: 4
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: All
+AllowShortLambdasOnASingleLine: All
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortEnumsOnASingleLine: true
+BreakTemplateDeclarations: Yes
+SpaceAfterTemplateKeyword: false
+SpacesBeforeTrailingComments: 2
+# SKSEPluginInfo(...) has no trailing semicolon.
+StatementMacros: [SKSEPluginInfo]
+SortIncludes: Never
+IncludeBlocks: Preserve
+SortUsingDeclarations: Never
+ReflowComments: false
+BreakStringLiterals: false
+FixNamespaceComments: false
+InsertBraces: false
+RemoveBracesLLVM: false
+RemoveParentheses: Leave
+RemoveSemicolon: false
+QualifierAlignment: Leave

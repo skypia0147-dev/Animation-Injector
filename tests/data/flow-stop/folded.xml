@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- stop.xml as the editor writes it: a branch that stops has no pass/fail. -->
+<AnimationSet version="4" id="FlowStop">
+  <Inputs>
+    <Input id="go" key="Num0"/>
+  </Inputs>
+  <Action id="Gate" clip="Animations\FlowStop\Gate.hkx">
+    <Start input="go"/>
+    <Require cooldown="0.2"/>
+    <Advanced safety="0.7"/>
+    <Flow entry="alive">
+      <Test id="alive" kind="alive" pass="either"/>
+      <Any id="either" pass="play">
+        <Use node="sneak"/>
+        <Use node="drawn"/>
+      </Any>
+      <Test id="sneak" kind="sneaking"/>
+      <Test id="drawn" kind="weaponDrawn"/>
+      <Play id="play" action="Gate"/>
+    </Flow>
+  </Action>
+  <Action id="Never" clip="Animations\FlowStop\Never.hkx">
+    <Require cooldown="0.2"/>
+    <Advanced safety="0.7"/>
+    <Flow entry="halt">
+      <Stop id="halt"/>
+    </Flow>
+  </Action>
+</AnimationSet>

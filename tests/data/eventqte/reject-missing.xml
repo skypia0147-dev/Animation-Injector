@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An event QTE result's action must be declared in the same file (0.12.249). -->
+<AnimationSet version="4" id="EventQteMissing">
+  <EventRegistry>
+    <Event name="GetUpBack"><QTE id="Ask"><Success to="Nowhere"/></QTE></Event>
+  </EventRegistry>
+  <Action id="Other" clip="Animations\EventQte\Other.hkx"><Start key="G"/></Action>
+</AnimationSet>

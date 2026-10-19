@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Every profile attribute once; the parser must accept it unchanged. -->
+<Ragdoll rig="chicken" version="1">
+  <Motion follow="0.4" gravity="1.5" drag="0.3" spin="3" inertia="3" friction="1"/>
+  <Body bone="LeftAnkle" swingFrom="LeftThigh" cone="35" plane="-20 20" twist="-10 10" friction="0.5"/>
+  <Body bone="RightAnkle" swingFrom="RightThigh"/>
+  <Body bone="Pelvis" drag="0.5" spin="2" gravity="1.2" inertia="2"/>
+  <Body bone="HEAD" simulate="false"/>
+</Ragdoll>

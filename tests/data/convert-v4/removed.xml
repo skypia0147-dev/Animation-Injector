@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A feature 0.12.238 removed has no translation: the converter refuses the file and leaves it as it was. -->
+<AnimationSet version="3" id="ConvertV4Removed">
+  <Inputs><Input id="Use" key="G"/></Inputs>
+  <Action id="A" clip="Animations\Test\A.hkx">
+    <Start input="Use"/>
+    <Lock from="0.1" until="end-0.2"/>
+  </Action>
+</AnimationSet>

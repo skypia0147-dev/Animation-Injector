@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Every rule of tools/convert_v4.py once. A comment's markup is left alone:
+     <Action id="Commented" clip="x.hkx"><Advanced graph="G"/></Action> gamepad="4096" -->
+<AnimationSet version="3" id="ConvertV4">
+  <Inputs>
+    <Input id="Use" key="G" gamepad="4096"/>
+    <Input id="Alt" key="H" gamepad='512'/>
+    <Input id="Odd" key="J" gamepad="300"/>
+    <Input id="Plain" key="K" gamepad="0"/>
+  </Inputs>
+  <Action id="Plain" clip="Animations\Convert\Plain.hkx">
+    <Start input="Use"/>
+    <Exit blend="0.3"/>
+  </Action>
+  <Action id="Kept" clip="Animations\Convert\Kept.hkx">
+    <Require air="allow"/>
+    <Advanced graph="FullBodyPlayerIdles_Behavior" safety="2"/>
+    <Cancel id="block" to="vanilla:Block">
+      <Window always="true"/>
+    </Cancel>
+    <Cancel to="vanilla:Jump"><Window always="true"/></Cancel>
+    <Connect to="Plain" input="Alt"><Window from="0.4" until="end"/></Connect>
+  </Action>
+  <Action id="GraphOnly" clip="Animations\Convert\GraphOnly.hkx">
+    <Advanced graph="FullBodyPlayerIdles_Behavior"/>
+    <Require cooldown="0.5" stamina="25"/>
+    <QTE id="Press" at="0.2" key="E" gamepad="8192"/>
+  </Action>
+  <Action id="Tiny" clip="Animations\Convert\Tiny.hkx"/>
+  <Pair id="Lift" clip="Animations\Convert\Lift.hkx">
+    <Start input="Odd"/>
+    <Require cooldown="1"/>
+    <Carry bone="NPC R Hand [RHnd]" targetRoot="NPC Root [Root]" putdown="Down" input="Use" alignStart="true" weapon="sheathe">
+      <Hold pose="lift-end" blendOut="0.2"><Bone name="NPC R Clavicle [RClv]" weight="1"/></Hold>
+    </Carry>
+    <Target rig="chicken"/>
+    <Advanced safety="30"/>
+  </Pair>
+  <Action id="Down" clip="Animations\Convert\Down.hkx">
+    <CarryRelease at="0.8"/>
+  </Action>
+</AnimationSet>

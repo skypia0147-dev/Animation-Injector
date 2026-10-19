@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stop nodes before, between and after the conditions (indexes shift), and a flow of two Stops. -->
+<AnimationSet version="4" id="FlowStop">
+  <Inputs>
+    <Input id="go" key="Num0"/>
+  </Inputs>
+  <Action id="Gate" clip="Animations\FlowStop\Gate.hkx">
+    <Start input="go"/>
+    <Require cooldown="0.2"/>
+    <Advanced safety="0.7"/>
+    <Flow entry="alive">
+      <Stop id="end"/>
+      <Test id="alive" kind="alive" pass="either" fail="end2"/>
+      <Any id="either" pass="play" fail="end">
+        <Use node="sneak"/>
+        <Use node="drawn"/>
+      </Any>
+      <Stop id="end2"/>
+      <Test id="sneak" kind="sneaking"/>
+      <Test id="drawn" kind="weaponDrawn"/>
+      <Play id="play" action="Gate"/>
+    </Flow>
+  </Action>
+  <Action id="Never" clip="Animations\FlowStop\Never.hkx">
+    <Require cooldown="0.2"/>
+    <Advanced safety="0.7"/>
+    <Flow entry="halt">
+      <Stop id="spare"/>
+      <Stop id="halt"/>
+    </Flow>
+  </Action>
+</AnimationSet>

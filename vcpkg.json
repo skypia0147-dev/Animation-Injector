@@ -1,0 +1,5 @@
+{
+    "name": "animationinjector",
+    "version-string": "0.12.266",
+    "dependencies": [ "fmt", "directxtk", "rapidcsv", "spdlog", "xbyak", "pugixml" ]
+}

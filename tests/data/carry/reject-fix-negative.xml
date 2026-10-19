@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="4" id="CarryFixNegativeTest">
+  <Inputs><Input id="Use" key="G"/></Inputs>
+  <Pair id="Lift" clip="Animations\CarryTest\Lift.hkx">
+    <Start input="Use"/>
+    <Require cooldown="0.2"/>
+    <Advanced safety="0.7"/>
+    <Carry bone="NPC R Hand [RHnd]" targetRoot="NPC Root [Root]" putdown="PutDown" input="Use">
+      <Fix at="-0.5"/>
+    </Carry>
+    <Target rig="chicken" range="250" angle="160"/>
+  </Pair>
+  <Action id="PutDown" clip="Animations\CarryTest\PutDown.hkx">
+    <Require cooldown="0.2"/>
+    <Advanced safety="0.7"/>
+    <CarryRelease at="0.8"/>
+  </Action>
+</AnimationSet>

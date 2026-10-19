@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A flow as an author wrote it: the members of a group first, the action it reaches last. -->
+<AnimationSet version="4" id="FlowOrder">
+  <Action id="Back" clip="Animations\FlowOrder\Back.hkx">
+    <Start key="G"/>
+    <Flow entry="direction">
+      <Any id="direction" pass="Play">
+        <Use node="held"/>
+        <Use node="idle"/>
+      </Any>
+      <Test id="held" kind="movementDirection" subject="self" option="back"/>
+      <Test id="idle" kind="movementDirection" subject="self" option="none"/>
+      <Play id="Play" action="Back"/>
+    </Flow>
+  </Action>
+</AnimationSet>

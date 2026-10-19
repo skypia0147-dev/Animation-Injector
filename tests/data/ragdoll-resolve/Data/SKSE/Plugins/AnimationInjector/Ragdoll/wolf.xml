@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A lift clip named like a rig profile must not read this as its own. -->
+<Ragdoll rig="character" version="1">
+  <Motion follow="1" gravity="2"/>
+  <Body bone="NPC Head [Head]" simulate="false"/>
+</Ragdoll>

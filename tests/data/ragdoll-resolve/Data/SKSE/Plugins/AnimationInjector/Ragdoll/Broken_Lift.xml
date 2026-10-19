@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Ragdoll rig="character" version="1">
+  <Motion follow="9"/>
+</Ragdoll>

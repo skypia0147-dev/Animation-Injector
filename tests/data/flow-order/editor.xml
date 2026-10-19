@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The same flow as the editor writes it: the action right after the branch reaching it, its own names. -->
+<AnimationSet version="4" id="FlowOrder">
+  <Action id="Back" clip="Animations\FlowOrder\Back.hkx">
+    <Start key="G"/>
+    <Flow entry="direction">
+      <Any id="direction" pass="Destination1">
+        <Use node="held"/>
+        <Use node="idle"/>
+      </Any>
+      <Play id="Destination1" action="Back"/>
+      <Test id="held" kind="movementDirection" subject="self" option="back"/>
+      <Test id="idle" kind="movementDirection" subject="self" option="none"/>
+    </Flow>
+  </Action>
+</AnimationSet>

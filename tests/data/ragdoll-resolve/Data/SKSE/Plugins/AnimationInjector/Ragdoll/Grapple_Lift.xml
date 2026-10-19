@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Ragdoll rig="character" version="1">
+  <Motion follow="1" gravity="4" drag="10" spin="10" inertia="10"/>
+  <Body bone="NPC COM [COM ]" simulate="false"/>
+  <Body bone="NPC Spine [Spn0]" simulate="false"/>
+</Ragdoll>

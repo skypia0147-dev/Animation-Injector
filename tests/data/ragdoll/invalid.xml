@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A bone listed twice rejects the whole file. -->
+<Ragdoll rig="chicken" version="1">
+  <Body bone="LeftAnkle" cone="35"/>
+  <Body bone="leftankle" friction="0.5"/>
+</Ragdoll>
