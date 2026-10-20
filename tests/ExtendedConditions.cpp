@@ -51,8 +51,9 @@ int main() {
     for (const char* value : {"character", "creature", "chicken", "draugr", "wolf"})
         Check(Read(std::string("kind='rig' option='") + value + "'"));
     Check(!Read("kind='rig' option='unknown'"));
-    for (const char* value : {"npc", "animal", "creature", "undead", "daedra", "dwarven", "dragon"})
+    for (const char* value : {"player", "npc", "animal", "creature", "undead", "daedra", "dwarven", "dragon"})
         Check(Read(std::string("kind='actorType' option='") + value + "'"));
+    Check(!Read("kind='actorType' option='pc'"));
     for (const char* value : {"ragdoll", "recovering", "bleedingOut", "killmove", "paired", "staggered", "child"})
         Check(Read(std::string("kind='actorStatus' option='") + value + "'"));
     Check(Read("kind='relationship' option='hostile'"));

@@ -170,8 +170,8 @@ bool Read(XML flow, const std::vector<std::string>& actions, Program& output, st
                         valid = predicate.option == "creature" ||
                                 PairedRig::FromName(predicate.option) != PairedRig::Kind::kUnsupported;
                     if (test == "actorType")
-                        valid = oneOf(
-                            predicate.option, {"npc", "animal", "creature", "undead", "daedra", "dwarven", "dragon"});
+                        valid = oneOf(predicate.option,
+                            {"player", "npc", "animal", "creature", "undead", "daedra", "dwarven", "dragon"});
                     if (test == "resource") valid = oneOf(predicate.option, {"health", "stamina", "magicka"});
                     if (test == "actorStatus")
                         valid = oneOf(predicate.option,

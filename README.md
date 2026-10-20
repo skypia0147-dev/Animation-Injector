@@ -1,6 +1,6 @@
 # Animation Injector
 
-**버전 0.12.266** · [English](README_EN.md)
+**버전 0.12.267** · [English](README_EN.md)
 
 XML 선언과 HKX 파일만으로 Skyrim에 일반 동작과 두 사람이 하는 페어 동작을 추가하는 SKSE 프레임워크입니다. 동작을 추가할 때 Nemesis·Pandora를 다시 실행할 필요가 없습니다. 다른 모드가 요구하는 비헤이비어 패치는 그대로 유지하세요.
 

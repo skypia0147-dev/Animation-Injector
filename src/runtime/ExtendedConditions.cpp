@@ -74,6 +74,8 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
         return race && subject->GetRace() ? boolean(subject->GetRace() == race) : Value::kUnavailable;
     }
     case Test::kActorType: {
+        // The player is one reference, not a keyword: true only for the player character (0.12.267).
+        if (p.option == "player") return boolean(subject->IsPlayerRef());
         static constexpr std::pair<std::string_view, std::string_view> keywords[] = {{"npc", "ActorTypeNPC"},
             {"animal", "ActorTypeAnimal"}, {"creature", "ActorTypeCreature"}, {"undead", "ActorTypeUndead"},
             {"daedra", "ActorTypeDaedra"}, {"dwarven", "ActorTypeDwarven"}, {"dragon", "ActorTypeDragon"}};

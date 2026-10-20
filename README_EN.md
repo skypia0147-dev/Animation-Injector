@@ -1,6 +1,6 @@
 # Animation Injector
 
-**Version 0.12.266** · [한국어](README.md)
+**Version 0.12.267** · [한국어](README.md)
 
 An SKSE framework that adds ordinary and two-person paired animations to Skyrim through XML declarations and HKX files alone. Adding actions does not require re-running Nemesis or Pandora. Keep the behavior patches your other mods require.
 
