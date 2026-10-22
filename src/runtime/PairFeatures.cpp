@@ -282,7 +282,7 @@ void RunTimed(const EventFunctionSpec& function, unsigned mask) {
     EventEffects::RunFor(function, context, targets);
 }
 void Schedule(const EventFunctionSpec& function) {
-    const auto mask = PairEventRoles::TimedTargets(function.from, function.target, PlayerRole());
+    const auto mask = PairEventRoles::TimedTargets(function.target, PlayerRole());
     if (function.delay > 0.0f) {
         if (jobs.size() < 128) jobs.push_back({function, mask, function.delay});
     } else

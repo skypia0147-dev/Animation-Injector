@@ -1,6 +1,7 @@
 #pragma once
 #include "PCH.h"
 #include "runtime/QteSpec.h"
+#include "runtime/FireArrowShot.h"
 #include <optional>
 #include "runtime/PairedRig.h"
 #include "runtime/CarrySpec.h"
@@ -122,7 +123,8 @@ struct PairedSpec {
 struct FireArrowSpec {
     bool enabled = false;
     float at = -1.0f;       // seconds from the clip start; <0 = none
-    bool onRelease = true;  // releasing the attack button during the action fires the drawn arrow
+    bool onRelease = true;  // releasing the attack button during the action fires the drawn arrow (kDrawn only)
+    FireArrowShot shot;     // how the arrow leaves the bow (0.12.268)
 };
 
 // The putdown Action's moment to release the carried target (seconds or annotation event).
@@ -133,7 +135,7 @@ struct CarryReleaseSpec {
     float fallback = -1.0f;  // seconds, when waiting for `event`
 };
 
-struct CostSpec {  // 자원 소모. at 생략 = 시작할 때 (Condition 의 staminaRequired 는 확인만 하고 소모하지 않는다)
+struct CostSpec {  // 자원 소모. at 생략 = 시작할 때
     bool enabled = false;
     std::string event;  // 기본 AI_<id>_Cost
     float at = -1.0f;   // "@초" 면 실행기 타이머
@@ -141,12 +143,12 @@ struct CostSpec {  // 자원 소모. at 생략 = 시작할 때 (Condition 의 st
     float stamina = 0.0f, magicka = 0.0f;
 };
 
+// 시작 제한 (0.12.276, docs/mockup-start-limits): the action's own nature, checked on every way into it (a key,
+// an event, a transition, a QTE result). State checks (weapon drawn, attacking, stamina) are a condition branch's
+// tests (Flow <Test kind="weaponDrawn|attackState|stamina">): one place asks each question.
 struct ConditionSpec {
-    int inAir = 0;  // 공중(점프/낙하) 중 시작: 0 = 거부(기본), 1 = 허용, 2 = 공중에서만
-    bool requireWeaponDrawn = false;
-    bool blockWhileAttacking = false;
-    float cooldown = 0.0f;         // 끝난 뒤 다시 시작할 수 있을 때까지(초)
-    float staminaRequired = 0.0f;  // 시작할 때 이만큼 있어야 한다 (소모는 Cost)
+    int inAir = 0;          // 공중(점프/낙하) 중 시작: 0 = 거부(기본), 1 = 허용, 2 = 공중에서만
+    float cooldown = 0.0f;  // 끝난 뒤 다시 시작할 수 있을 때까지(초)
 };
 
 struct SuppressSpec {
@@ -251,6 +253,9 @@ struct ActionSpec {
             if (_stricmp(clips[i].clipName.c_str(), a_name) == 0) return i;
         return -1;
     }
+    // A selecting action (0.12.244): no clip, its Flow sends every route to another action. It is never injected;
+    // its start gates and Flow are all it has, and the action the Flow picks is checked when it starts.
+    bool SelectsOnly() const { return clips.empty() && !flow.nodes.empty(); }
 };
 
 }  // namespace AnimationInjector

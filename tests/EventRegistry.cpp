@@ -1,3 +1,4 @@
+#include "runtime/AnnotationCommands.h"
 #include "Settings.h"
 #include "declarations/XmlV2.h"
 #include "runtime/EventRegistryMerge.h"
@@ -37,10 +38,10 @@ int main() {
         {
             const auto p = Parse(std::string(kAction) + R"(<EventRegistry>
                 <Event name="Grapple_Stom"><Do op="spell" plugin="FH_Grapple.esp" form="0x80B" delay="0.4"/></Event>
-                <Event name="Grapple_CamShake"><Do op="shake" target="player" from="player" parameters="true"/></Event>
+                <Event name="Grapple_CamShake"><Do op="shake" strength="1.5" duration="0.25"/></Event>
                 <Event name="MCO_WinOpen"/>
-                <Event name="Hit"><Do op="hide"/><Do op="iframeOn" target="partner" from="initiator"/></Event>
-                <Event name="Fire"><Do op="fireArrow" target="player"/></Event>
+                <Event name="Hit"><Do op="hide"/><Do op="iframeOn"/></Event>
+                <Event name="Fire"><Do op="fireArrow"/></Event>
             </EventRegistry>)");
             Check(p.ok, "a registry parses");
             Check(p.events.size() == 5 && p.actions.size() == 1, "every event and the action are read");
@@ -51,17 +52,14 @@ int main() {
             Check(spell.op == EventOp::kSpell && spell.plugin == "FH_Grapple.esp" && spell.form == "80B" &&
                       std::fabs(spell.delay - 0.4f) < 1e-6f,
                 "spell settings, form without 0x");
-            Check(spell.target == EventTarget::kSender && spell.from == EventFrom::kAny,
-                "target and from default to the sender and anyone");
+            Check(spell.target == EventTarget::kSender, "an event function changes its sender");
             const auto& shake = p.events[1].functions[0];
-            Check(shake.op == EventOp::kShake && shake.target == EventTarget::kPlayer &&
-                      shake.from == EventFrom::kPlayer && shake.parameters,
-                "shake with parameters for the player");
+            Check(shake.op == EventOp::kShake && shake.target == EventTarget::kSender &&
+                      std::fabs(shake.strength - 1.5f) < 1e-6f && std::fabs(shake.duration - 0.25f) < 1e-6f,
+                "shake with its own strength and duration");
             Check(p.events[2].name == "MCO_WinOpen" && p.events[2].functions.empty(), "an event without functions");
-            Check(p.events[3].functions.size() == 2 && p.events[3].functions[1].op == EventOp::kIFrameOn &&
-                      p.events[3].functions[1].target == EventTarget::kPartner &&
-                      p.events[3].functions[1].from == EventFrom::kInitiator,
-                "several functions, pair roles");
+            Check(p.events[3].functions.size() == 2 && p.events[3].functions[1].op == EventOp::kIFrameOn,
+                "several functions");
             Check(p.events[4].functions[0].op == EventOp::kFireArrow, "fireArrow is an event function");
         }
         Check(Parse("<EventRegistry><Event name='OnlyRegistered'/></EventRegistry>").ok,
@@ -79,9 +77,13 @@ int main() {
         Check(
             Rejected("<EventRegistry><Event name='X'><Do op='hide' plugin='a.esp' form='1'/></Event></EventRegistry>"),
             "plugin and form only where a spell is used");
-        Check(Rejected("<EventRegistry><Event name='X'><Do op='fireArrow' target='partner'/></Event></EventRegistry>"),
-            "fireArrow shoots the player's bow");
-        Check(Rejected("<EventRegistry><Event name='X'><Do op='hide' target='lead'/></Event></EventRegistry>"),
+        // 0.12.273: an event function changes its sender; target and from are gone.
+        for (const char* attr : {"target='player'", "target='sender'", "from='player'", "from='any'"}) {
+            const auto p = Parse(
+                std::string("<EventRegistry><Event name='X'><Do op='hide' ") + attr + "/></Event></EventRegistry>");
+            Check(!p.ok && p.error.find("0.12.273") != std::string::npos, "target/from refused with the version");
+        }
+        Check(Rejected("<Pair id='P' clip='p.hkx'><Effects><Do at='0.1' op='hide' target='lead'/></Effects></Pair>"),
             "lead/support are not role names (the engine's lead is the receiver)");
         Check(Rejected("<EventRegistry><Event name='X'><Do op='hide' at='1'/></Event></EventRegistry>"),
             "an event function has no clip time");
@@ -123,6 +125,20 @@ int main() {
                 "a pair's Do needs its clip time");
             Check(Rejected("<Pair id='P' clip='p.hkx'><Effects><Do at='1' op='fireArrow'/></Effects></Pair>"),
                 "a clip-time shot is the action's FireArrow");
+            // 0.12.275: a clip-time effect names the role it changes; without one, both. No sender filter.
+            const auto plain = Parse("<Pair id='P' clip='p.hkx'><Effects><Do at='0.1' op='hide'/></Effects></Pair>");
+            Check(plain.ok && plain.actions[0].pairFeatures.timed[0].function.target == EventTarget::kBoth,
+                "a clip-time effect without a target changes both");
+            for (const char* attr : {"from='any'", "from='initiator'", "target='sender'", "target='partner'"}) {
+                const auto r = Parse(std::string("<Pair id='P' clip='p.hkx'><Effects><Do at='0.1' op='hide' ") + attr +
+                                     "/></Effects></Pair>");
+                Check(!r.ok && r.error.find("0.12.275") != std::string::npos, "no sender on a clip time");
+            }
+            for (const char* attr : {"space='back'", "minSpace='1'", "maxSpace='100'"}) {
+                const auto r = Parse(
+                    std::string("<EventRegistry><Event name='X'><Do op='hide' ") + attr + "/></Event></EventRegistry>");
+                Check(!r.ok && r.error.find("0.12.275") != std::string::npos, "the space condition is gone");
+            }
         }
         // An ordinary action's camera restore (0.12.260): Camera alone; the other effects stay a pair's.
         {
@@ -134,8 +150,20 @@ int main() {
                 "its camera settings");
             Check(Parse("<Action id='A' clip='a.hkx'><Effects><Camera/></Effects></Action>").ok,
                 "restored at its end by default");
-            Check(Rejected("<Action id='A' clip='a.hkx'><Effects><Do at='0.1' op='hide'/></Effects></Action>"),
-                "clip-time effects stay a pair's");
+            // 0.12.274: clip-time effects on the actor playing it, the ones its own slots do not cover.
+            const auto timed = Parse("<Action id='A' clip='a.hkx'><Effects><Do at='0.1' op='hide'/>"
+                                     "<Do at='0.5' op='shake' strength='2' duration='1'/></Effects></Action>");
+            Check(timed.ok && timed.actions[0].pairFeatures.timed.size() == 2 &&
+                      timed.actions[0].pairFeatures.timed[1].function.op == EventOp::kShake &&
+                      std::fabs(timed.actions[0].pairFeatures.timed[1].at - 0.5f) < 1e-6f,
+                "an ordinary action's clip-time effects");
+            for (const char* op : {"iframeOn", "armorOn", "rotateOn", "cost", "cancel", "fireArrow"})
+                Check(Rejected(std::string("<Action id='A' clip='a.hkx'><Effects><Do at='0.1' op='") + op +
+                               "'/></Effects></Action>"),
+                    (std::string("not an ordinary action's clip-time effect: ") + op).c_str());
+            Check(Rejected("<Action id='A' clip='a.hkx'><Effects><Do at='0.1' op='hide' target='player'/></Effects>"
+                           "</Action>"),
+                "no target: the actor playing it");
             Check(Rejected("<Action id='A' clip='a.hkx'><Effects interruptOnThirdPartyHit='true'/></Action>"),
                 "third-party interruption stays a pair's");
         }
@@ -177,28 +205,37 @@ int main() {
             Check(merged.entries[1].name == "Only" && merged.entries[1].functions.empty(), "names without functions");
         }
 
-        // Payload spellings: "name|value" goes into the graphs too (an annotation is sent only when its
-        // whole text is a graph event name); files' values are merged once, ignoring case.
+        // 0.12.274: an annotation's numbers are AI.CamShake's (runtime/AnnotationCommands.h); registered
+        // "name|value" spellings and shake parameters are gone, and "AI" is no declared event name.
         {
-            const auto p = Parse(R"(<EventRegistry>
-                <Event name="Grapple_CamShake" values=" 1.5|0.5  3.0|1.0 "><Do op="shake" parameters="true"/></Event>
-                <Event name="Grapple_HealthDamage"/>
-            </EventRegistry>)");
-            Check(p.ok && p.events[0].values == std::vector<std::string>{"1.5|0.5", "3.0|1.0"},
-                "values split on spaces, in order");
-            Check(GraphNames(p.events[0]) == std::vector<std::string>{"Grapple_CamShake", "Grapple_CamShake|1.5|0.5",
-                                                 "Grapple_CamShake|3.0|1.0"},
-                "the name, then each name|value");
-            Check(GraphNames(p.events[1]) == std::vector<std::string>{"Grapple_HealthDamage"}, "no values: the name");
-            Check(Rejected("<EventRegistry><Event name='X' values='1|2 1|2'/></EventRegistry>"), "a value twice");
-            Check(Rejected("<EventRegistry><Event name='X' values='@SGVF'/></EventRegistry>"), "no @ in a value");
-            Check(Rejected("<EventRegistry><Event name='X' values='" + std::string(256, 'v') + "'/></EventRegistry>"),
-                "name|value within 256 characters");
-            EventRuleSpec a{"Shake", {}, "A.xml", {"1|1", "2|2"}}, b{"shake", {}, "B.xml", {"2|2", "3|3"}};
-            const auto merged = EventRegistryMerge::Merge({a, b});
-            Check(
-                merged.entries.size() == 1 && merged.entries[0].values == std::vector<std::string>{"1|1", "2|2", "3|3"},
-                "values of every file, each once");
+            const auto refused = [](const std::string& body) {
+                const auto p = Parse(body);
+                return !p.ok && p.error.find("0.12.274") != std::string::npos;
+            };
+            Check(refused("<EventRegistry><Event name='X' values='1.5|0.5'/></EventRegistry>"), "values refused");
+            Check(refused("<EventRegistry><Event name='X'><Do op='shake' parameters='true'/></Event></EventRegistry>"),
+                "parameters refused");
+            Check(refused("<EventRegistry><Event name='ai'/></EventRegistry>"), "AI is reserved, ignoring case");
+            Check(refused("<Action id='A' clip='a.hkx'><Exit at='event:AI'/></Action>"), "in any event attribute");
+            using AnnotationCommands::Parse;
+            using AnnotationCommands::Parsed;
+            Check(Parse("CamShake|1.5|0.5") == Parsed{AnnotationCommands::Command::kCamShake, 1.5f, 0.5f},
+                "strength and duration");
+            Check(Parse("camshake|2|1") == Parsed{AnnotationCommands::Command::kCamShake, 2.0f, 1.0f}, "any case");
+            Check(Parse("CamShake|0|0") && Parse("CamShake|10|30"), "the range ends");
+            for (const char* bad : {"", "CamShake", "CamShake|", "CamShake|1|", "CamShake||1", "CamShake|1|1|1",
+                     "CamShake|x", "CamShake|1x", "CamShake|-1", "CamShake|11", "CamShake|1|31", "CamShake|nan",
+                     "CamShake|inf", "@CamShake|1", "Shake|1|1", " CamShake|1", "CamShake|1.5"})
+                Check(!Parse(bad), (std::string("refused: '") + bad + "'").c_str());
+            // A pair's two roles sending the same command at one moment run it once (0.12.275).
+            AnnotationCommands::PairEcho echo;
+            const Parsed shake{AnnotationCommands::Command::kCamShake, 1.5f, 0.5f};
+            Check(!echo.Repeat(1, 2, shake, 10.0) && echo.Repeat(2, 1, shake, 10.05), "the partner's echo is skipped");
+            Check(!echo.Repeat(2, 1, shake, 10.5), "a later one runs");
+            Check(!echo.Repeat(1, 0, shake, 20.0) && !echo.Repeat(1, 0, shake, 20.01), "outside a pair every one runs");
+            Check(!echo.Repeat(3, 4, shake, 30.0) &&
+                      !echo.Repeat(4, 3, Parsed{AnnotationCommands::Command::kCamShake, 1.0f, 0.5f}, 30.01),
+                "other numbers run");
         }
         // An event's QTEs (0.12.248): read under <Event>, asked at once (at 0), every file's kept; no start
         // time, no recipient, ids unique within the event.
@@ -232,8 +269,8 @@ int main() {
             Check(Rejected(withActions("<QTE id='Q'><Success to='A' partnerTo='P'/></QTE>")),
                 "the partner's action is an ordinary one");
             Check(Rejected(withActions("<QTE id='Q'><Success partnerTo='B'/></QTE>")), "partnerTo needs to");
-            EventRuleSpec a{"Ragdoll", {}, "A.xml", {}, p.events[0].qtes};
-            EventRuleSpec b{"ragdoll", {}, "B.xml", {}, p.events[0].qtes};
+            EventRuleSpec a{"Ragdoll", {}, "A.xml", p.events[0].qtes};
+            EventRuleSpec b{"ragdoll", {}, "B.xml", p.events[0].qtes};
             Check(EventRegistryMerge::Merge({a, b}).entries[0].qtes.size() == 2, "every file's QTEs");
         }
         std::cout << checks << " event registry checks passed\n";

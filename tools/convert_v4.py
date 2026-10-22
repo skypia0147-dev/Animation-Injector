@@ -4,7 +4,8 @@ Format 4 keeps what a file did, so values whose omitted default changed are writ
   - version="2"/"3" -> "4"
   - every Action/Pair without Require cooldown gets cooldown="0.2" (the old omitted value; format 4 omits 0)
   - every Action/Pair without Advanced safety gets safety="0.7" (old; format 4 omits 3, a pair 30)
-  - Require stamina="X" checked and spent; format 4 only checks, so a <Cost stamina="X"/> (at the start) is added
+  - Require stamina="X" checked and spent; it becomes a <Cost stamina="X"/> (at the start) and leaves the
+    Require (0.12.276: a state check is a condition branch's test)
 And drops what format 4 no longer reads:
   - Advanced graph (every action plays on the full-body route)
   - <Window always="true"/> (an omitted Window is the whole clip); a Cancel/Connect left empty closes itself
@@ -177,6 +178,8 @@ def convert(text: str):
                 new = set_attr(new, 'cooldown', OLD_COOLDOWN)
                 count('Require cooldown', 1)
             stamina = attr(tag, 'stamina')
+            # 0.12.276: <Require> keeps air and cooldown only; the spending is the Cost added below.
+            new = re.sub(r"""\s+stamina\s*=\s*["'][^"']*["']""", '', new)
             body = body[:req.start()] + new + body[req.end():]
         else:
             added.append(f'<Require cooldown="{OLD_COOLDOWN}"/>')

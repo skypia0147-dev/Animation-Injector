@@ -146,6 +146,7 @@ private:
     bool _firePlaybackReady = false;
     bool _rotationLockOwned = false, _rotationBeforeLock = false;
     bool _rotateOn = false, _costDone = false;
+    std::vector<bool> _timedFired;  // per clip-time effect (Spec().pairFeatures.timed), 0.12.274
     bool _carryReleaseDue = false;  // per run, kept after Finish for the carry to read
     void ReachCarryRelease(const char* why);
     // Read by the notify hook on other threads (HyperArmorFor).
@@ -161,6 +162,7 @@ private:
     void ApplyRotate(bool a_on);
     void ApplyIFrame(bool a_on);  // 액터 베이스 kIsGhost|kInvulnerable (공격이 통과·피해 없음) + 피해 훅
     void ApplyCost();
+    void RunTimedEffect(const EventFunctionSpec& function);
     void ApplyAttackData();    // 공격 의미: 이 액션의 종족 공격 데이터를 attackData 에 넣는다
     void RestoreAttackData();  // 우리가 넣은 것이 아직 있으면 이전 값으로
     RE::NiPointer<RE::BGSAttackData> _attackSet, _attackPrev;  // 우리가 넣은 것 / 넣기 전 값

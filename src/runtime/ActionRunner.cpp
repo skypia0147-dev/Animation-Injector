@@ -18,6 +18,7 @@
 #include <string_view>
 #include <shared_mutex>
 #include "runtime/ActorImmunity.h"
+#include "runtime/EventEffects.h"
 #include "runtime/LifecyclePolicy.h"
 #include "runtime/NativeCancelPolicy.h"
 #include "runtime/FireArrow.h"
@@ -69,12 +70,12 @@ bool ActionRunner::Conditions(RE::Actor* p, bool a_linkPreflight) const {
         return deny("페어 진행 중");
     if (_state != State::kIdle) return deny("이미 실행 중");
     if (_cooldown > 0.0f) return deny("쿨다운");
-    if (!Spec().paired.enabled && !GraphInjector::AnyInjected(_idx)) return deny("삽입된 그래프 없음");
+    // A selecting action is never injected (0.12.244): only the action its Flow picks needs a graph (CanStart). Until
+    // 0.12.269 this refused every single selecting action's start (a pair skipped the check).
+    if (!Spec().paired.enabled && !Spec().SelectsOnly() && !GraphInjector::AnyInjected(_idx))
+        return deny("삽입된 그래프 없음");
     auto* as = p->AsActorState();
     if (!as) return false;
-    if (c.requireWeaponDrawn && !as->IsWeaponDrawn()) return deny("무기 안 뽑음");
-    if (!a_linkPreflight && c.blockWhileAttacking && as->GetAttackState() != RE::ATTACK_STATE_ENUM::kNone)
-        return deny("공격 중");
     if (as->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) return deny("넉다운/스태거");
     if (as->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal) return deny("앉음/수면");
     if (as->IsSwimming() || p->IsOnMount() || p->IsInKillMove() || p->IsInRagdollState())
@@ -90,11 +91,6 @@ bool ActionRunner::Conditions(RE::Actor* p, bool a_linkPreflight) const {
     if (_isPlayer)
         if (!ViewGuard::AllowStart(_idx)) return deny("시점");
     if (!_isPlayer && Spec().view.view == View::kFirst) return deny("1인칭 전용");
-    // A requirement only (format 4): what starting spends is the action's Cost.
-    if (c.staminaRequired > 0.0f) {
-        auto* avo = p->AsActorValueOwner();
-        if (!avo || avo->GetActorValue(RE::ActorValue::kStamina) < c.staminaRequired) return deny("스태미나 부족");
-    }
     return true;
 }
 
@@ -698,12 +694,30 @@ void ActionRunner::SlotUpdate() {
         else if (spec.cost.fallback >= 0.0f && _elapsed >= spec.cost.fallback)
             ApplyCost();
     }
+    // An ordinary action's clip-time effects (0.12.274); a pair's run in PairFeatures.
+    if (const auto& timed = spec.pairFeatures.timed; !spec.paired.enabled && !timed.empty()) {
+        if (_timedFired.size() != timed.size()) _timedFired.assign(timed.size(), false);
+        for (std::size_t i = 0; i < timed.size(); ++i)
+            if (!_timedFired[i] && _elapsed >= timed[i].at) {
+                _timedFired[i] = true;
+                RunTimedEffect(timed[i].function);
+                if (_state != State::kActive) return;
+            }
+    }
     if (spec.carryRelease.enabled && !_carryReleaseDue) {
         if (spec.carryRelease.at >= 0.0f && _elapsed >= spec.carryRelease.at)
             ReachCarryRelease("time");
         else if (spec.carryRelease.fallback >= 0.0f && _elapsed >= spec.carryRelease.fallback)
             ReachCarryRelease("fallback");
     }
+}
+
+void ActionRunner::RunTimedEffect(const EventFunctionSpec& function) {
+    auto* actor = Owner();
+    if (!actor) return;
+    const auto context = EventEffects::ContextFor(actor, "action clip time");
+    EventEffects::RunFor(function, context, {actor->GetHandle()});
+    logger::debug("[{}] clip-time effect op={} at {:.2f}s", Spec().id, static_cast<int>(function.op), _elapsed);
 }
 
 void ActionRunner::ReachCarryRelease(const char* why) {
@@ -767,7 +781,7 @@ void ActionRunner::SlotEvent(const RE::BSFixedString& a_tag) {
 
 void ActionRunner::QueueFireArrowOnRelease(std::uint64_t draw) {
     if (_isPlayer && _state == State::kActive && _firePlaybackReady && Spec().fireArrow.enabled &&
-        Spec().fireArrow.onRelease && _fireArrow.draw == draw)
+        Spec().fireArrow.shot.mode == FireArrowMode::kDrawn && Spec().fireArrow.onRelease && _fireArrow.draw == draw)
         _fireArrow.Request();
 }
 
@@ -970,6 +984,7 @@ void ActionRunner::ResetPlaybackFlags() {
     _recoveryOpen = false;
     for (auto& st : _slot) st = SlotState{};
     _costDone = false;
+    _timedFired.assign(Spec().pairFeatures.timed.size(), false);
     _fireArrow.Reset(FireArrow::CurrentDraw());
     _firePlaybackReady = false;
     // 새 재생이 시작되면 켜져 있던 슬롯은 새 재생의 창으로 다시 판정한다
@@ -1157,7 +1172,12 @@ void ActionRunner::Update(float a_delta) {
     if (_state == State::kActive && _firePlaybackReady && Spec().fireArrow.enabled && !InterruptIfUnavailable()) {
         const auto& fire = Spec().fireArrow;
         if (fire.at >= 0 && _elapsed >= fire.at) _fireArrow.Request();
-        if (_fireArrow.Take()) FireArrow::Release(Owner(), _fireArrow.draw, Spec().id.c_str(), _elapsed);
+        if (_fireArrow.Take()) {
+            if (fire.shot.mode == FireArrowMode::kDirect)
+                FireArrow::Direct(Owner(), fire.shot.damage, Spec().id.c_str(), _elapsed);
+            else
+                FireArrow::Release(Owner(), _fireArrow.draw, Spec().id.c_str(), _elapsed);
+        }
     }
     if (_state == State::kExiting) {
         _exitingTime += a_delta;

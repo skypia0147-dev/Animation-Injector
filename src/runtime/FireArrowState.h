@@ -26,7 +26,7 @@ public:
 
 // Tracks native press/release cycles, without owning any ButtonEvent or held bit.
 struct FireArrowCycle {
-    enum class Shot { kNone, kAutomatic, kManual };
+    enum class Shot { kNone, kAutomatic, kManual, kClip };
     std::uint64_t serial = 1;
     bool released = true, automatic = false, pressed = false, fired = false, manualPending = false;
     void Press() {
@@ -62,6 +62,15 @@ struct FireArrowCycle {
         fired = true;
         manualPending = false;
         return Shot::kManual;
+    }
+    // A draw the clip made (0.12.272): its own bowDraw/arrowAttach/BowDrawn annotations put the bow in the drawn
+    // state with no press of the attack button (Dynamic Dodge Shot's dodges). Only while no press is held or waiting
+    // for its arrow; the caller checks the drawn state, which the release ends, so it is one shot per draw.
+    bool ClipDraw(std::uint64_t ticket) {
+        if (ticket != serial || !released || manualPending) return false;
+        automatic = true;
+        fired = true;
+        return true;
     }
     void ObserveArrow() {
         if (pressed) {

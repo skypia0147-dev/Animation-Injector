@@ -30,9 +30,8 @@ struct Digest {
         add(w.enabled, w.onEvent, w.offEvent, w.onAt, w.onFallback, w.offAt, w.offRel, w.offFallback);
     }
     void function(const EventFunctionSpec& f) {
-        add(static_cast<int>(f.op), static_cast<int>(f.target), static_cast<int>(f.from), f.delay, f.plugin, f.form,
-            f.releasePhysics, f.space, f.minSpace, f.maxSpace, f.stamina, f.magicka, f.strength, f.duration,
-            f.parameters, f.factor);
+        add(static_cast<int>(f.op), static_cast<int>(f.target), f.delay, f.plugin, f.form, f.releasePhysics, f.stamina,
+            f.magicka, f.strength, f.duration, f.factor, static_cast<int>(f.arrow.mode), f.arrow.damage);
     }
 };
 void qteDigest(Digest& d, const QteSpec& q) {
@@ -120,7 +119,7 @@ std::string snapshot(const ActionSpec& a) {
     auto& t = a.trigger;
     d.add(t.key, t.gamepad, t.onKeyUp, t.onEvent, t.onEventPlayer, t.onEventNpc, t.eventCombatTarget);
     auto& c = a.condition;
-    d.add(c.inAir, c.requireWeaponDrawn, c.blockWhileAttacking, c.cooldown, c.staminaRequired);
+    d.add(c.inAir, c.cooldown);
     auto& r = a.recovery;
     d.add(r.enabled, r.event, r.fallback, r.move, r.sprint, r.jump, r.blend, r.recoverEvent);
     d.slot(a.rotate);
@@ -179,7 +178,6 @@ std::string snapshot(const EventRuleSpec& e) {
     Digest d;
     d.add(e.name, e.functions.size());
     for (const auto& f : e.functions) d.function(f);
-    if (!e.values.empty()) d.strings(e.values);    // absent before 0.12.223: older dumps stay equal
     for (const auto& q : e.qtes) qteDigest(d, q);  // event QTEs (0.12.248)
     return d.out.str();
 }

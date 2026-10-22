@@ -108,16 +108,17 @@ int main() {
                                  kPair);
             Check(p.ok, "defaults parse");
             const auto& a = p["A"];
-            Check(a.condition.cooldown == 0 && a.condition.inAir == 0 && a.condition.staminaRequired == 0,
-                "no cooldown, ground only, no stamina check");
+            Check(a.condition.cooldown == 0 && a.condition.inAir == 0, "no cooldown, ground only");
             Check(Near(a.safetyDuration, 3.0f) && Near(p["P"].safetyDuration, 30.0f), "safety 3, a pair 30");
             Check(Near(p["P"].paired.range, 150) && Near(p["P"].paired.angle, 60), "pair target 150 / 60");
             Check(a.suppress.when == SuppressSpec::When::kStartable, "suppress when defaults to startable");
-            const auto written = Action("<Require cooldown='0.2' stamina='30'/><Advanced safety='0.7'/>");
+            const auto written = Action("<Require cooldown='0.2'/><Advanced safety='0.7'/>");
             Check(written.ok && Near(written["A"].condition.cooldown, 0.2f) && Near(written["A"].safetyDuration, 0.7f),
                 "written values replace the defaults");
-            Check(Near(written["A"].condition.staminaRequired, 30) && !written["A"].cost.enabled,
-                "Require stamina only checks; spending is Cost");
+            // 0.12.276: state checks are a condition branch's tests.
+            for (const char* gone : {"weapon='drawn'", "weapon='any'", "blockWhileAttacking='false'", "stamina='30'"})
+                Check(Refused(Action(std::string("<Require ") + gone + "/>"), "0.12.276"),
+                    "Require keeps air and cooldown only");
             const auto spend = Action("<Cost stamina='30'/>");
             Check(
                 spend.ok && spend["A"].cost.enabled && Near(spend["A"].cost.at, 0) && Near(spend["A"].cost.stamina, 30),

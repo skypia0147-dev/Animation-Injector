@@ -3,21 +3,25 @@
 <AnimationSet version="4" id="ClipRecovery">
   <Action id="BowDodgeBack" clip="Animations\DynamicDodgeShot\BowDodgeBack.hkx">
     <Start key="Mouse2"/>
-    <Require weapon="drawn" cooldown="0.2"/>
+    <Require cooldown="0.2"/>
     <Recovery at="0.3" blend="0.1"/>
     <Exit blend="0.3"/>
     <Advanced safety="2.5"/>
     <Connect to="BowDodgeLeft" key="Mouse2"><Window from="0.2"/></Connect>
+    <Flow entry="RequireWeapon">
+      <Test id="RequireWeapon" kind="weaponDrawn" subject="self" pass="Self"/>
+      <Play id="Self" action="BowDodgeBack"/>
+    </Flow>
   </Action>
   <Action id="BowDodgeLeft" clip="Animations\DynamicDodgeShot\BowDodgeLeft.hkx">
-    <Require weapon="drawn" cooldown="0.2"/>
+    <Require cooldown="0.2"/>
     <Recovery at="event:MoveReady" fallback="0.7" blend="0.25"/>
     <Exit blend="0.3"/>
     <Advanced safety="2.5"/>
     <Connect to="BowDodgeRight" key="Mouse2"/>
   </Action>
   <Action id="BowDodgeRight" clip="Animations\DynamicDodgeShot\BowDodgeRight.hkx">
-    <Require weapon="drawn" cooldown="0.2"/>
+    <Require cooldown="0.2"/>
     <Recovery at="1.1" blend="0.4"/>
     <Exit blend="0.3"/>
     <Advanced safety="2.5"/>

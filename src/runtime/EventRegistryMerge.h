@@ -12,7 +12,6 @@ namespace AnimationInjector::EventRegistryMerge {
 struct Entry {
     std::string name;                          // the first spelling (names match ignoring case, as graphs do)
     std::vector<EventFunctionSpec> functions;  // every file's, an equal function once
-    std::vector<std::string> values;           // every file's payload spellings, once (ignoring case)
     std::vector<std::string> sources;          // the files that register it, in load order
     std::vector<QteSpec> qtes;                 // every file's
 };
@@ -31,16 +30,12 @@ inline Result Merge(const std::vector<EventRuleSpec>& rules) {
     std::unordered_map<std::string, std::size_t> index;
     for (const auto& rule : rules) {
         const auto [it, inserted] = index.try_emplace(Key(rule.name), out.entries.size());
-        if (inserted) out.entries.push_back({rule.name, {}, {}, {}, {}});
+        if (inserted) out.entries.push_back({rule.name, {}, {}, {}});
         auto& entry = out.entries[it->second];
         const bool another = !entry.sources.empty() &&
                              std::find(entry.sources.begin(), entry.sources.end(), rule.source) == entry.sources.end();
         if (std::find(entry.sources.begin(), entry.sources.end(), rule.source) == entry.sources.end())
             entry.sources.push_back(rule.source);
-        for (const auto& value : rule.values)
-            if (std::none_of(entry.values.begin(), entry.values.end(),
-                    [&](const std::string& v) { return Key(v) == Key(value); }))
-                entry.values.push_back(value);
         entry.qtes.insert(entry.qtes.end(), rule.qtes.begin(), rule.qtes.end());
         bool added = false;
         for (const auto& function : rule.functions) {

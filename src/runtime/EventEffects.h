@@ -33,15 +33,11 @@ struct Context {
     RE::ActorHandle partner;  // its pair partner, empty outside a pair
     int senderRole = -1;      // 0 initiator, 1 receiver, -1 not in a pair
     bool senderIsPlayer = false;
-    float strength = -1.0f;  // kShake from "name|strength|duration"; <0 = the function's own
-    float duration = -1.0f;
     const char* origin = "";  // event name or "pair clip time", for logs and the automatic shot
 };
 // Main thread. The context of an event `sender` sent now (its pair role and partner, if any).
 Context ContextFor(RE::Actor* sender, const char* origin);
 
-// Main thread. Whether `function` reacts to an event from this sender (its `from`).
-bool Accepts(const EventFunctionSpec& function, const Context& context);
 // Main thread. Runs `function` for each of its targets (`target` against the context) that is loaded,
 // alive and not ragdolled. A hold belongs to the target's run scope.
 void Run(const EventFunctionSpec& function, const Context& context);

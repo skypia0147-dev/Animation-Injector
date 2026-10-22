@@ -36,6 +36,7 @@
 #include "runtime/CarryHold.h"
 #include "runtime/PairStartCamera.h"
 #include "runtime/ActorImmunity.h"
+#include "runtime/AnnotationCommands.h"
 #include <spdlog/sinks/basic_file_sink.h>
 
 // Runtime behavior injection, XML declarations and actor action lifecycles.
@@ -86,6 +87,7 @@ void EndSession() {
     PairFeatures::End(PairedSession::ReadStatus().ticket, false);
     PairFeatures::ResetOnLoad();
     EventRegistry::ResetOnLoad();
+    AnnotationCommands::ResetOnLoad();
     EventEffects::ResetOnLoad();
     PairedSession::ResetOnLoad();
     PairRootScale::Reset();

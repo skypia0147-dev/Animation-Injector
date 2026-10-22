@@ -83,6 +83,8 @@ void choice(Node n, const char* key, Names values) {
 void eventName(Node n, const std::string& name) {
     if (name.empty() || name.size() > 256 || name.find_first_of("@|\r\n\t") != std::string::npos)
         fail(n, "이벤트 이름이 잘못되었습니다: " + name);
+    // runtime/AnnotationCommands.h: "AI" carries annotation commands (AI.CamShake|strength|duration).
+    if (lower(name) == "ai") fail(n, "AI는 주석 명령 전용 이벤트 이름입니다(0.12.274): AI.CamShake|세기|시간");
 }
 void clip(Node n, const std::string& name) {
     auto s = lower(name);
@@ -299,38 +301,61 @@ const std::pair<std::string_view, EventOp> kOps[] = {{"hide", EventOp::kHide}, {
     {"iframeOff", EventOp::kIFrameOff}, {"armorOn", EventOp::kArmorOn}, {"armorOff", EventOp::kArmorOff},
     {"rotateOn", EventOp::kRotateOn}, {"rotateOff", EventOp::kRotateOff}, {"cancel", EventOp::kCancel},
     {"fireArrow", EventOp::kFireArrow}};
-const std::pair<std::string_view, EventTarget> kTargets[] = {{"sender", EventTarget::kSender},
-    {"partner", EventTarget::kPartner}, {"both", EventTarget::kBoth}, {"player", EventTarget::kPlayer},
-    {"initiator", EventTarget::kInitiator}, {"receiver", EventTarget::kReceiver}};
-const std::pair<std::string_view, EventFrom> kFroms[] = {{"any", EventFrom::kAny}, {"player", EventFrom::kPlayer},
-    {"npc", EventFrom::kNpc}, {"initiator", EventFrom::kInitiator}, {"receiver", EventFrom::kReceiver}};
+const std::pair<std::string_view, EventTarget> kTargets[] = {{"both", EventTarget::kBoth},
+    {"player", EventTarget::kPlayer}, {"initiator", EventTarget::kInitiator}, {"receiver", EventTarget::kReceiver}};
+// How a shot leaves the bow (0.12.268): mode "drawn" (default) releases the drawn bow as the player would;
+// "direct" launches at full power with no draw, `damage` percent of a full draw's damage (1~1000, default 100).
+FireArrowShot fireArrowShot(Node e) {
+    choice(e, "mode", {"drawn", "direct"});
+    num(e, "damage", 1000, 1);
+    FireArrowShot shot;
+    shot.mode = get(e, "mode", "drawn") == "direct" ? FireArrowMode::kDirect : FireArrowMode::kDrawn;
+    if (e.attribute("damage")) {
+        if (shot.mode != FireArrowMode::kDirect) fail(e, "damage는 mode=\"direct\"(바로 발사)에서만 씁니다");
+        shot.damage = e.attribute("damage").as_float(100.0f) / 100.0f;
+    }
+    return shot;
+}
 // One <Do>: a function of a registered event, or (`timed`, with `at`) of a pair's clip time.
 EventFunctionSpec eventFunction(Node e, bool timed) {
     if (has({"lock", "unlock"}, get(e, "op"))) fail(e, "op=\"lock\"·\"unlock\"(조작 잠금)은 없어졌습니다(0.12.238)");
+    // An event's function changes the actor that sent the event (0.12.273): no file used another target or a
+    // sender filter, and a player-only function already does nothing for anyone else. A pair's clip-time
+    // effect has no sender, so it keeps its target.
+    if (!timed && (e.attribute("target") || e.attribute("from")))
+        fail(e, "이벤트 기능의 target·from은 없어졌습니다(0.12.273): 기능은 이벤트를 보낸 액터에게 적용됩니다");
+    if (e.attribute("parameters"))
+        fail(e, "parameters는 없어졌습니다(0.12.274): 주석 숫자로 흔들려면 HKX 주석 AI.CamShake|세기|시간을 씁니다");
+    // 0.12.275: a function's own space condition is gone (a space split is a condition branch), and a pair's
+    // clip-time effect names the role it changes: both actors play the clip, so no role sends it.
+    for (const char* gone : {"space", "minSpace", "maxSpace"})
+        if (e.attribute(gone))
+            fail(e,
+                "space·minSpace·maxSpace는 없어졌습니다(0.12.275): 공간으로 나누려면 조건 분기(Flow의 space)를 씁니다");
+    if (timed && e.attribute("from"))
+        fail(e,
+            "시각 기능의 from은 없어졌습니다(0.12.275): 적용할 쪽은 target(initiator·receiver·both·player)으로 정합니다");
+    if (timed && has({"sender", "partner"}, get(e, "target")))
+        fail(e,
+            "시각 기능의 target은 initiator·receiver·both·player입니다(0.12.275): 클립 시각에는 보낸 액터가 없습니다");
     if (timed)
-        shape(e, {"at", "op", "target", "from", "plugin", "form", "delay", "stamina", "magicka", "strength", "duration",
-                     "parameters", "releasePhysics", "space", "minSpace", "maxSpace", "factor"});
+        shape(e, {"at", "op", "target", "plugin", "form", "delay", "stamina", "magicka", "strength", "duration",
+                     "releasePhysics", "factor", "mode", "damage"});
     else
-        shape(e, {"op", "target", "from", "plugin", "form", "delay", "stamina", "magicka", "strength", "duration",
-                     "parameters", "releasePhysics", "space", "minSpace", "maxSpace", "factor"});
+        shape(e, {"op", "plugin", "form", "delay", "stamina", "magicka", "strength", "duration", "releasePhysics",
+                     "factor", "mode", "damage"});
     const auto op = required(e, "op");
     choice(e, "op",
         {"hide", "show", "spell", "stateOn", "stateOff", "cost", "shake", "stopVelocity", "timeOn", "timeOff",
             "iframeOn", "iframeOff", "armorOn", "armorOff", "rotateOn", "rotateOff", "cancel", "fireArrow"});
-    choice(e, "target", {"sender", "partner", "both", "player", "initiator", "receiver"});
-    choice(e, "from", {"any", "player", "npc", "initiator", "receiver"});
+    choice(e, "target", {"both", "player", "initiator", "receiver"});
     num(e, "delay", 60);
     num(e, "stamina", 100000);
     num(e, "magicka", 100000);
     num(e, "strength", 10);
     num(e, "duration", 30);
-    num(e, "minSpace", 10000);
-    num(e, "maxSpace", 10000);
     num(e, "factor", 5, 0.05);
-    choice(e, "space", {"front", "back", "left", "right", "down"});
-    if (e.attribute("minSpace").as_float() > e.attribute("maxSpace").as_float(10000))
-        fail(e, "minSpace는 maxSpace 이하여야 합니다");
-    for (auto key : {"parameters", "releasePhysics"}) boolean(e, key);
+    boolean(e, "releasePhysics");
     std::string form = get(e, "form");
     if (op == "spell" || op == "stateOn" || op == "stateOff") {
         const auto plugin = required(e, "plugin");
@@ -344,29 +369,25 @@ EventFunctionSpec eventFunction(Node e, bool timed) {
         fail(e, "plugin·form은 spell·stateOn·stateOff에서만 씁니다");
     if (op == "fireArrow") {
         if (timed) fail(e, "시간 기준 활 발사는 동작의 FireArrow at으로 지정합니다");
-        if (!has({"sender", "player"}, get(e, "target", "sender")))
-            fail(e, "fireArrow의 target은 sender 또는 player입니다");
-    }
+    } else if (e.attribute("mode") || e.attribute("damage"))
+        fail(e, "mode·damage는 fireArrow에서만 씁니다");
     auto number = [](pugi::xml_attribute attr, float fallback, float maximum) {
         const float value = attr.as_float(fallback);
         return std::isfinite(value) ? std::clamp(value, 0.0f, maximum) : fallback;
     };
     EventFunctionSpec f;
     f.op = Pick(kOps, op, EventOp::kSpell);
-    f.target = Pick(kTargets, get(e, "target", "sender"), EventTarget::kSender);
-    f.from = Pick(kFroms, get(e, "from", "any"), EventFrom::kAny);
+    // A registered event's function changes its sender; a clip-time effect without a target changes both actors.
+    f.target = timed ? Pick(kTargets, get(e, "target", "both"), EventTarget::kBoth) : EventTarget::kSender;
     f.delay = number(e.attribute("delay"), 0, 60);
     f.plugin = get(e, "plugin");
     f.form = form;
     f.releasePhysics = e.attribute("releasePhysics").as_bool(false);
-    f.space = get(e, "space");
-    f.minSpace = number(e.attribute("minSpace"), 0, 10000);
-    f.maxSpace = number(e.attribute("maxSpace"), 10000, 10000);
+    if (op == "fireArrow") f.arrow = fireArrowShot(e);
     f.stamina = number(e.attribute("stamina"), 0, 100000);
     f.magicka = number(e.attribute("magicka"), 0, 100000);
     f.strength = number(e.attribute("strength"), 1, 10);
     f.duration = number(e.attribute("duration"), 0.5f, 30);
-    f.parameters = e.attribute("parameters").as_bool(false);
     f.factor = std::max(0.05f, number(e.attribute("factor"), 1, 5));
     return f;
 }
@@ -686,23 +707,16 @@ struct Compiler {
         shape(r, {}, {"Event"});
         std::set<std::string> names;
         for (auto e : r.children("Event")) {
-            shape(e, {"name", "values"}, {"Do", "QTE"});
+            if (e.attribute("values"))
+                fail(
+                    e, "values는 없어졌습니다(0.12.274): 흔들림 세기·시간은 HKX 주석 AI.CamShake|세기|시간으로 씁니다");
+            shape(e, {"name"}, {"Do", "QTE"});
             const auto name = required(e, "name");
             eventName(e, name);
             if (!names.insert(lower(name)).second) fail(e, "같은 이벤트를 두 번 등록했습니다: " + name);
             EventRuleSpec rule;
             rule.name = name;
             rule.source = sourceName;
-            // values="1.5|0.5 3.0|1.0": the payloads clips send after the name, separated by spaces.
-            std::set<std::string> seen;
-            std::istringstream values(e.attribute("values").as_string());
-            for (std::string value; values >> value;) {
-                if (value.find_first_of("@\r\n\t") != std::string::npos || name.size() + 1 + value.size() > 256)
-                    fail(e, "이벤트 값이 잘못되었습니다: " + name + "|" + value);
-                if (!seen.insert(lower(value)).second) fail(e, "같은 값을 두 번 적었습니다: " + name + "|" + value);
-                rule.values.push_back(value);
-            }
-            if (rule.values.size() > 64) fail(e, "이벤트 하나에 값은 64개까지입니다");
             for (auto d : e.children("Do")) rule.functions.push_back(eventFunction(d, false));
             if (rule.functions.size() > 64) fail(e, "이벤트 하나에 기능은 64개까지입니다");
             std::set<std::string> qteIds;
@@ -882,20 +896,19 @@ struct Compiler {
             trigger.onKeyUp = st.attribute("onKeyUp").as_bool(false);
         }
         if (auto r = one(n, "Require")) {
-            shape(r, {"weapon", "air", "blockWhileAttacking", "cooldown", "stamina"});
-            choice(r, "weapon", {"drawn", "any"});
+            // 0.12.276: the action's own nature only; a state check is a condition branch's test
+            // (tools/require_to_flow.py moves an older file's).
+            for (const char* gone : {"weapon", "blockWhileAttacking", "stamina"})
+                if (r.attribute(gone))
+                    fail(r, std::string(gone) +
+                                "는 없어졌습니다(0.12.276): 조건 분기의 검사(무기 뽑음·공격 상태·스태미나)를 씁니다");
+            shape(r, {"air", "cooldown"});
             choice(r, "air", {"deny", "allow", "only"});
-            boolean(r, "blockWhileAttacking");
             num(r, "cooldown");
-            num(r, "stamina", 100000);
             auto& c = s.condition;
-            c.requireWeaponDrawn = get(r, "weapon") == "drawn";
-            c.blockWhileAttacking = r.attribute("blockWhileAttacking").as_bool(false);
             const std::string air = get(r, "air", "deny");
             c.inAir = _stricmp(air.c_str(), "allow") == 0 ? 1 : _stricmp(air.c_str(), "only") == 0 ? 2 : 0;
             c.cooldown = r.attribute("cooldown").as_float(0.0f);
-            // A requirement only: what starting spends is a <Cost> (format 4).
-            c.staminaRequired = r.attribute("stamina").as_float(0.0f);
         }
         if (auto e = one(n, "Suppress")) {
             shape(e, {"events", "when"});
@@ -968,15 +981,22 @@ struct Compiler {
         for (auto q : n.children("QTE")) s.qtes.push_back(qte(q, n, pair, qteIds, &links));
         if (auto f = one(n, "FireArrow")) {
             if (pair) fail(f, "FireArrow is player-only and requires an Action");
-            shape(f, {"at", "onRelease"});
+            shape(f, {"at", "onRelease", "mode", "damage"});
             boolean(f, "onRelease");
             s.fireArrow.enabled = true;
-            s.fireArrow.onRelease = f.attribute("onRelease").as_bool(true);
+            s.fireArrow.shot = fireArrowShot(f);
+            const bool direct = s.fireArrow.shot.mode == FireArrowMode::kDirect;
+            // A direct shot has no draw to release: it fires at its time (an event shot is the registry's).
+            if (direct && f.attribute("onRelease").as_bool(false))
+                fail(f, "mode=\"direct\"(바로 발사)는 당김이 없어 onRelease를 쓸 수 없습니다");
+            s.fireArrow.onRelease = !direct && f.attribute("onRelease").as_bool(true);
             if (f.attribute("at")) {
                 std::string unused;
                 float fallback = -1.0f;
                 ReadMoment(seconds(f, "at", Basis::Seconds), unused, s.fireArrow.at, fallback);
             }
+            if (direct && s.fireArrow.at < 0)
+                fail(f, "mode=\"direct\"(바로 발사)에는 at이 필요합니다(이벤트 발사는 EventRegistry의 fireArrow)");
             if (s.fireArrow.at < 0 && !s.fireArrow.onRelease)
                 fail(f,
                     "FireArrow에는 at 또는 onRelease=\"true\"가 필요합니다(이벤트 발사는 EventRegistry의 fireArrow)");
@@ -998,11 +1018,24 @@ struct Compiler {
         }
         if (auto r = one(n, "Recovery")) s.recovery = recoveryDeclaration(r);
         if (pair) s.safetyDuration = 30.0f;  // a pair's clip is long; written values replace it (Advanced)
-        // An ordinary action restores the player's camera too (0.12.260); its other effects stay a pair's.
+        // An ordinary action restores the player's camera too (0.12.260) and has clip-time effects on the actor
+        // playing it (0.12.274): the ones its own slots do not cover. Third-party interruption stays a pair's.
         if (!pair)
             if (auto e = one(n, "Effects")) {
-                if (e.attribute("interruptOnThirdPartyHit") || e.child("Do"))
-                    fail(e, "일반 동작의 Effects에는 Camera만 씁니다(시간 효과·제3자 피격 중단은 페어 전용)");
+                if (e.attribute("interruptOnThirdPartyHit"))
+                    fail(e, "제3자 피격 중단(interruptOnThirdPartyHit)은 페어 전용입니다");
+                for (auto d : e.children("Do")) {
+                    if (d.attribute("target") || d.attribute("from"))
+                        fail(d,
+                            "일반 동작의 시각 기능은 그 동작을 재생하는 액터에게 적용됩니다: target·from을 쓰지 않습니다");
+                    const auto op = get(d, "op");
+                    if (!op.empty() && !has({"hide", "show", "spell", "stateOn", "stateOff", "shake", "stopVelocity",
+                                                "timeOn", "timeOff"},
+                                           op))
+                        fail(d, "일반 동작의 시각 기능이 아닙니다: " + op +
+                                    " (무적·슈퍼아머·회전·비용은 IFrame·HyperArmor·Rotate·Cost, 활 발사는 FireArrow, "
+                                    "cancel은 페어 전용)");
+                }
                 effects(e, s.pairFeatures);
             }
         if (pair) {

@@ -2,7 +2,7 @@
 <AnimationSet version="4" id="Grapple">
   <EventRegistry>
     <Event name="Grapple_Land">
-      <Do op="stopVelocity" target="player" from="player"/>
+      <Do op="stopVelocity"/>
     </Event>
     <Event name="Grapple_unequip">
       <Do op="hide"/>
@@ -11,7 +11,7 @@
       <Do op="show"/>
     </Event>
     <Event name="Grapple_CamShake">
-      <Do op="shake" target="player" from="player" parameters="true"/>
+      <Do op="shake" strength="1.5"/>
     </Event>
     <Event name="Grapple_Stom">
       <Do op="spell" plugin="FH_Grapple.esp" form="80B"/>
@@ -70,7 +70,7 @@
   </EventRegistry>
   <Pair id="GrappleFront" clip="Animations\Grapple\Grapple_Crimson_Front_01.hkx">
     <Start event="Grapple_ContactFront" actor="both" onKeyUp="false" target="combatTarget"/>
-    <Require weapon="any" air="allow" blockWhileAttacking="false" cooldown="0" stamina="0"/>
+    <Require air="allow" cooldown="0"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
     <Flow entry="Choice1">
@@ -221,7 +221,7 @@
   </Pair>
   <Pair id="GrappleBack" clip="Animations\Grapple\Grapple_Crimson_Back_01.hkx">
     <Start event="Grapple_ContactBack" actor="both" onKeyUp="false" target="combatTarget"/>
-    <Require weapon="any" air="allow" blockWhileAttacking="false" cooldown="0" stamina="0"/>
+    <Require air="allow" cooldown="0"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="false" applyMotionFromRoot="false"/>
     <Flow entry="AirNormal">
@@ -337,7 +337,7 @@
     <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
   <Action id="GrappleStage01Attacker" clip="Animations\Grapple\Stage01_Attacker.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Enter blend="0.1"/>
     <Exit at="end-0.05" blend="0.2"/>
     <Rotate locked="true"/>
@@ -345,7 +345,7 @@
     <Advanced safety="10"/>
   </Action>
   <Action id="GrappleStage01Target" clip="Animations\Grapple\Stage01_Target.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Enter blend="0.1"/>
     <Exit at="end-0.05" blend="0.2"/>
     <Rotate locked="true"/>
@@ -353,7 +353,7 @@
     <Advanced safety="10"/>
   </Action>
   <Action id="GrappleStage02Attacker" clip="Animations\Grapple\Stage02_Attacker.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Enter blend="0.1"/>
     <Exit at="end-0.05" blend="0.2"/>
     <Rotate locked="true"/>
@@ -361,7 +361,7 @@
     <Advanced safety="10"/>
   </Action>
   <Action id="GrappleStage02Target" clip="Animations\Grapple\Stage02_Target.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Enter blend="0.1"/>
     <Exit at="end-0.05" blend="0.2"/>
     <Rotate locked="true"/>
@@ -369,7 +369,7 @@
     <Advanced safety="10"/>
   </Action>
   <Action id="GrappleStage10Attacker" clip="Animations\Grapple\Stage10_Attacker.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Enter blend="0.1"/>
     <Exit at="end-0.05" blend="0.2"/>
     <Rotate locked="true"/>
@@ -377,7 +377,7 @@
     <Advanced safety="10"/>
   </Action>
   <Action id="GrappleStage10Target" clip="Animations\Grapple\Stage10_Target.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Enter blend="0.1"/>
     <Exit at="end-0.05" blend="0.2"/>
     <Rotate locked="true"/>
@@ -386,13 +386,13 @@
   </Action>
   <Action id="GrappleStart" clip="Animations\Grapple\Grapple_Start.hkx">
     <Start event="Grapple_Start" actor="both" onKeyUp="false"/>
-    <Require weapon="any" air="allow" blockWhileAttacking="false" cooldown="0" stamina="0"/>
+    <Require air="allow" cooldown="0"/>
     <Enter blend="0.1"/>
     <Exit at="end-0.05" blend="0.2"/>
     <Advanced safety="10"/>
   </Action>
   <Pair id="GrappleAttackFront" clip="Animations\Grapple\Grapple_Crimson_Attack_F_Front.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
     <QTE id="GrappleAttackFront_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
@@ -488,7 +488,7 @@
     <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
   <Pair id="GrappleAttackRear" clip="Animations\Grapple\Grapple_Crimson_Attack_F_Back.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
     <QTE id="GrappleAttackRear_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
@@ -584,7 +584,7 @@
     <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
   <Pair id="GrappleAttackBack" clip="Animations\Grapple\Grapple_Crimson_Attack_B_Back.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="false" applyMotionFromRoot="false"/>
     <QTE id="GrappleAttackBack_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
@@ -680,7 +680,7 @@
     <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
   <Pair id="GrappleGiantSwing" clip="Animations\Grapple\Grapple_Crimson_Giant_Swing.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
     <QTE id="GrappleGiantSwing_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
@@ -776,7 +776,7 @@
     <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
   <Pair id="GrapplePounding" clip="Animations\Grapple\Grapple_Crimson_Pounding.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
     <QTE id="GrapplePounding_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
@@ -872,7 +872,7 @@
     <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
   <Pair id="GrappleRKO" clip="Animations\Grapple\Grapple_Crimson_RKO.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05" blend="0.2"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
     <QTE id="GrappleRKO_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
@@ -968,7 +968,7 @@
     <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
   <Pair id="GrappleSuplex" clip="Animations\Grapple\Grapple_Crimson_Suplex.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="false" applyMotionFromRoot="false"/>
     <QTE id="GrappleSuplex_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
@@ -1064,7 +1064,7 @@
     <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
   <Pair id="GrappleAirFront" clip="Animations\Grapple\Grapple_Air_Front.hkx">
-    <Require weapon="any" air="only" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="only" cooldown="0.2"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
     <QTE id="GrappleAirFront_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
@@ -1160,7 +1160,7 @@
     <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
   <Pair id="GrappleForHonorFront" clip="Animations\Grapple\Grapple_ForHonor_Front.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
     <QTE id="GrappleForHonorFront_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
@@ -1256,7 +1256,7 @@
     <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
   <Pair id="GrappleResistanceFront" clip="Animations\Grapple\Grapple_Crimson_Fail.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
     <QTE id="GrappleResistanceFront_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
@@ -1352,7 +1352,7 @@
     <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
   <Pair id="GrappleAirBack" clip="Animations\Grapple\Grapple_Air_Back.hkx">
-    <Require weapon="any" air="only" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="only" cooldown="0.2"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="false" applyMotionFromRoot="false"/>
     <QTE id="GrappleAirBack_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
@@ -1448,7 +1448,7 @@
     <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
   <Pair id="GrappleForHonorBack" clip="Animations\Grapple\Grapple_ForHonor_Back.hkx">
-    <Require weapon="any" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05"/>
     <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="false" applyMotionFromRoot="false"/>
     <QTE id="GrappleForHonorBack_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">

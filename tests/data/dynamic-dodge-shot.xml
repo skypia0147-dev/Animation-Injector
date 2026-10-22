@@ -8,19 +8,20 @@
     <Event name="SoundStop.WPNBowPullLPM"/>
     <Event name="SoundPlay.WPNBowFire"/>
     <Event name="DodgeShotFire">
-      <Do op="fireArrow" from="player"/>
+      <Do op="fireArrow"/>
     </Event>
   </EventRegistry>
   <Action id="BowDodge" clip="Animations\DynamicDodgeShot\BowDodgeBack.hkx">
     <Start input="a1_i1" onKeyUp="false"/>
-    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05" blend="0.3"/>
     <IFrame from="0" until="0.8"/>
     <Recovery at="1.647" blend="0.35"/>
     <FireArrow/>
     <Suppress events="blockStart,bashStart" when="startable"/>
     <Advanced safety="2.5"/>
-    <Flow entry="bow">
+    <Flow entry="RequireWeapon">
+      <Test id="RequireWeapon" kind="weaponDrawn" subject="self" pass="bow"/>
       <Test id="bow" kind="equippedType" subject="self" hand="left" type="bow" pass="drawn"/>
       <Any id="drawn" pass="sneak">
         <Use node="attached"/>
@@ -44,7 +45,7 @@
     </Flow>
   </Action>
   <Action id="BowDodge_B1" clip="Animations\DynamicDodgeShot\BowDodgeBack.hkx">
-    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05" blend="0.3"/>
     <IFrame from="0" until="0.8"/>
     <Recovery at="1.647" blend="0.35"/>
@@ -52,7 +53,7 @@
     <Advanced safety="2.5"/>
   </Action>
   <Action id="BowDodge_L1" clip="Animations\DynamicDodgeShot\BowDodgeLeft.hkx">
-    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05" blend="0.3"/>
     <IFrame from="0" until="0.8"/>
     <Recovery at="1.397" blend="0.35"/>
@@ -60,7 +61,7 @@
     <Advanced safety="2.5"/>
   </Action>
   <Action id="BowDodge_R1" clip="Animations\DynamicDodgeShot\BowDodgeRight.hkx">
-    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05" blend="0.3"/>
     <IFrame from="0" until="0.8"/>
     <Recovery at="1.647" blend="0.35"/>
@@ -68,7 +69,7 @@
     <Advanced safety="2.5"/>
   </Action>
   <Action id="SneakBowDodge_B1" clip="Animations\DynamicDodgeShot\SneakBowDodgeBack.hkx">
-    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05" blend="0.3"/>
     <IFrame from="0" until="0.8"/>
     <Recovery at="1.647" blend="0.35"/>
@@ -76,7 +77,7 @@
     <Advanced safety="2.5"/>
   </Action>
   <Action id="SneakBowDodge_L1" clip="Animations\DynamicDodgeShot\SneakBowDodgeLeft.hkx">
-    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05" blend="0.3"/>
     <IFrame from="0" until="0.8"/>
     <Recovery at="1.397" blend="0.35"/>
@@ -84,7 +85,7 @@
     <Advanced safety="2.5"/>
   </Action>
   <Action id="SneakBowDodge_R1" clip="Animations\DynamicDodgeShot\SneakBowDodgeRight.hkx">
-    <Require weapon="drawn" air="deny" blockWhileAttacking="false" cooldown="0.2" stamina="0"/>
+    <Require air="deny" cooldown="0.2"/>
     <Exit at="end-0.05" blend="0.3"/>
     <IFrame from="0" until="0.8"/>
     <Recovery at="1.647" blend="0.35"/>

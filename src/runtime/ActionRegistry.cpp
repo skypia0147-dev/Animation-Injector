@@ -30,6 +30,7 @@
 #include "runtime/MainThread.h"
 #include "runtime/RunnerSet.h"
 #include "runtime/ViewGuard.h"
+#include "runtime/AnnotationCommands.h"
 #include <atomic>
 #include <future>
 #include <shared_mutex>
@@ -297,9 +298,10 @@ Declared BuildDeclarations() {
     d.loadMs = std::chrono::duration<double, std::milli>(Clock::now() - loadStart).count();
     const auto catalogStart = Clock::now();
     std::vector<std::string> registered;
-    registered.reserve(d.events.size());
-    for (const auto& rule : d.events)
-        for (auto& name : GraphNames(rule)) registered.push_back(std::move(name));
+    registered.reserve(d.events.size() + 1);
+    // The annotation command event (runtime/AnnotationCommands.h) is in every graph, declared or not.
+    registered.emplace_back(AnnotationCommands::kEvent);
+    for (const auto& rule : d.events) registered.push_back(rule.name);
     d.catalog.Build(d.specs, registered);
     d.catalogMs = std::chrono::duration<double, std::milli>(Clock::now() - catalogStart).count();
     return d;
@@ -562,6 +564,8 @@ struct AnimEventHook {
                 if (PairedSession::TryGetTicket(actor->GetHandle(), ticket))
                     PairedSession::ObserveEvent(ticket, actor->GetHandle(), a_ev->tag);
                 OnAnimEventFrom(actor, a_ev->tag);
+                static const RE::BSFixedString command(AnnotationCommands::kEvent.data());
+                if (a_ev->tag == command) AnnotationCommands::Observe(actor, a_ev->payload);
             }
         }
         const auto result = func(a_sink, a_ev, a_src);
@@ -606,6 +610,7 @@ struct
         // Drain final annotations and cumulative samples before session cleanup discards them.
         PairFeatures::Update(a_delta);
         EventRegistry::Update(a_delta);
+        AnnotationCommands::Update();
         PairedSession::Update(a_delta);
         PairRootScale::Update();
         if (g_playerBound.load(std::memory_order_acquire))

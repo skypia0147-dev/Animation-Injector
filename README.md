@@ -1,6 +1,6 @@
 # Animation Injector
 
-**버전 0.12.267** · [English](README_EN.md)
+**버전 0.12.277** · [English](README_EN.md)
 
 XML 선언과 HKX 파일만으로 Skyrim에 일반 동작과 두 사람이 하는 페어 동작을 추가하는 SKSE 프레임워크입니다. 동작을 추가할 때 Nemesis·Pandora를 다시 실행할 필요가 없습니다. 다른 모드가 요구하는 비헤이비어 패치는 그대로 유지하세요.
 
@@ -30,12 +30,13 @@ XML 선언과 HKX 파일만으로 Skyrim에 일반 동작과 두 사람이 하�
 | 구분 | 내용 |
 |---|---|
 | 시작 | 키보드 키 이름·스캔코드, 게임패드 버튼 이름, 애니메이션 이벤트. 플레이어와 NPC 모두 |
-| 일반 동작 | 진입·종료 블렌드, 이동 입력으로 끊는 Recovery, 바닐라 동작으로 끊는 Cancel, 다음 동작으로 잇는 Connect |
+| 일반 동작 | 진입·종료 블렌드, 이동 입력으로 끊는 Recovery, 바닐라 동작으로 끊는 Cancel, 다음 동작으로 잇는 Connect, 시작 제한(지상·공중, 재사용 간격), 클립 시각 기능(무기 숨김·표시, 주문, 상태, 카메라 흔들림, 속도 정지, 시간 배율) |
 | 기능 슬롯 | 회전, 무적(IFrame), 경직 저항(HyperArmor), 스태미나·매지카 소모, 공격 데이터 |
-| 조건 분기 | `Flow`로 이동 방향·무기·공중·누운 방향·장비·종족·성별·확률 등 조건에 따라 재생할 동작 선택 |
+| 조건 분기 | `Flow`로 이동 방향·무기·공격 상태·스태미나·공중·누운 방향·장비·종족·성별·확률 등 조건에 따라 재생할 동작 선택 |
 | 이동 | HKX의 AMR 주석(`animmotion`, `animrotation`)대로 이동 |
 | 페어 | 두 역할이 든 HKX 하나로 페어 재생, 시작 정렬(피해자는 제자리 회전, 가해자 이동), 종료 위치 보정, 상대를 잃었을 때의 종료 블렌드 |
-| 이벤트 등록 | HKX 주석 이벤트에 무기 숨김·표시, 무적 켜고 끄기, 소모, 화살 발사 등 기능을 전역으로 연결 |
+| 이벤트 등록 | HKX 주석 이벤트에 무기 숨김·표시, 무적 켜고 끄기, 소모, 화살 발사(당긴 만큼·바로 발사) 등 기능을 전역으로 연결. 기능은 이벤트를 보낸 액터에게 적용 |
+| 주석 명령 | HKX 주석 `AI.CamShake\|세기\|시간`으로 그 순간 카메라 흔들림. 등록 없이 동작하며 숫자는 모두 적어야 함 |
 | QTE | 6가지 유형(`splitArc`, `timingBar`, `rotatingNeedle`, `holdRelease`, `rapidPress`, `keySequence`), 결과별 이벤트·소리·다음 동작, 화면에 그리지 않는 입력 전용 QTE(`hidden="true"`) |
 | 운반 | 페어로 대상을 들어 올려 운반하고 내려놓기(부분 래그돌) |
 | 시점 | 일반 동작은 `view`로 3인칭·1인칭·둘 다 선택(1인칭 HKX는 `_1stPerson` 아래 같은 경로), 1인칭에서 3인칭으로 바꿔 재생하는 옵션 |
@@ -51,7 +52,10 @@ HKX 위치: `Data/meshes/actors/character/` 아래 (`clip`은 이 폴더 기준 
 <AnimationSet version="4" id="MyMod">
   <Action id="Slash1" clip="Animations\MyMod\Slash1.hkx">
     <Start key="G" gamepad="RB"/>
-    <Require weapon="drawn"/>
+    <Flow entry="Weapon">
+      <Test id="Weapon" kind="weaponDrawn" subject="self" pass="Play"/>
+      <Play id="Play" action="Slash1"/>
+    </Flow>
     <Recovery at="event:MyMod_Recovery" fallback="0.9" blend="0.15"/>
     <IFrame from="0.1" until="0.4"/>
     <Connect to="Slash2" key="G" gamepad="RB"><Window from="0.45"/></Connect>
@@ -63,6 +67,7 @@ HKX 위치: `Data/meshes/actors/character/` 아래 (`clip`은 이 폴더 기준 
 </AnimationSet>
 ```
 
+- 무기를 뽑았을 때만 시작하게 하는 검사는 위처럼 조건 분기(`Flow`)에 둡니다. `<Require>`는 `air`·`cooldown`만 받습니다(0.12.276). 예전 XML의 `weapon`·`blockWhileAttacking`·`stamina`는 `python tools/require_to_flow.py --write <xml>`이 조건 분기로 옮깁니다.
 - 루트는 `<AnimationSet version="4">`만 읽습니다. 다른 형식의 파일은 로그에 이유를 남기고 파일 전체를 건너뜁니다.
 - 파일 하나는 전부 읽히거나 전부 건너뜁니다. 오류가 하나라도 있으면 그 파일의 동작은 하나도 등록되지 않습니다.
 - HKX 경로의 파일·폴더 이름은 ASCII 영문·숫자·일반 기호만 쓸 수 있습니다(한글 불가).

@@ -6,7 +6,6 @@
 #include "runtime/FireArrow.h"
 #include "runtime/PairEventRoles.h"
 #include "runtime/PairFeatures.h"
-#include "runtime/PairSpatial.h"
 #include "runtime/PairedSession.h"
 #include "runtime/WeaponCull.h"
 #include <charconv>
@@ -166,10 +165,6 @@ Hold* Find(RE::ActorHandle actor, Kind kind, Scope scope, RE::FormID spell = 0) 
 }
 void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor, Scope scope) {
     const auto handle = actor->GetHandle();
-    if (!f.space.empty()) {
-        const auto distance = PairSpatial::Distance(actor, f.space);
-        if (!distance || *distance < f.minSpace || *distance > f.maxSpace) return;
-    }
     switch (f.op) {
     case EventOp::kHide:
         if (auto* h = Find(handle, Kind::kHide, scope))
@@ -215,11 +210,9 @@ void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor,
         }
         break;
     case EventOp::kShake:
-        if (actor->IsPlayerRef()) {
-            const float strength = f.parameters && context.strength >= 0 ? context.strength : f.strength;
-            const float duration = f.parameters && context.duration >= 0 ? context.duration : f.duration;
-            RE::ShakeCamera(std::clamp(strength, 0.0f, 10.0f), actor->GetPosition(), std::clamp(duration, 0.0f, 30.0f));
-        }
+        if (actor->IsPlayerRef())
+            RE::ShakeCamera(
+                std::clamp(f.strength, 0.0f, 10.0f), actor->GetPosition(), std::clamp(f.duration, 0.0f, 30.0f));
         break;
     case EventOp::kStopVelocity:
         if (auto* controller = actor->GetCharController()) controller->SetLinearVelocityImpl(RE::hkVector4(0, 0, 0, 0));
@@ -268,7 +261,11 @@ void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor,
         break;
     case EventOp::kCancel: PairFeatures::RequestCancel(handle); break;
     case EventOp::kFireArrow:
-        if (actor->IsPlayerRef()) FireArrow::Release(actor, FireArrow::CurrentDraw(), context.origin, 0.0f);
+        if (!actor->IsPlayerRef()) break;
+        if (f.arrow.mode == FireArrowMode::kDirect)
+            FireArrow::Direct(actor, f.arrow.damage, context.origin, 0.0f);
+        else
+            FireArrow::Release(actor, FireArrow::CurrentDraw(), context.origin, 0.0f);
         break;
     }
     logger::debug("[EventEffects] '{}' op={} actor={:08X} scope={}", context.origin, static_cast<int>(f.op),
@@ -324,9 +321,6 @@ Context ContextFor(RE::Actor* sender, const char* origin) {
         }
     }
     return c;
-}
-bool Accepts(const EventFunctionSpec& function, const Context& context) {
-    return PairEventRoles::Accepts(function.from, context.senderRole, context.senderIsPlayer);
 }
 void RunFor(const EventFunctionSpec& function, const Context& context, const std::vector<RE::ActorHandle>& targets) {
     auto sender = context.sender.get();

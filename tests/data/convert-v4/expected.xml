@@ -24,7 +24,7 @@
   <Action id="GraphOnly" clip="Animations\Convert\GraphOnly.hkx">
     <Cost stamina="25"/>
     <Advanced safety="0.7"/>
-    <Require cooldown="0.5" stamina="25"/>
+    <Require cooldown="0.5"/>
     <QTE id="Press" at="0.2" key="E" gamepad="B"/>
   </Action>
   <Action id="Tiny" clip="Animations\Convert\Tiny.hkx">

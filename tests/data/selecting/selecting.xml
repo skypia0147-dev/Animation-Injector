@@ -4,7 +4,7 @@
   <Inputs><Input id="Use" key="G"/></Inputs>
   <Action id="Pick" view="both">
     <Start input="Use"/>
-    <Require weapon="any" air="allow"/>
+    <Require air="allow"/>
     <Suppress events="SprintStop"/>
     <Flow entry="Held">
       <Test id="Held" kind="global" subject="self" plugin="Skyrim.esm" form="38" equals="1" pass="ToA" fail="ToB"/>
@@ -16,7 +16,7 @@
   <Action id="B" clip="Animations\Selecting\B.hkx"/>
   <Pair id="PairPick">
     <Start event="Pick_Contact" actor="both" target="combatTarget"/>
-    <Require weapon="any" air="allow"/>
+    <Require air="allow"/>
     <Flow entry="Held">
       <Test id="Held" kind="global" subject="self" plugin="Skyrim.esm" form="38" equals="1" pass="ToPair" fail="None"/>
       <Play id="ToPair" action="PairA"/>

@@ -15,14 +15,14 @@ namespace AnimationInjector::EventRegistry {
 void Build(const std::vector<EventRuleSpec>& rules);
 
 // Names to add to the graphs' event tables, so that clip annotations with these names
-// are sent: every registered name and its "name|value" spellings. Empty when nothing is registered.
+// are sent: every registered name. Empty when nothing is registered.
 const std::vector<std::string>& Names();
 // Registered event names, for logs and tests.
 std::size_t Count();
 
-// Any thread (the animation event hook, every actor). One lookup; a registered event (or, when a
-// registered function takes parameters, "name|..." with a registered name) is copied into a
-// bounded queue with its sender. Nothing about the actor is changed here.
+// Any thread (the animation event hook, every actor). One lookup; a registered event is copied into a
+// bounded queue with its sender. Nothing about the actor is changed here. Numbers an annotation carries
+// are runtime/AnnotationCommands.h's ("AI.CamShake|1.5|0.5").
 void Observe(RE::Actor* actor, const RE::BSFixedString& event);
 // Any thread (the NotifyAnimationGraph hook): an event sent INTO an actor's graph starts the event's QTEs only
 // (0.12.248; the engine sends Ragdoll this way). Its functions keep hearing only what the graph sends out.

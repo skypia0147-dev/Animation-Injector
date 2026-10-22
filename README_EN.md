@@ -1,6 +1,6 @@
 # Animation Injector
 
-**Version 0.12.267** · [한국어](README.md)
+**Version 0.12.277** · [한국어](README.md)
 
 An SKSE framework that adds ordinary and two-person paired animations to Skyrim through XML declarations and HKX files alone. Adding actions does not require re-running Nemesis or Pandora. Keep the behavior patches your other mods require.
 
@@ -30,12 +30,13 @@ If you edited the INI, move your values over before overwriting it with an updat
 | Area | What it does |
 |---|---|
 | Start | Keyboard key names or scan codes, gamepad button names, animation events. Player and NPCs |
-| Ordinary actions | Enter/exit blends, Recovery (break out with movement input), Cancel (break out into a vanilla action), Connect (chain into the next action) |
+| Ordinary actions | Enter/exit blends, Recovery (break out with movement input), Cancel (break out into a vanilla action), Connect (chain into the next action), start limits (ground/air, cooldown), clip-time functions (hide/show weapons, spells, states, camera shake, stop velocity, time scale) |
 | Slots | Rotation, invulnerability (IFrame), stagger resistance (HyperArmor), stamina/magicka cost, attack data |
-| Branching | `Flow` picks the action to play by movement direction, weapon, airborne, lying side, equipment, race, sex, chance and more |
+| Branching | `Flow` picks the action to play by movement direction, weapon, attack state, stamina, airborne, lying side, equipment, race, sex, chance and more |
 | Movement | Moves as the HKX's AMR annotations (`animmotion`, `animrotation`) say |
 | Pairs | Paired playback from one HKX holding both roles, start alignment (the victim turns in place, the attacker moves), end position correction, an exit blend when the partner is lost |
-| Event registry | Bind functions to HKX annotation events globally: hide/show weapons, invulnerability on/off, costs, firing arrows |
+| Event registry | Bind functions to HKX annotation events globally: hide/show weapons, invulnerability on/off, costs, firing arrows (as drawn or direct). A function acts on the actor that sent the event |
+| Annotation commands | The HKX annotation `AI.CamShake\|strength\|duration` shakes the camera at that moment. No registration; every number must be written |
 | QTE | Six types (`splitArc`, `timingBar`, `rotatingNeedle`, `holdRelease`, `rapidPress`, `keySequence`); events, sounds and follow-up actions per result; input-only QTEs that draw nothing (`hidden="true"`) |
 | Carry | Lift a target through a pair, carry it and put it down (partial ragdoll) |
 | View | Ordinary actions choose third person, first person or both with `view` (first-person HKX under `_1stPerson` at the same path), with an option to switch to third person for the action |
@@ -51,7 +52,10 @@ HKX location: under `Data/meshes/actors/character/` (`clip` is a path relative t
 <AnimationSet version="4" id="MyMod">
   <Action id="Slash1" clip="Animations\MyMod\Slash1.hkx">
     <Start key="G" gamepad="RB"/>
-    <Require weapon="drawn"/>
+    <Flow entry="Weapon">
+      <Test id="Weapon" kind="weaponDrawn" subject="self" pass="Play"/>
+      <Play id="Play" action="Slash1"/>
+    </Flow>
     <Recovery at="event:MyMod_Recovery" fallback="0.9" blend="0.15"/>
     <IFrame from="0.1" until="0.4"/>
     <Connect to="Slash2" key="G" gamepad="RB"><Window from="0.45"/></Connect>
@@ -63,6 +67,7 @@ HKX location: under `Data/meshes/actors/character/` (`clip` is a path relative t
 </AnimationSet>
 ```
 
+- A check such as "only with a drawn weapon" goes in a branch (`Flow`), as above. `<Require>` takes `air` and `cooldown` only (0.12.276). `python tools/require_to_flow.py --write <xml>` moves an older file's `weapon`, `blockWhileAttacking` and `stamina` into a branch.
 - Only a `<AnimationSet version="4">` root is read. A file in any other format is skipped whole, with the reason in the log.
 - A file loads completely or not at all: a single error keeps every action in it from registering.
 - File and folder names in HKX paths must be ASCII letters, digits and common symbols (no non-ASCII characters).
