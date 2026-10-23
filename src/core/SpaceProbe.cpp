@@ -219,6 +219,10 @@ ConditionFlow::Value Read(std::uint64_t id, int role, RE::Actor* actor, RE::Acto
     return verdict;
 }
 }
+// The heading a check's direction turns from (0.12.280): the initiator's on its mark or the partner's turned one.
+static float HeadingOf(const PairPreflight::Placement& placement, ConditionFlowXml::DirectionBasis basis) {
+    return basis == ConditionFlowXml::DirectionBasis::kSelf ? placement.initiatorYaw : placement.targetYaw;
+}
 ConditionFlow::Value Path(std::uint64_t id, RE::Actor* actor, RE::Actor* partner, const RE::NiPoint3& destination) {
     if (!actor || !partner || !actor->GetCharController()) return ConditionFlow::Value::kUnavailable;
     const auto from = actor->GetPosition();
@@ -229,8 +233,8 @@ ConditionFlow::Value Path(std::uint64_t id, RE::Actor* actor, RE::Actor* partner
     return Read(id, 1, actor, partner, actor->GetCharController(), RE::hkVector4{from.x, from.y, from.z, 0},
         std::max(length, 1.0f), length > 0 ? std::atan2(dx, dy) : actor->GetAngleZ(), false);
 }
-ConditionFlow::Value Evaluate(
-    RE::ActorHandle initiator, RE::ActorHandle target, int candidate, int role, float distance, float direction) {
+ConditionFlow::Value Evaluate(RE::ActorHandle initiator, RE::ActorHandle target, int candidate, int role,
+    float distance, float direction, ConditionFlowXml::DirectionBasis basis) {
     constexpr auto unavailable = ConditionFlow::Value::kUnavailable;
     if (role < 0 || role > 1 || !std::isfinite(direction)) return unavailable;
     const auto placement = PairPreflight::Read(initiator, target, candidate);
@@ -240,10 +244,10 @@ ConditionFlow::Value Evaluate(
     auto* actor = role == 0 ? self.get() : other.get();
     auto* partner = role == 0 ? other.get() : self.get();
     return Read(0, role, actor, partner, actor->GetCharController(), RE::hkVector4{p.x, p.y, p.z, 0}, distance,
-        placement->targetYaw + direction, false);
+        HeadingOf(*placement, basis) + direction, false);
 }
 ConditionFlow::Value EvaluateGround(RE::ActorHandle initiator, RE::ActorHandle target, int candidate, int role,
-    float distance, float direction, GroundPolicy::Limits limits) {
+    float distance, float direction, ConditionFlowXml::DirectionBasis basis, GroundPolicy::Limits limits) {
     using V = ConditionFlow::Value;
     if (role < 0 || role > 1 || !GroundPolicy::Valid(limits) || !std::isfinite(distance) || distance < 0 ||
         distance > 2000 || !std::isfinite(direction))
@@ -257,7 +261,7 @@ ConditionFlow::Value EvaluateGround(RE::ActorHandle initiator, RE::ActorHandle t
     if (!world || !world->GetWorld1() || !self->GetCharController() || !other->GetCharController() ||
         self->GetCharController()->GetHavokWorld() != world || other->GetCharController()->GetHavokWorld() != world)
         return V::kUnavailable;
-    const float scale = RE::bhkWorld::GetWorldScale(), yaw = placement->targetYaw + direction;
+    const float scale = RE::bhkWorld::GetWorldScale(), yaw = HeadingOf(*placement, basis) + direction;
     if (!std::isfinite(scale) || scale <= 0 || !std::isfinite(yaw)) return V::kUnavailable;
     const auto p = placement->positions[role];
     const unsigned segments = static_cast<unsigned>(std::ceil(distance / 25.0f));

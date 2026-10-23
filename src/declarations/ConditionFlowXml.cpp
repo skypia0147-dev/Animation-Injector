@@ -288,14 +288,20 @@ bool Read(XML flow, const std::vector<std::string>& actions, Program& output, st
                         !std::isfinite(predicate.distance) || predicate.distance < 0 ||
                         (predicate.distance == 0 && predicate.test == Test::kSpace) || predicate.distance > 2000)
                         Fail(n, "invalid query distance");
-                    const auto direction = Required(n, "direction");
-                    if (direction == "partnerForward")
+                    // partner* turns from the partner's heading, self* (0.12.280) from the initiator's.
+                    const std::string direction = Required(n, "direction");
+                    const bool self = direction.starts_with("self"), partner = direction.starts_with("partner");
+                    const auto side = direction.substr(self ? 4 : partner ? 7 : 0);
+                    predicate.basis = self ? DirectionBasis::kSelf : DirectionBasis::kPartner;
+                    if ((!self && !partner) || side.empty())
+                        Fail(n, "invalid space direction");
+                    else if (side == "Forward")
                         predicate.direction = 0;
-                    else if (direction == "partnerBack")
+                    else if (side == "Back")
                         predicate.direction = 3.141592654f;
-                    else if (direction == "partnerRight")
+                    else if (side == "Right")
                         predicate.direction = 1.570796327f;
-                    else if (direction == "partnerLeft")
+                    else if (side == "Left")
                         predicate.direction = -1.570796327f;
                     else
                         Fail(n, "invalid space direction");

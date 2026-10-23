@@ -97,6 +97,6 @@ std::optional<Placement> Read(RE::ActorHandle initiator, RE::ActorHandle target,
     if (!plan) return std::nullopt;
     const auto& a = plan->goals[0];
     const auto& b = plan->goals[1];
-    return Placement{{RE::NiPoint3{a.x, a.y, a.z}, RE::NiPoint3{b.x, b.y, b.z}}, b.yaw};
+    return Placement{{RE::NiPoint3{a.x, a.y, a.z}, RE::NiPoint3{b.x, b.y, b.z}}, b.yaw, a.yaw};
 }
 }

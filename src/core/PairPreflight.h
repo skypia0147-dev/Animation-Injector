@@ -10,7 +10,8 @@ std::optional<std::array<PairPlacementMath::Mark, 2>> ReadStartMarks(
 struct Placement {
     // Indexed by initiator/target, not native lead/support order.
     std::array<RE::NiPoint3, 2> positions;
-    float targetYaw = 0;  // The target's heading after the start turns it (0.12.256).
+    float targetYaw = 0;     // The target's heading after the start turns it (0.12.256).
+    float initiatorYaw = 0;  // The initiator's heading on its authored mark (0.12.280).
 };
 // Read resident base bindings under each actor's graph lock. No Queue/Load,
 // animation event, transform write, or retained engine pointer.

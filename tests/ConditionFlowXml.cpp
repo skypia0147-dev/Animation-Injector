@@ -1,6 +1,10 @@
 #include "declarations/ConditionFlowXml.h"
+#include <cmath>
 #include <cstdlib>
+#include <initializer_list>
 #include <iostream>
+#include <string>
+#include <utility>
 using namespace AnimationInjector;
 void Check(bool ok) {
     if (!ok) std::abort();
@@ -52,7 +56,26 @@ int main() {
         R"(<Flow entry="Room"><Test id="Room" kind="space" candidate="Jump" subject="partner" direction="partnerBack" distance="250" pass="Move" fail="Still"/><Play id="Move" action="Jump"/><Play id="Still" action="Idle"/></Flow>)"));
     Check(ConditionFlowXml::Read(doc.document_element(), {"Jump", "Idle"}, program, error));
     Check(program.predicates[0].candidate == 0 && program.predicates[0].distance == 250 &&
-          program.predicates[0].direction > 3.14f);
+          program.predicates[0].direction > 3.14f &&
+          program.predicates[0].basis == ConditionFlowXml::DirectionBasis::kPartner);
+    // 0.12.280: self* directions turn from the initiator's planned heading.
+    for (const auto& [name, angle] : std::initializer_list<std::pair<const char*, float>>{{"selfForward", 0.0f},
+             {"selfBack", 3.141592654f}, {"selfRight", 1.570796327f}, {"selfLeft", -1.570796327f}}) {
+        const auto xml =
+            std::string(R"(<Flow entry="Room"><Test id="Room" kind="space" candidate="Jump" direction=")") + name +
+            R"(" distance="250" pass="Move"/><Play id="Move" action="Jump"/></Flow>)";
+        Check(doc.load_string(xml.c_str()));
+        Check(ConditionFlowXml::Read(doc.document_element(), {"Jump", "Idle"}, program, error));
+        Check(program.predicates[0].basis == ConditionFlowXml::DirectionBasis::kSelf &&
+              std::abs(program.predicates[0].direction - angle) < 1e-6f);
+    }
+    for (const char* bad : {"self", "partner", "selfUp", "Back", "selfback"}) {
+        const auto xml =
+            std::string(R"(<Flow entry="Room"><Test id="Room" kind="space" candidate="Jump" direction=")") + bad +
+            R"(" distance="250" pass="Move"/><Play id="Move" action="Jump"/></Flow>)";
+        Check(doc.load_string(xml.c_str()));
+        Check(!ConditionFlowXml::Read(doc.document_element(), {"Jump", "Idle"}, program, error));
+    }
     Check(doc.load_string(
         R"(<Flow entry="Floor"><Test id="Floor" kind="ground" candidate="Idle" direction="partnerForward" distance="0" maxRise="15" maxDrop="30" maxSlope="35" radius="18" pass="Play"/><Play id="Play" action="Idle"/></Flow>)"));
     Check(ConditionFlowXml::Read(doc.document_element(), {"Jump", "Idle"}, program, error));

@@ -178,13 +178,16 @@ int ResolveFlow(
                     return Value::kUnavailable;
                 const int candidate = IndexOf(spec.flowActions[p.candidate]);
                 const int role = p.subject == ConditionFlowXml::Subject::kSelf ? 0 : 1;
-                const auto value = p.test == Test::kGround ? SpaceProbe::EvaluateGround(actor->GetHandle(), partner,
-                                                                 candidate, role, p.distance, p.direction, p.ground)
-                                                           : SpaceProbe::Evaluate(actor->GetHandle(), partner,
-                                                                 candidate, role, p.distance, p.direction);
-                logger::debug("[SpaceCondition] actor={:08X} flow={} candidate={} subject={} distance={} verdict={}",
+                const auto value = p.test == Test::kGround
+                                       ? SpaceProbe::EvaluateGround(actor->GetHandle(), partner, candidate, role,
+                                             p.distance, p.direction, p.basis, p.ground)
+                                       : SpaceProbe::Evaluate(actor->GetHandle(), partner, candidate, role, p.distance,
+                                             p.direction, p.basis);
+                logger::debug(
+                    "[SpaceCondition] actor={:08X} flow={} candidate={} subject={} basis={} distance={} verdict={}",
                     actor->GetFormID(), spec.id, spec.flowActions[p.candidate],
-                    p.subject == ConditionFlowXml::Subject::kSelf ? "self" : "partner", p.distance,
+                    p.subject == ConditionFlowXml::Subject::kSelf ? "self" : "partner",
+                    p.basis == ConditionFlowXml::DirectionBasis::kSelf ? "self" : "partner", p.distance,
                     value == Value::kTrue    ? "clear"
                     : value == Value::kFalse ? "blocked"
                                              : "unavailable");

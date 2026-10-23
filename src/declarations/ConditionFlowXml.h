@@ -87,6 +87,9 @@ enum class AttackState {
     kBowFollowThrough
 };
 enum class Subject { kSelf, kPartner };
+// Whose heading a space or ground check's direction turns from (0.12.280). kPartner is the old
+// partnerForward/Back/Left/Right; kSelf reads selfForward/Back/Left/Right.
+enum class DirectionBasis { kPartner, kSelf };
 struct Predicate {
     Test test = Test::kAlive;
     bool leftHand = false;
@@ -96,8 +99,9 @@ struct Predicate {
     float minimum = 0;
     int candidate = ConditionFlow::absent;
     float distance = 0;
-    // Relative to the captured partner's heading, before native placement.
+    // Relative to the basis actor's heading on its planned start mark, before native placement.
     float direction = 0;
+    DirectionBasis basis = DirectionBasis::kPartner;
     GroundPolicy::Limits ground;
     std::string plugin;
     std::uint32_t form = 0;
