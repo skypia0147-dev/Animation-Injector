@@ -2,6 +2,7 @@
 #include "Settings.h"
 #include "declarations/XmlV2.h"
 #include "runtime/EventRegistryMerge.h"
+#include "runtime/EventValuesMatch.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -37,8 +38,8 @@ int main() {
         // The registry: names, functions, defaults and an event registered only for the graphs.
         {
             const auto p = Parse(std::string(kAction) + R"(<EventRegistry>
-                <Event name="Grapple_Stom"><Do op="spell" plugin="FH_Grapple.esp" form="0x80B" delay="0.4"/></Event>
-                <Event name="Grapple_CamShake"><Do op="shake" strength="1.5" duration="0.25"/></Event>
+                <Event name="Grapple_Stom"><Do op="spell" plugin="FH_Grapple.esp" form="0x80B"/></Event>
+                <Event name="Grapple_CamShake"><Do op="shake"/></Event>
                 <Event name="MCO_WinOpen"/>
                 <Event name="Hit"><Do op="hide"/><Do op="iframeOn"/></Event>
                 <Event name="Fire"><Do op="fireArrow"/></Event>
@@ -50,13 +51,13 @@ int main() {
                 "name, source and function");
             const auto& spell = stom.functions[0];
             Check(spell.op == EventOp::kSpell && spell.plugin == "FH_Grapple.esp" && spell.form == "80B" &&
-                      std::fabs(spell.delay - 0.4f) < 1e-6f,
+                      spell.delay == 0.0f,
                 "spell settings, form without 0x");
             Check(spell.target == EventTarget::kSender, "an event function changes its sender");
             const auto& shake = p.events[1].functions[0];
             Check(shake.op == EventOp::kShake && shake.target == EventTarget::kSender &&
-                      std::fabs(shake.strength - 1.5f) < 1e-6f && std::fabs(shake.duration - 0.25f) < 1e-6f,
-                "shake with its own strength and duration");
+                      std::fabs(shake.strength - 1.0f) < 1e-6f && std::fabs(shake.duration - 0.5f) < 1e-6f,
+                "a registry shake holds the default numbers");
             Check(p.events[2].name == "MCO_WinOpen" && p.events[2].functions.empty(), "an event without functions");
             Check(p.events[3].functions.size() == 2 && p.events[3].functions[1].op == EventOp::kIFrameOn,
                 "several functions");
@@ -96,7 +97,7 @@ int main() {
             "including clip-time Effect elements");
         Check(Rejected("<Action id='A' clip='a.hkx'><Events extra='X'/></Action>"), "Events extra is gone");
         Check(Rejected("<Action id='A' clip='a.hkx'><FireArrow at='event:Fire'/></Action>"),
-            "an event shot is a registry function");
+            "an event shot is a registry function (its numbers the action's EventValues)");
         Check(Rejected("<Action id='A' clip='a.hkx'><IFrame from='event:On' until='end'/></Action>"),
             "windows open at clip times");
         Check(Rejected("<Action id='A' clip='a.hkx'><HyperArmor from='0.1' until='0.5' untilFallback='end'/></Action>"),
@@ -121,15 +122,15 @@ int main() {
         {
             const auto p = Parse(std::string(kAction) + R"(<EventRegistry>
                 <Event name='Down'><Do op='ragdoll'/></Event>
-                <Event name='Side'><Do op='ragdoll' direction='left' force='7'/></Event>
+                <Event name='Side'><Do op='ragdoll' direction='left'/></Event>
             </EventRegistry>)");
             Check(p.ok, "ragdoll functions parse");
             const auto& down = p.events[0].functions[0];
             Check(down.op == EventOp::kRagdoll && down.direction == RagdollPush::Direction::kDown && down.force < 0,
                 "a ragdoll falls down with the direction's force by default");
             const auto& side = p.events[1].functions[0];
-            Check(side.direction == RagdollPush::Direction::kLeft && std::fabs(side.force - 7) < 1e-6f,
-                "direction and force");
+            Check(
+                side.direction == RagdollPush::Direction::kLeft && side.force < 0, "the registry holds the direction");
             const auto timed = Parse("<Pair id='P' clip='p.hkx'><Effects><Do at='0.67' op='ragdoll' "
                                      "direction='forward' target='receiver'/></Effects></Pair>");
             Check(timed.ok && timed.actions[0].pairFeatures.timed[0].function.op == EventOp::kRagdoll &&
@@ -144,8 +145,102 @@ int main() {
         }
         Check(Rejected("<EventRegistry><Event name='X'><Do op='ragdoll' direction='north'/></Event></EventRegistry>"),
             "a ragdoll's direction is one of six");
-        Check(Rejected("<EventRegistry><Event name='X'><Do op='ragdoll' force='21'/></Event></EventRegistry>"),
+        Check(Rejected("<Action id='A' clip='a.hkx'><EventValues><Event name='X'><Do op='ragdoll' force='21'/></Event>"
+                       "</EventValues></Action>"),
             "a ragdoll's force is at most 20");
+
+        // 0.12.281: the registry holds the events' functions and what they act with; the numbers are the actions'.
+        {
+            for (const char* number : {"delay='0.4'", "strength='1.5'", "duration='1'", "stamina='5'", "factor='0.5'",
+                     "mode='direct'", "force='3'"}) {
+                const auto r = Parse(std::string("<EventRegistry><Event name='X'><Do op='shake' ") + number +
+                                     "/></Event></EventRegistry>");
+                Check(!r.ok && r.error.find("0.12.281") != std::string::npos &&
+                          r.error.find("EventValues") != std::string::npos,
+                    "a number in the registry is refused, naming EventValues");
+            }
+            const auto p = Parse(R"(<Action id='A' clip='a.hkx'><EventValues>
+                <Event name='Fire'><Do op='fireArrow' mode='direct' damage='150'/><Do op='shake' strength='2' delay='0.2'/></Event>
+                <Event name='Throw'><Do op='ragdoll' force='8'/></Event>
+                <Event name='Pay'><Do op='cost' stamina='12'/></Event>
+            </EventValues></Action>
+            <Pair id='P' clip='p.hkx'><EventValues><Event name='Fire'><Do op='spell' delay='0.3'/></Event></EventValues></Pair>
+            <EventRegistry>
+                <Event name='Fire'><Do op='fireArrow'/><Do op='shake'/></Event>
+                <Event name='Throw'><Do op='ragdoll' direction='backward'/></Event>
+                <Event name='Pay'><Do op='cost'/></Event>
+            </EventRegistry>)");
+            Check(p.ok, p.error.c_str());
+            const auto& v = p.actions[0].eventValues;
+            Check(v.size() == 3 && v[0].event == "Fire" && v[0].functions.size() == 2, "an action's values by event");
+            Check(v[0].functions[0].op == EventOp::kFireArrow &&
+                      v[0].functions[0].arrow.mode == FireArrowMode::kDirect &&
+                      std::fabs(v[0].functions[0].arrow.damage - 1.5f) < 1e-6f,
+                "a direct shot's numbers");
+            Check(v[0].functions[1].op == EventOp::kShake && std::fabs(v[0].functions[1].strength - 2) < 1e-6f &&
+                      std::fabs(v[0].functions[1].delay - 0.2f) < 1e-6f,
+                "a shake's numbers and delay");
+            Check(std::fabs(v[1].functions[0].force - 8) < 1e-6f && std::fabs(v[2].functions[0].stamina - 12) < 1e-6f,
+                "a ragdoll's force, a cost");
+            Check(p.actions[1].eventValues.size() == 1 &&
+                      std::fabs(p.actions[1].eventValues[0].functions[0].delay - 0.3f) < 1e-6f,
+                "a pair's values");
+            const auto& reg = p.events;
+            Check(reg[1].functions[0].direction == RagdollPush::Direction::kBackward,
+                "the ragdoll's direction stays registered");
+
+            // A registry function run with an action's numbers keeps what it acts with.
+            EventFunctionSpec registry = reg[1].functions[0];
+            registry.plugin = "a.esp";
+            const auto run = WithValues(registry, v[1].functions[0]);
+            Check(run.op == EventOp::kRagdoll && run.direction == RagdollPush::Direction::kBackward &&
+                      run.plugin == "a.esp" && std::fabs(run.force - 8) < 1e-6f && run.target == EventTarget::kSender,
+                "WithValues: the registry's direction, the action's force");
+            Check(NeedsValues(EventOp::kCost) && NeedsValues(EventOp::kTimeOn) && !NeedsValues(EventOp::kShake) &&
+                      !NeedsValues(EventOp::kSpell),
+                "cost and timeOn run only with an action's numbers");
+        }
+        for (const char* attr : {"plugin='a.esp' form='1'", "direction='up'", "target='player'", "at='0.1'"}) {
+            const auto r =
+                Parse(std::string("<Action id='A' clip='a.hkx'><EventValues><Event name='X'><Do op='ragdoll' ") + attr +
+                      "/></Event></EventValues></Action>");
+            Check(!r.ok && r.error.find("0.12.281") != std::string::npos, "an action's values are numbers only");
+        }
+        Check(
+            Rejected(
+                "<Action id='A' clip='a.hkx'><EventValues><Event name='X'><Do op='cost'/></Event></EventValues></Action>"),
+            "a cost's values give an amount");
+        Check(
+            Rejected(
+                "<Action id='A' clip='a.hkx'><EventValues><Event name='X'><Do op='timeOn'/></Event></EventValues></Action>"),
+            "a time scale's values give a factor");
+        Check(Rejected("<Action id='A' clip='a.hkx'><EventValues><Event name='X'><Do op='hide'/></Event>"
+                       "<Event name='x'><Do op='hide'/></Event></EventValues></Action>"),
+            "one event's values once");
+        Check(Rejected("<Action id='A' clip='a.hkx'><EventValues><Event name='X'/></EventValues></Action>"),
+            "an event's values hold at least one function");
+        Check(Rejected("<Action id='S'><Start key='E'/><Flow entry='t'><Play id='t' action='A'/></Flow>"
+                       "<EventValues><Event name='X'><Do op='hide'/></Event></EventValues></Action>" +
+                       std::string(kAction)),
+            "a selecting action plays no clip: no values");
+        // MatchValues: by op, in order among that op; extras are reported.
+        {
+            auto fn = [](EventOp op, float delay = 0) {
+                EventFunctionSpec f;
+                f.op = op;
+                f.delay = delay;
+                return f;
+            };
+            const std::vector<EventFunctionSpec> registry = {
+                fn(EventOp::kSpell), fn(EventOp::kShake), fn(EventOp::kSpell), fn(EventOp::kHide)};
+            const std::vector<EventFunctionSpec> values = {
+                fn(EventOp::kSpell, 1), fn(EventOp::kSpell, 2), fn(EventOp::kSpell, 3), fn(EventOp::kShake, 4)};
+            std::vector<int> unmatched;
+            const auto m = MatchValues(registry, values, &unmatched);
+            Check(m == std::vector<int>{0, 3, 1, -1}, "each op's values in order, none for the hide");
+            Check(unmatched == std::vector<int>{2}, "the third spell's values have no function");
+            Check(MatchValues(registry, {}) == std::vector<int>(4, -1), "no values: defaults");
+        }
         Check(Rejected("<EventRegistry><Event name='X'><Do op='hide' direction='down'/></Event></EventRegistry>"),
             "direction and force only for a ragdoll");
         {

@@ -242,6 +242,7 @@ struct NativeDirectShot {
     RE::TESAmmo* ammo = nullptr;
     const char* ammoFrom = "none";
     float before = 0.0f, after = 0.0f;
+    float powerBefore = 0.0f;
     std::optional<Aim> aim;
     RE::NiPoint3 origin;
     bool HasBow() {
@@ -285,8 +286,14 @@ struct NativeDirectShot {
         const auto projectile = handle.get();
         if (!projectile) return false;
         auto& data = projectile->GetProjectileRuntimeData();
+        // The arrow's power (its speed and gravity) and its damage come from the player's draw, not from LaunchData:
+        // a shot with no draw left at power 0.35 and dropped in front (seen with BFCO off, whose GMSTs raise the
+        // least power; 0.12.282). Its speed is still zero here and follows the power on its first update; its damage
+        // was set at that power (0.12.283).
+        powerBefore = data.power;
+        if (data.power < 1.0f) data.power = 1.0f;
         before = data.weaponDamage;
-        if (std::isfinite(damage) && damage >= 0.0f) data.weaponDamage *= damage;
+        data.weaponDamage = DirectShotDamage(before, powerBefore, damage);
         after = data.weaponDamage;
         return true;
     }
@@ -313,10 +320,10 @@ void Direct(RE::Actor* actor, float damage, const char* action, float elapsed) {
     static constexpr const char* kResults[] = {"launched", "no bow", "no ammo", "launch failed"};
     // The damage before and after the multiplier: whether the hit follows it is still to be seen in game.
     logger::debug(
-        "[FireArrow] direct action='{}' at={:.3f} result={} ammo={:08X} ({}) damage x{:.2f}: {:.2f} -> {:.2f} "
-        "aim={} from=({:.0f},{:.0f},{:.0f}) to=({:.0f},{:.0f},{:.0f})",
+        "[FireArrow] direct action='{}' at={:.3f} result={} ammo={:08X} ({}) power {:.2f} -> 1 damage {:.2f} at that "
+        "power -> {:.2f} (full draw x{:.2f}) aim={} from=({:.0f},{:.0f},{:.0f}) to=({:.0f},{:.0f},{:.0f})",
         action, elapsed, kResults[static_cast<int>(result)], engine.ammo ? engine.ammo->GetFormID() : 0,
-        engine.ammoFrom, damage, engine.before, engine.after,
+        engine.ammoFrom, engine.powerBefore, engine.before, engine.after, damage,
         engine.aim ? (engine.aim->hit ? "crosshair-hit" : "crosshair-far") : "bow-node", engine.origin.x,
         engine.origin.y, engine.origin.z, engine.aim ? engine.aim->target.x : 0.0f,
         engine.aim ? engine.aim->target.y : 0.0f, engine.aim ? engine.aim->target.z : 0.0f);

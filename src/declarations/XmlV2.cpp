@@ -286,8 +286,27 @@ FireArrowShot fireArrowShot(Node e) {
     }
     return shot;
 }
-// One <Do>: a function of a registered event, or (`timed`, with `at`) of a pair's clip time.
-EventFunctionSpec eventFunction(Node e, bool timed) {
+// Where a <Do> stands (0.12.281): a registered event's function holds what it acts with (op, a spell, a ragdoll's
+// direction); an action's <EventValues> the numbers it runs with there; a clip-time effect both.
+enum class DoUse { kRegistry, kValues, kTimed };
+constexpr std::initializer_list<const char*> kNumbers = {
+    "delay", "stamina", "magicka", "strength", "duration", "factor", "mode", "damage", "force"};
+EventFunctionSpec eventFunction(Node e, DoUse use) {
+    const bool timed = use == DoUse::kTimed;
+    if (use == DoUse::kRegistry)
+        for (const char* n : kNumbers)
+            if (e.attribute(n))
+                fail(e,
+                    std::string(n) +
+                        ": 0.12.281부터 수치는 이 이벤트를 보내는 동작(또는 페어)의 <EventValues>에 씁니다. 등록에는 "
+                        "op와 대상(spell의 plugin·form, ragdoll의 direction)만 씁니다");
+    if (use == DoUse::kValues) {
+        for (const char* n : {"plugin", "form", "direction", "target", "from", "at"})
+            if (e.attribute(n))
+                fail(e, std::string(n) +
+                            ": <EventValues>에는 수치만 씁니다(0.12.281). 마법·래그돌 방향은 이벤트 등록에서 정합니다");
+        shape(e, {"op", "delay", "stamina", "magicka", "strength", "duration", "factor", "mode", "damage", "force"});
+    }
     if (has({"lock", "unlock"}, get(e, "op"))) fail(e, "op=\"lock\"·\"unlock\"(조작 잠금)은 없어졌습니다(0.12.238)");
     // An event's function changes the actor that sent the event (0.12.273): no file used another target or a
     // sender filter, and a player-only function already does nothing for anyone else. A pair's clip-time
@@ -314,9 +333,8 @@ EventFunctionSpec eventFunction(Node e, bool timed) {
     if (timed)
         shape(e, {"at", "op", "target", "plugin", "form", "delay", "stamina", "magicka", "strength", "duration",
                      "factor", "mode", "damage", "direction", "force"});
-    else
-        shape(e, {"op", "plugin", "form", "delay", "stamina", "magicka", "strength", "duration", "factor", "mode",
-                     "damage", "direction", "force"});
+    else if (use == DoUse::kRegistry)
+        shape(e, {"op", "plugin", "form", "direction"});
     const auto op = required(e, "op");
     choice(e, "op",
         {"hide", "show", "spell", "stateOn", "stateOff", "cost", "shake", "stopVelocity", "timeOn", "timeOff",
@@ -331,7 +349,13 @@ EventFunctionSpec eventFunction(Node e, bool timed) {
     choice(e, "direction", {"down", "up", "forward", "backward", "left", "right"});
     num(e, "force", RagdollPush::kMaxForce);
     std::string form = get(e, "form");
-    if (op == "spell" || op == "stateOn" || op == "stateOff") {
+    // An action's values for a cost or a time scale are what those functions run with: they must be given.
+    if (use == DoUse::kValues && op == "cost" && !e.attribute("stamina") && !e.attribute("magicka"))
+        fail(e, "cost에는 stamina 또는 magicka가 필요합니다");
+    if (use == DoUse::kValues && op == "timeOn" && !e.attribute("factor")) fail(e, "timeOn에는 factor가 필요합니다");
+    if (use == DoUse::kValues) {
+        // The registry's spell and ragdoll direction are its own: nothing to read here.
+    } else if (op == "spell" || op == "stateOn" || op == "stateOff") {
         const auto plugin = required(e, "plugin");
         required(e, "form");
         if (plugin.find_first_of("/\\:") != std::string::npos) fail(e, "plugin에는 파일 이름만 지정합니다");
@@ -697,7 +721,7 @@ struct Compiler {
             EventRuleSpec rule;
             rule.name = name;
             rule.source = sourceName;
-            for (auto d : e.children("Do")) rule.functions.push_back(eventFunction(d, false));
+            for (auto d : e.children("Do")) rule.functions.push_back(eventFunction(d, DoUse::kRegistry));
             if (rule.functions.size() > 64) fail(e, "이벤트 하나에 기능은 64개까지입니다");
             std::set<std::string> qteIds;
             for (auto q : e.children("QTE")) rule.qtes.push_back(qte(q, {}, false, qteIds, nullptr));
@@ -705,6 +729,26 @@ struct Compiler {
             out.push_back(std::move(rule));
         }
         if (out.size() > 4096) fail(r, "이벤트 등록은 파일당 4096개까지입니다");
+    }
+    // <EventValues> (0.12.281): the numbers this action's or pair's clip runs registered functions with. Which
+    // registry function each one gives numbers to is matched once every file is read (EventValuesMatch.h).
+    std::vector<EventValuesSpec> eventValues(Node n) {
+        shape(n, {}, {"Event"});
+        std::vector<EventValuesSpec> out;
+        std::set<std::string> names;
+        for (auto e : n.children("Event")) {
+            shape(e, {"name"}, {"Do"});
+            const auto name = required(e, "name");
+            eventName(e, name);
+            if (!names.insert(lower(name)).second) fail(e, "같은 이벤트의 값을 두 번 썼습니다: " + name);
+            EventValuesSpec values;
+            values.event = name;
+            for (auto d : e.children("Do")) values.functions.push_back(eventFunction(d, DoUse::kValues));
+            if (values.functions.empty()) fail(e, "값이 없는 이벤트입니다: <Do op=\"…\" …/>를 쓰세요");
+            if (values.functions.size() > 64) fail(e, "이벤트 하나에 기능은 64개까지입니다");
+            out.push_back(std::move(values));
+        }
+        return out;
     }
     WindowTimes window(Node n, bool link) {
         if (n.attribute("always"))
@@ -743,7 +787,7 @@ struct Compiler {
         for (auto d : n.children("Do")) {
             TimedEffectSpec timed;
             timed.at = static_cast<float>(numeric(d, required(d, "at"), 600));
-            timed.function = eventFunction(d, true);
+            timed.function = eventFunction(d, DoUse::kTimed);
             timed.at = d.attribute("at").as_float(timed.at);
             out.timed.push_back(std::move(timed));
         }
@@ -765,7 +809,7 @@ struct Compiler {
         shape(n, {"id", "clip", "view", "firstPerson"},
             {"Start", "Require", "Attack", "Enter", "Exit", "Rotate", "IFrame", "HyperArmor", "Cost", "Recovery",
                 "Cancel", "Connect", "Advanced", "Target", "OnPartnerLost", "Effects", "Flow", "Carry", "Suppress",
-                "FireArrow", "QTE", "CarryRelease"});
+                "FireArrow", "QTE", "CarryRelease", "EventValues"});
         if (!pair && (n.child("Target") || n.child("OnPartnerLost") || n.child("Carry")))
             fail(n, "액션 종류에 맞지 않는 요소입니다");
         // Only the putdown Action a Carry names; the Carry checks that it has this slot.
@@ -991,6 +1035,7 @@ struct Compiler {
             ReadMoment(time(r, "at", Basis::Seconds), s.carryRelease.event, s.carryRelease.at);
         }
         if (auto r = one(n, "Recovery")) s.recovery = recoveryDeclaration(r);
+        if (auto v = one(n, "EventValues")) s.eventValues = eventValues(v);
         if (pair) s.safetyDuration = 30.0f;  // a pair's clip is long; written values replace it (Advanced)
         // An ordinary action restores the player's camera too (0.12.260) and has clip-time effects on the actor
         // playing it (0.12.274): the ones its own slots do not cover. Third-party interruption stays a pair's.

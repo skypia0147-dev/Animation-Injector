@@ -1,6 +1,8 @@
 #pragma once
 #include "PCH.h"
+#include "runtime/ActionSpec.h"
 #include "runtime/EventRegistrySpec.h"
+#include <span>
 
 // The global event registry (XML <EventRegistry>, format 3 on): event name -> functions, merged from
 // every declaration file. Any actor whose graph sends a registered name runs its functions, in any
@@ -12,7 +14,10 @@ namespace AnimationInjector::EventRegistry {
 // already registered for that event is dropped; the same event and op with other settings is kept
 // and logged as a conflict.
 // A rule without functions only registers its name (a window, QTE or trigger event of an action).
-void Build(const std::vector<EventRuleSpec>& rules);
+// Each action's <EventValues> is resolved here to full functions by event and function index (0.12.281), so an
+// event that arrives does no string work: it runs with the numbers of the action or pair playing on its sender,
+// else the defaults. Unmatched values are logged and dropped.
+void Build(const std::vector<EventRuleSpec>& rules, std::span<const ActionSpec> actions);
 
 // Names to add to the graphs' event tables, so that clip annotations with these names
 // are sent: every registered name. Empty when nothing is registered.

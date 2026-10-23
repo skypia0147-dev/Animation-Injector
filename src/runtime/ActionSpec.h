@@ -175,6 +175,7 @@ struct ActionSpec {
     PairedSpec paired;  // 페어 (V10)
     CarrySpec carry;
     PairFeatureSpec pairFeatures;
+    std::vector<EventValuesSpec> eventValues;  // <EventValues>: numbers for registered events (0.12.281)
     std::vector<ActionLinkSpec> links;
     TriggerSpec trigger;
     ConditionSpec condition;

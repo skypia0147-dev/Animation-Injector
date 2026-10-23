@@ -11,7 +11,7 @@
       <Do op="show"/>
     </Event>
     <Event name="Grapple_CamShake">
-      <Do op="shake" strength="1.5"/>
+      <Do op="shake"/>
     </Event>
     <Event name="Grapple_Stom">
       <Do op="spell" plugin="FH_Grapple.esp" form="80B"/>
@@ -20,10 +20,10 @@
       <Do op="spell" plugin="FH_Grapple.esp" form="80B"/>
     </Event>
     <Event name="Grapple_Bodyfall">
-      <Do op="spell" plugin="FH_Grapple.esp" form="80A" delay="0.4"/>
+      <Do op="spell" plugin="FH_Grapple.esp" form="80A"/>
     </Event>
     <Event name="PIE.$Grapple_Bodyfall">
-      <Do op="spell" plugin="FH_Grapple.esp" form="80A" delay="0.4"/>
+      <Do op="spell" plugin="FH_Grapple.esp" form="80A"/>
     </Event>
     <Event name="Grapple_Ragdoll">
       <Do op="ragdoll" direction="down"/>
@@ -69,6 +69,10 @@
     </Event>
   </EventRegistry>
   <Pair id="GrappleFront" clip="Animations\Grapple\Grapple_Crimson_Front_01.hkx">
+    <EventValues>
+      <Event name="Grapple_CamShake"><Do op="shake" strength="1.5"/></Event>
+      <Event name="Grapple_Bodyfall"><Do op="spell" delay="0.4"/></Event>
+    </EventValues>
     <Start event="Grapple_ContactFront" actor="both" onKeyUp="false" target="combatTarget"/>
     <Require air="allow" cooldown="0"/>
     <Exit at="end-0.05"/>

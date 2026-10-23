@@ -182,6 +182,14 @@ int wmain(int argc, wchar_t** argv) {
             Check(CompleteDirectShot(1.0f, direct) == DirectShotResult::kLaunchFailed && direct.ammo == 3,
                 "a failed launch takes no arrow");
         }
+        // 0.12.283: the engine set the damage at the no-draw power (0.35 in game): the percent is of a full draw's.
+        {
+            auto same = [](float a, float b) { return std::fabs(a - b) < 0.001f; };
+            Check(same(DirectShotDamage(8.32f, 0.35f, 0.5f), 8.32f / 0.35f * 0.5f), "50% of a full draw's damage");
+            Check(same(DirectShotDamage(8.32f, 0.35f, 1.0f), 8.32f / 0.35f), "100%: a full draw's damage");
+            Check(same(DirectShotDamage(20.0f, 1.0f, 1.5f), 30.0f), "already at full power: as launched");
+            Check(same(DirectShotDamage(20.0f, 0.0f, 1.0f), 20.0f), "no power read: as launched");
+        }
         for (auto slot : {"<FireArrow at='0.6' mode='direct'/>", "<FireArrow at='0.6' mode='direct' damage='80'/>",
                  "<FireArrow at='0.6' mode='direct' damage='1000'/>", "<FireArrow mode='drawn'/>"})
             Check(Valid(slot), "valid direct shot");
@@ -220,10 +228,11 @@ int wmain(int argc, wchar_t** argv) {
         pugi::xml_document directDoc;
         Check(directDoc.load_string(R"(<AnimationSet version="4" id="FireDirect">
           <EventRegistry>
-            <Event name="ShotA"><Do op="fireArrow" mode="direct" damage="80"/></Event>
+            <Event name="ShotA"><Do op="fireArrow"/></Event>
             <Event name="ShotB"><Do op="fireArrow"/></Event>
           </EventRegistry>
-          <Action id="Timed" clip="a.hkx"><FireArrow at="0.6" mode="direct" damage="150"/></Action>
+          <Action id="Timed" clip="a.hkx"><FireArrow at="0.6" mode="direct" damage="150"/>
+            <EventValues><Event name="ShotA"><Do op="fireArrow" mode="direct" damage="80"/></Event></EventValues></Action>
           <Action id="Pick"><Start key="E"/><Flow entry="t"><Test id="t" kind="sneaking" subject="self" pass="p"/><Play id="p" action="Timed"/></Flow></Action>
         </AnimationSet>)"),
             "direct fixture XML");
@@ -239,9 +248,11 @@ int wmain(int argc, wchar_t** argv) {
             Check(f.shot.mode == FireArrowMode::kDirect && std::fabs(f.shot.damage - 1.5f) < 0.0001f && !f.onRelease &&
                       std::fabs(f.at - 0.6f) < 0.0001f,
                 "a timed direct shot: percent read as a multiplier, no release shot");
-            Check(rules[0].functions[0].arrow.mode == FireArrowMode::kDirect &&
-                      std::fabs(rules[0].functions[0].arrow.damage - 0.8f) < 0.0001f,
-                "an event's direct shot");
+            // 0.12.281: the event shot's way is the action's: the registry holds a drawn shot by default.
+            Check(rules[0].functions[0].arrow == FireArrowShot{} && direct[0].eventValues.size() == 1 &&
+                      direct[0].eventValues[0].functions[0].arrow.mode == FireArrowMode::kDirect &&
+                      std::fabs(direct[0].eventValues[0].functions[0].arrow.damage - 0.8f) < 0.0001f,
+                "an event's direct shot is the action's");
             Check(rules[1].functions[0].arrow == FireArrowShot{}, "no mode: the drawn shot as before");
             Check(!direct[0].SelectsOnly(), "an action with its own clip plays it");
             // 0.12.269: a selecting action passes the injected-graph start check (it is never injected).

@@ -52,6 +52,14 @@ inline RE::NiPoint3 AimRayStart(const RE::NiPoint3& eye, const RE::NiPoint3& for
     return {eye.x + forward.x * t, eye.y + forward.y * t, eye.z + forward.z * t};
 }
 
+// A direct shot's damage (0.12.283): the engine sets an arrow's damage, like its power, from the player's draw (seen
+// in game: power 0.35 and a third of a full draw's damage for a shot with no draw). A full draw's damage is the
+// launched damage over that power; `multiplier` (the damage percent / 100) scales it.
+inline float DirectShotDamage(float launched, float power, float multiplier) {
+    const float full = power > 0.0f && power < 1.0f ? launched / power : launched;
+    return std::isfinite(multiplier) && multiplier >= 0.0f ? full * multiplier : full;
+}
+
 // A direct shot (FireArrowMode::kDirect, 0.12.268): no draw. The engine launches the equipped arrow from the
 // equipped bow at full power with its damage scaled; one arrow is taken unless god mode keeps them, as a shot does.
 enum class DirectShotResult : std::uint8_t { kLaunched, kNoBow, kNoAmmo, kLaunchFailed };

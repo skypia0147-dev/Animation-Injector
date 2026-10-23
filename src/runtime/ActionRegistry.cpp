@@ -326,7 +326,7 @@ void Publish() {
     g_fireArrowActions = std::move(d.fireArrowActions);
     g_incomingLinks = std::move(d.incomingLinks);
     EventSuppression::Load(g_specs);
-    EventRegistry::Build(d.events);
+    EventRegistry::Build(d.events, g_specs);
     logger::info("[InjectProfile] declaration catalog actions={} files={} events={} distinct={} buildMs={:.3f}",
         g_specs.size(), g_catalog.files.size(), g_catalog.events.size(), g_catalog.uniqueEvents.size(), d.catalogMs);
     logger::info("[Actions] 액션 {}개 로드 (background loadMs={:.1f}, first reader waited {:.1f} ms on thread {})",

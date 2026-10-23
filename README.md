@@ -1,6 +1,6 @@
 # Animation Injector
 
-**버전 0.12.280** · [English](README_EN.md)
+**버전 0.12.285** · [English](README_EN.md)
 
 XML 선언과 HKX 파일만으로 Skyrim에 일반 동작과 두 사람이 하는 페어 동작을 추가하는 SKSE 프레임워크입니다. 동작을 추가할 때 Nemesis·Pandora를 다시 실행할 필요가 없습니다. 다른 모드가 요구하는 비헤이비어 패치는 그대로 유지하세요.
 
@@ -70,7 +70,8 @@ HKX 위치: `Data/meshes/actors/character/` 아래 (`clip`은 이 폴더 기준 
 - 무기를 뽑았을 때만 시작하게 하는 검사는 위처럼 조건 분기(`Flow`)에 둡니다. `<Require>`는 `air`·`cooldown`만 받습니다(0.12.276). 예전 XML의 `weapon`·`blockWhileAttacking`·`stamina`는 `python tools/require_to_flow.py --write <xml>`이 조건 분기로 옮깁니다.
 - 시점을 이벤트(`event:이름`)로 두면 그 이벤트가 올 때만 동작합니다. 「안 오면 n초」(`fallback`)는 없어졌습니다(0.12.278).
 - 공간·지면 확보(`kind="space"`·`"ground"`)의 `direction`에 본인 기준 `selfForward|selfBack|selfLeft|selfRight`가 생겼습니다. 본인이 그 페어의 시작 자리에 섰을 때 바라보는 방향이 기준입니다(0.12.280). 예전 `partner*`(상대 기준)도 그대로 읽습니다.
-- 래그돌은 `<Do op="ragdoll" direction="down|up|forward|backward|left|right" force="0~20"/>`입니다. 페어 중이면 그 액터의 페어 물리 고정을 먼저 풀고 래그돌 뒤 기상을 지켜봅니다(0.12.278, 예전 `releasePhysics`는 거부).
+- 이벤트 등록의 `<Do>`에는 기능과 그 대상만 씁니다: `op`, 마법의 `plugin`·`form`, 래그돌의 `direction`. 수치(`delay`, `mode`·`damage`, `strength`·`duration`, `stamina`·`magicka`, `factor`, `force`)는 그 이벤트를 보내는 동작이나 페어의 `<EventValues><Event name="이름"><Do op="…" …/></Event></EventValues>`에 씁니다. 이벤트가 오면 보낸 액터가 재생 중인 동작의 수치로 실행하고, 없으면 기본값으로 실행합니다. `cost`·`timeOn`은 동작의 수치가 있을 때만 실행합니다(0.12.281). 같은 이벤트의 같은 op끼리 순서대로 짝짓습니다.
+- 래그돌은 등록에 `<Do op="ragdoll" direction="down|up|forward|backward|left|right"/>`, 힘은 동작의 `<EventValues>`에 `force="0~20"`입니다. 페어 중이면 그 액터의 페어 물리 고정을 먼저 풀고 래그돌 뒤 기상을 지켜봅니다(0.12.278, 예전 `releasePhysics`는 거부).
 - 루트는 `<AnimationSet version="4">`만 읽습니다. 다른 형식의 파일은 로그에 이유를 남기고 파일 전체를 건너뜁니다.
 - 파일 하나는 전부 읽히거나 전부 건너뜁니다. 오류가 하나라도 있으면 그 파일의 동작은 하나도 등록되지 않습니다.
 - HKX 경로의 파일·폴더 이름은 ASCII 영문·숫자·일반 기호만 쓸 수 있습니다(한글 불가).

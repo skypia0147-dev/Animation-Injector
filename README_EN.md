@@ -1,6 +1,6 @@
 # Animation Injector
 
-**Version 0.12.280** · [한국어](README.md)
+**Version 0.12.285** · [한국어](README.md)
 
 An SKSE framework that adds ordinary and two-person paired animations to Skyrim through XML declarations and HKX files alone. Adding actions does not require re-running Nemesis or Pandora. Keep the behavior patches your other mods require.
 
@@ -70,7 +70,8 @@ HKX location: under `Data/meshes/actors/character/` (`clip` is a path relative t
 - A check such as "only with a drawn weapon" goes in a branch (`Flow`), as above. `<Require>` takes `air` and `cooldown` only (0.12.276). `python tools/require_to_flow.py --write <xml>` moves an older file's `weapon`, `blockWhileAttacking` and `stamina` into a branch.
 - A moment set to an event (`event:Name`) acts only when that event comes. The "if it does not come by n seconds" `fallback` is gone (0.12.278).
 - Room and ground checks (`kind="space"`, `"ground"`) take a `direction` of `selfForward|selfBack|selfLeft|selfRight`, turned from the heading the actor will have on its start mark in that pair (0.12.280). The older `partner*` directions are still read.
-- A ragdoll is `<Do op="ragdoll" direction="down|up|forward|backward|left|right" force="0~20"/>`. During a pair it first frees that actor from the pair's physics hold and watches its get-up after the ragdoll (0.12.278; the old `releasePhysics` is refused).
+- An event registry `<Do>` names the function and what it acts with only: `op`, a spell's `plugin` and `form`, a ragdoll's `direction`. The numbers (`delay`, `mode`/`damage`, `strength`/`duration`, `stamina`/`magicka`, `factor`, `force`) go in `<EventValues><Event name="Name"><Do op="…" …/></Event></EventValues>` of each action or pair whose clip sends the event. When the event comes, its functions run with the numbers of the action playing on the sender, else the defaults; `cost` and `timeOn` run only with an action's numbers (0.12.281). Values pair with the event's functions of the same op, in order.
+- A ragdoll is `<Do op="ragdoll" direction="down|up|forward|backward|left|right"/>` in the registry, its force `force="0~20"` in an action's `<EventValues>`. During a pair it first frees that actor from the pair's physics hold and watches its get-up after the ragdoll (0.12.278; the old `releasePhysics` is refused).
 - Only a `<AnimationSet version="4">` root is read. A file in any other format is skipped whole, with the reason in the log.
 - A file loads completely or not at all: a single error keeps every action in it from registering.
 - File and folder names in HKX paths must be ASCII letters, digits and common symbols (no non-ASCII characters).

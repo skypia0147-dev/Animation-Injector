@@ -45,7 +45,9 @@ enum class EventOp : std::uint8_t {
 // kPlayer the player's role. An ordinary action's clip-time effect changes the actor playing it.
 enum class EventTarget : std::uint8_t { kSender, kBoth, kPlayer, kInitiator, kReceiver };
 
-// One <Do>. Settings an op does not read stay at their defaults.
+// One <Do>. Settings an op does not read stay at their defaults. A registry function holds what it acts with
+// (a spell's plugin and form, a ragdoll's direction); the numbers it runs with come from the <EventValues> of the
+// action or pair playing on the sender, else its defaults (0.12.281).
 struct EventFunctionSpec {
     EventOp op = EventOp::kSpell;
     // A registry function always changes the event's sender (0.12.273); only a pair's clip-time effect sets a
@@ -60,6 +62,27 @@ struct EventFunctionSpec {
     float factor = 1.0f;                     // kTimeOn
     FireArrowShot arrow;                     // kFireArrow: drawn or direct, the direct shot's damage
     bool operator==(const EventFunctionSpec&) const = default;
+};
+
+// Ops that run only with an action's numbers (0.12.281): skipped, and logged, when the sender's action gives none.
+constexpr bool NeedsValues(EventOp op) { return op == EventOp::kCost || op == EventOp::kTimeOn; }
+
+// `registry` (op, target, plugin, form, direction) run with `values`' delay and numbers.
+inline EventFunctionSpec WithValues(const EventFunctionSpec& registry, const EventFunctionSpec& values) {
+    EventFunctionSpec out = values;
+    out.op = registry.op;
+    out.target = registry.target;
+    out.plugin = registry.plugin;
+    out.form = registry.form;
+    out.direction = registry.direction;
+    return out;
+}
+
+// One <Event> of an action's or pair's <EventValues> (0.12.281): the numbers the registry's functions of `event`
+// take while it plays on the actor sending the event.
+struct EventValuesSpec {
+    std::string event;
+    std::vector<EventFunctionSpec> functions;  // op, delay and numbers only
 };
 
 // One <Event>: a name and its functions. No functions: the name is only registered in the graphs
