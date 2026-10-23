@@ -182,8 +182,6 @@ void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor,
     case EventOp::kSpell:
         if (auto* spell = SpellOf(f))
             if (auto* caster = actor->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant)) {
-                // A pair holds its actors out of physics; a ragdoll spell needs them back first.
-                if (f.releasePhysics) PairFeatures::ReleasePhysics(handle);
                 caster->CastSpellImmediate(spell, false, actor, 1.0f, false, 0.0f, actor);
             }
         break;
@@ -266,6 +264,18 @@ void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor,
             FireArrow::Direct(actor, f.arrow.damage, context.origin, 0.0f);
         else
             FireArrow::Release(actor, FireArrow::CurrentDraw(), context.origin, 0.0f);
+        break;
+    case EventOp::kRagdoll:
+        if (actor->IsDead() || actor->IsOnMount() || !actor->Is3DLoaded()) break;
+        if (auto* process = actor->GetActorRuntimeData().currentProcess) {
+            // A pair holds its actors out of physics: this role leaves it first, and the pair's end then
+            // reconciles its flags and watches its get-up (no-op outside a pair).
+            PairFeatures::ReleasePhysics(handle);
+            const auto at = actor->GetPosition();
+            const auto point = RagdollPush::PushPoint(f.direction, at.x, at.y, at.z, actor->GetAngleZ());
+            process->KnockExplosion(
+                actor, RE::NiPoint3(point.x, point.y, point.z), RagdollPush::ForceOf(f.direction, f.force));
+        }
         break;
     }
     logger::debug("[EventEffects] '{}' op={} actor={:08X} scope={}", context.origin, static_cast<int>(f.op),

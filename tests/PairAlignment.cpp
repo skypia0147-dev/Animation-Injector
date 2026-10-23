@@ -243,6 +243,10 @@ int main() {
         Solve({Pose{20695.80f, -45904.53f, -138.81f, 4.02105f}, Pose{20660.63f, -45929.64f, -140.02f, -2.0208f}},
             leader, support);
     Check(p.has_value(), "reported second pickup has valid shared plan");
+    // 0.12.279: the start blend puts back a snapped role turned more than about a degree (pair #6: -0.45659).
+    Check(HeadingDrifted(-.45659f) && HeadingDrifted(.021f) && HeadingDrifted(-.021f), "a turned heading is restored");
+    Check(!HeadingDrifted(.0f) && !HeadingDrifted(.02f) && !HeadingDrifted(-.019f), "a heading within slack stays");
+    Check(!HeadingDrifted(std::numeric_limits<float>::quiet_NaN()), "an unreadable heading is left alone");
     for (unsigned i = 0; i < 2; ++i)
         std::cout << "reported role=" << i << " goal=" << p->goals[i].x << ',' << p->goals[i].y << ',' << p->goals[i].z
                   << " yaw=" << p->goals[i].yaw << '\n';

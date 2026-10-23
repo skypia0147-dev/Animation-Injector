@@ -15,7 +15,7 @@
   </Action>
   <Action id="BowDodgeLeft" clip="Animations\DynamicDodgeShot\BowDodgeLeft.hkx">
     <Require cooldown="0.2"/>
-    <Recovery at="event:MoveReady" fallback="0.7" blend="0.25"/>
+    <Recovery at="event:MoveReady" blend="0.25"/>
     <Exit blend="0.3"/>
     <Advanced safety="2.5"/>
     <Connect to="BowDodgeRight" key="Mouse2"/>

@@ -26,46 +26,46 @@
       <Do op="spell" plugin="FH_Grapple.esp" form="80A" delay="0.4"/>
     </Event>
     <Event name="Grapple_Ragdoll">
-      <Do op="spell" plugin="FH_Grapple.esp" form="806" releasePhysics="true"/>
+      <Do op="ragdoll" direction="down"/>
     </Event>
     <Event name="PIE.$Grapple_Ragdoll">
-      <Do op="spell" plugin="FH_Grapple.esp" form="806" releasePhysics="true"/>
+      <Do op="ragdoll" direction="down"/>
     </Event>
     <Event name="Grapple_Ragdoll_Down">
-      <Do op="spell" plugin="FH_Grapple.esp" form="806" releasePhysics="true"/>
+      <Do op="ragdoll" direction="down"/>
     </Event>
     <Event name="PIE.$Grapple_Ragdoll_Down">
-      <Do op="spell" plugin="FH_Grapple.esp" form="806" releasePhysics="true"/>
+      <Do op="ragdoll" direction="down"/>
     </Event>
     <Event name="Grapple_Ragdoll_Up">
-      <Do op="spell" plugin="FH_Grapple.esp" form="813" releasePhysics="true"/>
+      <Do op="ragdoll" direction="up"/>
     </Event>
     <Event name="PIE.$Grapple_Ragdoll_Up">
-      <Do op="spell" plugin="FH_Grapple.esp" form="813" releasePhysics="true"/>
+      <Do op="ragdoll" direction="up"/>
     </Event>
     <Event name="Grapple_Ragdoll_Forward">
-      <Do op="spell" plugin="FH_Grapple.esp" form="815" releasePhysics="true"/>
+      <Do op="ragdoll" direction="forward"/>
     </Event>
     <Event name="PIE.$Grapple_Ragdoll_Forward">
-      <Do op="spell" plugin="FH_Grapple.esp" form="815" releasePhysics="true"/>
+      <Do op="ragdoll" direction="forward"/>
     </Event>
     <Event name="Grapple_Ragdoll_Backward">
-      <Do op="spell" plugin="FH_Grapple.esp" form="817" releasePhysics="true"/>
+      <Do op="ragdoll" direction="backward"/>
     </Event>
     <Event name="PIE.$Grapple_Ragdoll_Backward">
-      <Do op="spell" plugin="FH_Grapple.esp" form="817" releasePhysics="true"/>
+      <Do op="ragdoll" direction="backward"/>
     </Event>
     <Event name="Grapple_Ragdoll_Left">
-      <Do op="spell" plugin="FH_Grapple.esp" form="819" releasePhysics="true"/>
+      <Do op="ragdoll" direction="left"/>
     </Event>
     <Event name="PIE.$Grapple_Ragdoll_Left">
-      <Do op="spell" plugin="FH_Grapple.esp" form="819" releasePhysics="true"/>
+      <Do op="ragdoll" direction="left"/>
     </Event>
     <Event name="Grapple_Ragdoll_Right">
-      <Do op="spell" plugin="FH_Grapple.esp" form="81B" releasePhysics="true"/>
+      <Do op="ragdoll" direction="right"/>
     </Event>
     <Event name="PIE.$Grapple_Ragdoll_Right">
-      <Do op="spell" plugin="FH_Grapple.esp" form="81B" releasePhysics="true"/>
+      <Do op="ragdoll" direction="right"/>
     </Event>
   </EventRegistry>
   <Pair id="GrappleFront" clip="Animations\Grapple\Grapple_Crimson_Front_01.hkx">

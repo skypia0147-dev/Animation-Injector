@@ -1,6 +1,6 @@
 # Animation Injector
 
-**Version 0.12.277** · [한국어](README.md)
+**Version 0.12.279** · [한국어](README.md)
 
 An SKSE framework that adds ordinary and two-person paired animations to Skyrim through XML declarations and HKX files alone. Adding actions does not require re-running Nemesis or Pandora. Keep the behavior patches your other mods require.
 
@@ -30,7 +30,7 @@ If you edited the INI, move your values over before overwriting it with an updat
 | Area | What it does |
 |---|---|
 | Start | Keyboard key names or scan codes, gamepad button names, animation events. Player and NPCs |
-| Ordinary actions | Enter/exit blends, Recovery (break out with movement input), Cancel (break out into a vanilla action), Connect (chain into the next action), start limits (ground/air, cooldown), clip-time functions (hide/show weapons, spells, states, camera shake, stop velocity, time scale) |
+| Ordinary actions | Enter/exit blends, Recovery (break out with movement input), Cancel (break out into a vanilla action), Connect (chain into the next action), start limits (ground/air, cooldown), clip-time functions (hide/show weapons, spells, states, ragdoll, camera shake, stop velocity, time scale) |
 | Slots | Rotation, invulnerability (IFrame), stagger resistance (HyperArmor), stamina/magicka cost, attack data |
 | Branching | `Flow` picks the action to play by movement direction, weapon, attack state, stamina, airborne, lying side, equipment, race, sex, chance and more |
 | Movement | Moves as the HKX's AMR annotations (`animmotion`, `animrotation`) say |
@@ -56,7 +56,7 @@ HKX location: under `Data/meshes/actors/character/` (`clip` is a path relative t
       <Test id="Weapon" kind="weaponDrawn" subject="self" pass="Play"/>
       <Play id="Play" action="Slash1"/>
     </Flow>
-    <Recovery at="event:MyMod_Recovery" fallback="0.9" blend="0.15"/>
+    <Recovery at="event:MyMod_Recovery" blend="0.15"/>
     <IFrame from="0.1" until="0.4"/>
     <Connect to="Slash2" key="G" gamepad="RB"><Window from="0.45"/></Connect>
     <Cancel to="vanilla:Block"/>
@@ -68,6 +68,8 @@ HKX location: under `Data/meshes/actors/character/` (`clip` is a path relative t
 ```
 
 - A check such as "only with a drawn weapon" goes in a branch (`Flow`), as above. `<Require>` takes `air` and `cooldown` only (0.12.276). `python tools/require_to_flow.py --write <xml>` moves an older file's `weapon`, `blockWhileAttacking` and `stamina` into a branch.
+- A moment set to an event (`event:Name`) acts only when that event comes. The "if it does not come by n seconds" `fallback` is gone (0.12.278).
+- A ragdoll is `<Do op="ragdoll" direction="down|up|forward|backward|left|right" force="0~20"/>`. During a pair it first frees that actor from the pair's physics hold and watches its get-up after the ragdoll (0.12.278; the old `releasePhysics` is refused).
 - Only a `<AnimationSet version="4">` root is read. A file in any other format is skipped whole, with the reason in the log.
 - A file loads completely or not at all: a single error keeps every action in it from registering.
 - File and folder names in HKX paths must be ASCII letters, digits and common symbols (no non-ASCII characters).

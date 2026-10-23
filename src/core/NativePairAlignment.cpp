@@ -56,6 +56,7 @@ struct Blend {
     unsigned traceSamples = 0;
     std::optional<Carry::NativeStartBridge> carryBridge;
     const char* placement = "shared";
+    unsigned headingRestores = 0;
 };
 // Traced starts (docs/진단-페어시작-순간이동-0.12.161.md): each visible root equalled its actor
 // position in every frame, so the root layer written in Update does not reach the rendered frame and
@@ -326,6 +327,20 @@ void Place(Role& role, Pose pose) {
         role.controller->SetPositionImpl({pose.x * scale, pose.y * scale, pose.z * scale, 0}, true, true);
     // No gravity, simulation flags, AI package, movement vector or input locks.
     if (actor->IsPlayerRef()) KeepCameraYaw(turn);
+}
+// The snapped role keeps its goal heading through the start blend (0.12.279): a turn something else put on it
+// (TDM before its yaw lease is granted, or a mod without such an API) is undone, position untouched. A player's
+// camera stays where it is, as at the placement.
+bool HoldHeading(Role& role) {
+    auto actor = role.actor.get();
+    if (!Same(role, actor.get()) || actor->GetCharController() != role.controller.get()) return false;
+    const float off = PairAlignmentMath::Wrap(actor->GetAngleZ() - role.goal.yaw);
+    if (!PairAlignmentMath::HeadingDrifted(off)) return false;
+    auto angle = actor->GetAngle();
+    angle.z = role.goal.yaw < 0 ? role.goal.yaw + 2 * PairAlignmentMath::pi : role.goal.yaw;
+    actor->SetAngle(angle);
+    if (actor->IsPlayerRef()) KeepCameraYaw(-off);
+    return true;
 }
 void CaptureCarryBridge(Blend& pending) {
     Carry::NativeStartBridge bridge;
@@ -719,9 +734,10 @@ void Update(float delta) {
         const float weight = blend.clock.Weight(true, blend.roles[0].observation.time, blend.roles[1].observation.time);
         const auto finish = [&](const char* why) {
             logger::debug(
-                "[NativePairAlign] close scene={:X} reason={} age={:.3f} clip={:.3f}/{:.3f} weight={:.3f} activated={} realign={}",
+                "[NativePairAlign] close scene={:X} reason={} age={:.3f} clip={:.3f}/{:.3f} weight={:.3f} activated={} realign={} headingRestores={}",
                 blend.activation->nativeScene, why, blend.age, blend.roles[0].observation.time,
-                blend.roles[1].observation.time, weight, blend.activation->applied.load(), blend.activation->realign);
+                blend.roles[1].observation.time, weight, blend.activation->applied.load(), blend.activation->realign,
+                blend.headingRestores);
             Close(blend, true);
             it = blends.erase(it);
         };
@@ -740,6 +756,17 @@ void Update(float delta) {
         if (!valid || weight >= 1) {
             finish(valid ? "blend-complete" : reason);
             continue;
+        }
+        // Only the snapped role (the attacker): the engine turns the pivot (the victim) smoothly itself.
+        if (const auto pivot = PivotRole(blend);
+            pivot && blend.activation && blend.activation->applied.load() && blend.activation->realign) {
+            auto& role = blend.roles[1 - *pivot];
+            const auto actor = role.actor.get();
+            const float before = actor ? PairAlignmentMath::Wrap(actor->GetAngleZ() - role.goal.yaw) : 0.0f;
+            if (HoldHeading(role) && blend.headingRestores++ == 0)
+                logger::info(
+                    "[NativePairAlign] heading restored scene={:X} role={} actor={:08X} yawError={:.5f} age={:.3f}",
+                    blend.activation->nativeScene, 1 - *pivot, actor->GetFormID(), before, blend.age);
         }
         std::array<RE::NiTransform, 2> locals;
         for (unsigned i = 0; i < 2; ++i) {

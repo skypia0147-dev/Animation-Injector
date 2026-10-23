@@ -2,7 +2,7 @@
 #include <cmath>
 
 namespace AnimationInjector::GetUpRecovery {
-// A releasePhysics pair effect ragdolls a role while that role's graph is still inside the
+// A ragdoll function (0.12.278) ragdolls a role while that role's graph is still inside the
 // paired state; the graph reaches FullyRagdoll about 0.2 s later. The engine requests the
 // get-up once, when the ragdoll comes to rest (knock state kQueued): it sends GetUpBegin, and
 // only FullyRagdoll consumes it (TurnOnMatchingRagdoll arms the 0.5 s GetUpTimerMod, whose

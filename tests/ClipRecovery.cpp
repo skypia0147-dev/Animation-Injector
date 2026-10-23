@@ -23,11 +23,10 @@ int wmain(int argc, wchar_t** argv) {
         const auto* right = Find(specs, "BowDodgeRight");
         Check(back && left && right, "actions found by id");
         for (const auto* s : {back, left, right}) Check(s->clips.size() == 1 && s->HasRecovery(), "one clip, recovery");
-        Check(Near(back->recovery.fallback, 0.3f) && Near(back->recovery.blend, 0.1f), "back timing and blend");
-        Check(left->recovery.event == "MoveReady" && Near(left->recovery.fallback, 0.7f) &&
-                  Near(left->recovery.blend, 0.25f),
-            "left annotation and fallback");
-        Check(Near(right->recovery.fallback, 1.1f) && Near(right->recovery.blend, 0.4f), "right timing and blend");
+        Check(Near(back->recovery.at, 0.3f) && Near(back->recovery.blend, 0.1f), "back timing and blend");
+        Check(left->recovery.event == "MoveReady" && left->recovery.at < 0 && Near(left->recovery.blend, 0.25f),
+            "left annotation only");
+        Check(Near(right->recovery.at, 1.1f) && Near(right->recovery.blend, 0.4f), "right timing and blend");
         Check(back->recovery.recoverEvent != left->recovery.recoverEvent &&
                   left->recovery.recoverEvent != right->recovery.recoverEvent,
             "each action has its own exit event");

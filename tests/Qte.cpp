@@ -289,8 +289,7 @@ int main(int argc, char** argv) {
                     Check(q.type == QteType::SplitArc && q.speed == 4 && q.control == "rightAttack" &&
                               q.replaceActive && q.feedback == .3f && q.delay == .3f,
                         "A4 common settings survive runtime loader");
-                    Check(q.at < 0 && q.fallback < 0 && q.stopEvent == "Grapple_Stage_Stop" &&
-                              q.inputOwner == q.eventSource,
+                    Check(q.at < 0 && q.stopEvent == "Grapple_Stage_Stop" && q.inputOwner == q.eventSource,
                         "event-only player role and explicit stop survive");
                     Check(q.results[stage <= 3 ? 1 : 0].event == event &&
                               q.results[stage <= 3 ? 1 : 0].recipient == "self" &&

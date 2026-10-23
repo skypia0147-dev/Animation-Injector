@@ -20,7 +20,7 @@
 // One pass from the AnimationSet document (format 4) to runtime
 // declarations: every element is
 // validated and then read into its ActionSpec fields. Times keep their textual forms ("@seconds",
-// "@end-seconds", "event|@fallback") between the two steps so that numbers convert exactly as the
+// "@end-seconds", "event") between the two steps so that numbers convert exactly as the
 // declaration loader always has (strtof and pugixml's as_float on the author's text).
 namespace AnimationInjector::XmlV2 {
 namespace {
@@ -36,6 +36,11 @@ std::string lower(std::string value) {
     throw std::runtime_error(n.path() + (n.attribute("id") ? " [" + get(n, "id") + "]" : "") + ": " + reason);
 }
 void shape(Node n, Names attrs, Names children = {}) {
+    // 0.12.278: an event moment waits for its event only; "if it does not come by" is gone.
+    for (auto gone : {"fallback", "fromFallback", "untilFallback"})
+        if (n.attribute(gone))
+            fail(n, std::string(gone) +
+                        "(이벤트가 안 오면)는 없어졌습니다(0.12.278): 이벤트로 두면 그 이벤트가 올 때만 동작합니다");
     for (auto a : n.attributes())
         if (!has(attrs, a.name())) fail(n, "알 수 없는 속성 '" + std::string(a.name()) + "'");
     for (auto c : n.children()) {
@@ -155,24 +160,6 @@ bool ParseAt(const char* text, float& time, bool& relativeToEnd) {
     time = std::strtof(t, nullptr);
     return true;
 }
-// "value" or "value|fallback".
-void SplitFallback(const std::string& text, std::string& main, std::string& fallback) {
-    main.clear();
-    fallback.clear();
-    const auto bar = text.find('|');
-    if (bar == std::string::npos) {
-        main = text;
-        return;
-    }
-    main = text.substr(0, bar);
-    fallback = text.substr(bar + 1);
-    auto trim = [](std::string& x) {
-        while (!x.empty() && x.back() == ' ') x.pop_back();
-        while (!x.empty() && x.front() == ' ') x.erase(0, 1);
-    };
-    trim(main);
-    trim(fallback);
-}
 std::vector<std::string> Split(const std::string& text) {
     std::vector<std::string> out;
     std::string current;
@@ -202,41 +189,29 @@ std::string VanillaMatch(const std::string& alias) {
     if (_strnicmp(alias.c_str(), "event:", 6) == 0) return alias.substr(6);
     return "";
 }
-// A seconds time read as a clock time or an event (+ fallback seconds): Recovery, QTE, FireArrow,
-// CarryRelease.
-void ReadMoment(const std::string& text, std::string& event, float& at, float& fallback) {
-    std::string main, fb;
-    SplitFallback(text, main, fb);
+// A seconds time read as a clock time or an event: Recovery, QTE, FireArrow, Cost, CarryRelease.
+void ReadMoment(const std::string& text, std::string& event, float& at) {
     float t;
     bool relative;
-    if (ParseAt(main.c_str(), t, relative)) {
+    if (ParseAt(text.c_str(), t, relative)) {
         if (!relative) at = t;
-    } else {
-        event = main;
-        if (ParseAt(fb.c_str(), t, relative) && !relative) fallback = t;
-    }
+    } else
+        event = text;
 }
 // On/off slot (Rotate, IFrame, HyperArmor).
 void ReadSlot(SlotWindow& w, const std::string& on, const std::string& off) {
     w.enabled = true;
     float t;
     bool relative;
-    std::string main, fb;
-    SplitFallback(on, main, fb);
-    if (ParseAt(main.c_str(), t, relative)) {
+    if (ParseAt(on.c_str(), t, relative)) {
         if (!relative) w.onAt = t;
-    } else {
-        w.onEvent = main;
-        if (ParseAt(fb.c_str(), t, relative) && !relative) w.onFallback = t;
-    }
-    SplitFallback(off, main, fb);
-    if (ParseAt(main.c_str(), t, relative)) {
+    } else
+        w.onEvent = on;
+    if (ParseAt(off.c_str(), t, relative)) {
         w.offAt = t;
         w.offRel = relative;
-    } else {
-        w.offEvent = main;
-        if (ParseAt(fb.c_str(), t, relative) && relative) w.offFallback = t;
-    }
+    } else
+        w.offEvent = off;
 }
 // A clip moves only by its HKX's AMR annotations ("animmotion"/"animrotation", 0.12.231): a declaration no
 // longer moves the actor, holds it in place, or picks a clip by the movement input.
@@ -264,8 +239,7 @@ std::string clock(Node n, const std::string& s, Basis basis) {
     }
     return "@" + s;
 }
-std::string time(
-    Node n, const char* name, const char* fallback, Basis basis, Basis fallbackBasis, const char* def = nullptr) {
+std::string time(Node n, const char* name, Basis basis, const char* def = nullptr) {
     const auto s = def ? get(n, name, def) : required(n, name);
     const bool event = s.starts_with("event:");
     std::string out;
@@ -274,10 +248,6 @@ std::string time(
         eventName(n, out);
     } else
         out = clock(n, s, basis);
-    if (n.attribute(fallback)) {
-        if (!event) fail(n, "대체 시각은 이벤트와 함께만 사용할 수 있습니다");
-        out += "|" + clock(n, required(n, fallback), fallbackBasis);
-    }
     return out;
 }
 // A clip time in seconds (or from the end where `basis` allows), never an event: an event moment of a
@@ -300,7 +270,7 @@ const std::pair<std::string_view, EventOp> kOps[] = {{"hide", EventOp::kHide}, {
     {"timeOn", EventOp::kTimeOn}, {"timeOff", EventOp::kTimeOff}, {"iframeOn", EventOp::kIFrameOn},
     {"iframeOff", EventOp::kIFrameOff}, {"armorOn", EventOp::kArmorOn}, {"armorOff", EventOp::kArmorOff},
     {"rotateOn", EventOp::kRotateOn}, {"rotateOff", EventOp::kRotateOff}, {"cancel", EventOp::kCancel},
-    {"fireArrow", EventOp::kFireArrow}};
+    {"fireArrow", EventOp::kFireArrow}, {"ragdoll", EventOp::kRagdoll}};
 const std::pair<std::string_view, EventTarget> kTargets[] = {{"both", EventTarget::kBoth},
     {"player", EventTarget::kPlayer}, {"initiator", EventTarget::kInitiator}, {"receiver", EventTarget::kReceiver}};
 // How a shot leaves the bow (0.12.268): mode "drawn" (default) releases the drawn bow as the player would;
@@ -338,16 +308,19 @@ EventFunctionSpec eventFunction(Node e, bool timed) {
     if (timed && has({"sender", "partner"}, get(e, "target")))
         fail(e,
             "시각 기능의 target은 initiator·receiver·both·player입니다(0.12.275): 클립 시각에는 보낸 액터가 없습니다");
+    // 0.12.278: the ragdoll is its own function; a spell no longer frees a pair's physics hold.
+    if (e.attribute("releasePhysics"))
+        fail(e, "releasePhysics는 없어졌습니다(0.12.278): 래그돌은 op=\"ragdoll\"(direction·force)을 씁니다");
     if (timed)
         shape(e, {"at", "op", "target", "plugin", "form", "delay", "stamina", "magicka", "strength", "duration",
-                     "releasePhysics", "factor", "mode", "damage"});
+                     "factor", "mode", "damage", "direction", "force"});
     else
-        shape(e, {"op", "plugin", "form", "delay", "stamina", "magicka", "strength", "duration", "releasePhysics",
-                     "factor", "mode", "damage"});
+        shape(e, {"op", "plugin", "form", "delay", "stamina", "magicka", "strength", "duration", "factor", "mode",
+                     "damage", "direction", "force"});
     const auto op = required(e, "op");
     choice(e, "op",
         {"hide", "show", "spell", "stateOn", "stateOff", "cost", "shake", "stopVelocity", "timeOn", "timeOff",
-            "iframeOn", "iframeOff", "armorOn", "armorOff", "rotateOn", "rotateOff", "cancel", "fireArrow"});
+            "iframeOn", "iframeOff", "armorOn", "armorOff", "rotateOn", "rotateOff", "cancel", "fireArrow", "ragdoll"});
     choice(e, "target", {"both", "player", "initiator", "receiver"});
     num(e, "delay", 60);
     num(e, "stamina", 100000);
@@ -355,7 +328,8 @@ EventFunctionSpec eventFunction(Node e, bool timed) {
     num(e, "strength", 10);
     num(e, "duration", 30);
     num(e, "factor", 5, 0.05);
-    boolean(e, "releasePhysics");
+    choice(e, "direction", {"down", "up", "forward", "backward", "left", "right"});
+    num(e, "force", RagdollPush::kMaxForce);
     std::string form = get(e, "form");
     if (op == "spell" || op == "stateOn" || op == "stateOff") {
         const auto plugin = required(e, "plugin");
@@ -371,6 +345,8 @@ EventFunctionSpec eventFunction(Node e, bool timed) {
         if (timed) fail(e, "시간 기준 활 발사는 동작의 FireArrow at으로 지정합니다");
     } else if (e.attribute("mode") || e.attribute("damage"))
         fail(e, "mode·damage는 fireArrow에서만 씁니다");
+    if (op != "ragdoll" && (e.attribute("direction") || e.attribute("force")))
+        fail(e, "direction·force는 ragdoll에서만 씁니다");
     auto number = [](pugi::xml_attribute attr, float fallback, float maximum) {
         const float value = attr.as_float(fallback);
         return std::isfinite(value) ? std::clamp(value, 0.0f, maximum) : fallback;
@@ -382,7 +358,12 @@ EventFunctionSpec eventFunction(Node e, bool timed) {
     f.delay = number(e.attribute("delay"), 0, 60);
     f.plugin = get(e, "plugin");
     f.form = form;
-    f.releasePhysics = e.attribute("releasePhysics").as_bool(false);
+    if (op == "ragdoll") {
+        const auto direction = get(e, "direction", "down");
+        for (std::size_t i = 0; i < RagdollPush::kNames.size(); ++i)
+            if (RagdollPush::kNames[i] == direction) f.direction = static_cast<RagdollPush::Direction>(i);
+        if (e.attribute("force")) f.force = number(e.attribute("force"), 1, RagdollPush::kMaxForce);
+    }
     if (op == "fireArrow") f.arrow = fireArrowShot(e);
     f.stamina = number(e.attribute("stamina"), 0, 100000);
     f.magicka = number(e.attribute("magicka"), 0, 100000);
@@ -392,11 +373,11 @@ EventFunctionSpec eventFunction(Node e, bool timed) {
     return f;
 }
 RecoverySpec recoveryDeclaration(Node r) {
-    shape(r, {"at", "fallback", "blend"});
+    shape(r, {"at", "blend"});
     num(r, "blend", 5);
     RecoverySpec out;
     out.enabled = true;
-    ReadMoment(time(r, "at", "fallback", Basis::Seconds, Basis::Seconds), out.event, out.fallback, out.fallback);
+    ReadMoment(time(r, "at", Basis::Seconds), out.event, out.at);
     out.move = true;  // movement input ends the action; sprint and jump do not
     out.sprint = false;
     out.jump = false;
@@ -533,10 +514,9 @@ struct Compiler {
                 {"Success", "Failure", "Perfect", "Input"});
         } else
             shape(q,
-                {"id", "at", "fallback", "key", "gamepad", "inputOwner", "eventSource", "speed", "successWindow",
-                    "perfectWindow", "scale", "x", "y", "anchor", "delay", "reducedMotion", "hidden", "type",
-                    "pressCount", "perfectBefore", "control", "stopEvent", "replaceActive", "feedback", "group",
-                    "channel", "design"},
+                {"id", "at", "key", "gamepad", "inputOwner", "eventSource", "speed", "successWindow", "perfectWindow",
+                    "scale", "x", "y", "anchor", "delay", "reducedMotion", "hidden", "type", "pressCount",
+                    "perfectBefore", "control", "stopEvent", "replaceActive", "feedback", "group", "channel", "design"},
                 {"Success", "Failure", "Perfect", "Input"});
         if (get(q, "group").size() > 128) fail(q, "QTE group name is too long");
         // Channels run together (runtime Qte::kChannels = 4).
@@ -586,7 +566,7 @@ struct Compiler {
             fail(q, "partner QTE requires Pair");
         QteSpec qte;
         if (links)
-            ReadMoment(time(q, "at", "fallback", Basis::Seconds, Basis::Seconds), qte.event, qte.at, qte.fallback);
+            ReadMoment(time(q, "at", Basis::Seconds), qte.event, qte.at);
         else
             qte.at = 0;
         // control and keySequence replace the single key, so it is neither read nor validated
@@ -729,14 +709,13 @@ struct Compiler {
     WindowTimes window(Node n, bool link) {
         if (n.attribute("always"))
             fail(n, "always는 없어졌습니다(형식 4): <Window>를 쓰지 않으면 클립 전체에서 받습니다");
-        shape(n, {"from", "until", "fromFallback", "untilFallback", "buffer"});
+        shape(n, {"from", "until", "buffer"});
         boolean(n, "buffer");
         // from: the clip start unless written; until: the clip end unless written.
         WindowTimes out;
         out.mode = get(n, "buffer", "true") == "true" ? "buffered" : "window";
-        out.open = time(n, "from", "fromFallback", Basis::Seconds, Basis::Seconds, "0");
-        out.close = time(
-            n, "until", "untilFallback", link ? Basis::Either : Basis::End, link ? Basis::Either : Basis::End, "end");
+        out.open = time(n, "from", Basis::Seconds, "0");
+        out.close = time(n, "until", link ? Basis::Either : Basis::End, "end");
         out.timed = true;
         auto a = get(n, "from", "0"), b = get(n, "until", "end");
         if (link && !a.starts_with("event:") && !b.starts_with("event:") && !b.starts_with("end") &&
@@ -932,12 +911,12 @@ struct Compiler {
             s.enterBlend = e.attribute("blend").as_float(-1.0f);
         }
         {
-            // The Exit trigger: seconds before the clip's end, or an annotation event (+ fallback).
+            // The Exit trigger: seconds before the clip's end, or an annotation event.
             std::string at = "@end-0.05", event;
             if (auto e = one(n, "Exit")) {
-                shape(e, {"at", "fallback", "blend"});
+                shape(e, {"at", "blend"});
                 num(e, "blend", 5);
-                auto t = time(e, "at", "fallback", Basis::End, Basis::End, "end-0.05");
+                auto t = time(e, "at", Basis::End, "end-0.05");
                 if (t.starts_with("@"))
                     at = t;
                 else {
@@ -949,12 +928,9 @@ struct Compiler {
             float t;
             bool relative;
             if (ParseAt(at.c_str(), t, relative)) s.exitTriggerBeforeEnd = relative ? t : -1.0f;
-            std::string name, fallback;
-            SplitFallback(event, name, fallback);
-            if (!name.empty()) {
-                s.events.exit = name;
+            if (!event.empty()) {
+                s.events.exit = event;
                 s.exitTriggerBeforeEnd = -1.0f;
-                if (ParseAt(fallback.c_str(), t, relative) && relative) s.exitFallback = t;
             }
         }
         for (auto name : {"Rotate", "IFrame", "HyperArmor"})
@@ -992,8 +968,7 @@ struct Compiler {
             s.fireArrow.onRelease = !direct && f.attribute("onRelease").as_bool(true);
             if (f.attribute("at")) {
                 std::string unused;
-                float fallback = -1.0f;
-                ReadMoment(seconds(f, "at", Basis::Seconds), unused, s.fireArrow.at, fallback);
+                ReadMoment(seconds(f, "at", Basis::Seconds), unused, s.fireArrow.at);
             }
             if (direct && s.fireArrow.at < 0)
                 fail(f, "mode=\"direct\"(바로 발사)에는 at이 필요합니다(이벤트 발사는 EventRegistry의 fireArrow)");
@@ -1006,15 +981,14 @@ struct Compiler {
             num(c, "stamina", 100000);
             num(c, "magicka", 100000);
             s.cost.enabled = true;
-            ReadMoment(seconds(c, "at", Basis::Seconds, "0"), s.cost.event, s.cost.at, s.cost.fallback);
+            ReadMoment(seconds(c, "at", Basis::Seconds, "0"), s.cost.event, s.cost.at);
             s.cost.stamina = c.attribute("stamina").as_float(0.0f);
             s.cost.magicka = c.attribute("magicka").as_float(0.0f);
         }
         if (auto r = one(n, "CarryRelease")) {
-            shape(r, {"at", "fallback"});
+            shape(r, {"at"});
             s.carryRelease.enabled = true;
-            ReadMoment(time(r, "at", "fallback", Basis::Seconds, Basis::Seconds), s.carryRelease.event,
-                s.carryRelease.at, s.carryRelease.fallback);
+            ReadMoment(time(r, "at", Basis::Seconds), s.carryRelease.event, s.carryRelease.at);
         }
         if (auto r = one(n, "Recovery")) s.recovery = recoveryDeclaration(r);
         if (pair) s.safetyDuration = 30.0f;  // a pair's clip is long; written values replace it (Advanced)
@@ -1242,22 +1216,18 @@ struct Compiler {
             ws.mode = (_stricmp(mode.c_str(), "always") == 0) ? 0 : (_stricmp(mode.c_str(), "window") == 0) ? 1 : 2;
             float at;
             bool relative;
-            std::string main, fb;
-            SplitFallback(times.timed ? times.open : "@0", main, fb);
-            if (ParseAt(main.c_str(), at, relative))
+            const std::string open = times.timed ? times.open : "@0", close = times.timed ? times.close : "@end";
+            if (ParseAt(open.c_str(), at, relative))
                 ws.openAt = relative ? -1.0f : at;
             else {
-                ws.openEvent = main;
+                ws.openEvent = open;
                 ws.openAt = -1.0f;
-                if (ParseAt(fb.c_str(), at, relative) && !relative) ws.openFallback = at;
             }
-            SplitFallback(times.timed ? times.close : "@end", main, fb);
-            if (ParseAt(main.c_str(), at, relative))
+            if (ParseAt(close.c_str(), at, relative))
                 ws.closeAt = relative ? at : -1.0f;
             else {
-                ws.closeEvent = main;
+                ws.closeEvent = close;
                 ws.closeAt = -1.0f;
-                if (ParseAt(fb.c_str(), at, relative) && relative) ws.closeFallback = at;
             }
             s.cancels.push_back(std::move(ws));
         }
@@ -1278,23 +1248,16 @@ struct Compiler {
             next.gamepad = l.gamepad;
             next.buffered = (l.mode.empty() ? std::string("buffered") : l.mode) == "buffered";
             auto timing = [&](const std::string& text, bool close, std::string& event, float& at) {
-                std::string main, fallback;
-                SplitFallback(text, main, fallback);
                 float value;
                 bool relative;
                 at = -1;
-                if (ParseAt(main.c_str(), value, relative) && std::isfinite(value)) {
+                if (ParseAt(text.c_str(), value, relative) && std::isfinite(value)) {
                     if (!relative || close) {
                         at = value;
                         if (relative) next.closeRelativeToEnd = true;
                     }
-                } else {
-                    event = main;
-                    if (ParseAt(fallback.c_str(), value, relative) && std::isfinite(value) && (!relative || close)) {
-                        at = value;
-                        if (relative) next.closeRelativeToEnd = true;
-                    }
-                }
+                } else
+                    event = text;
             };
             if (l.timed) {
                 timing(l.open, false, next.openEvent, next.openAt);

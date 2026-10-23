@@ -30,7 +30,7 @@ void ObserveEvent(RE::ActorHandle actor, const RE::BSFixedString& event);
 void ObserveSync(PairedSession::Ticket ticket, RE::ActorHandle actor, const RE::BSSynchronizedClipGenerator& generator,
     bool exiting);
 void ObserveHit(RE::ActorHandle victim, RE::ActorHandle attacker);
-// An event function's releasePhysics: this role of the running pair goes back to physics (its flags
+// The ragdoll function (0.12.278): this role of the running pair goes back to physics (its flags
 // from before the pair are kept). False when the actor is not in the pair.
 bool ReleasePhysics(RE::ActorHandle actor);
 // An event function's cancel: ends the running pair on the next update when the actor is in it.

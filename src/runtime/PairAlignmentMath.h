@@ -109,6 +109,10 @@ inline std::optional<Plan> Pivoted(const std::array<Pose, 2>& start, const PairP
     }
     return plan;
 }
+// The start blend's heading hold (0.12.279): a snapped role whose heading something else turned more than about
+// a degree away from its goal is put back (TDM facing the crosshair while blocking turned a player attacker 26°).
+inline constexpr float kHeadingSlack = .02f;
+inline bool HeadingDrifted(float yawError) { return std::isfinite(yawError) && std::abs(yawError) > kHeadingSlack; }
 // Wait for independent native frames, including orientation, before handoff.
 struct Gate {
     float elapsed = 0;

@@ -57,7 +57,7 @@ struct QteStyle {
 struct QteSpec : QteStyle {
     std::string id, event, stopEvent, control;
     bool replaceActive = false;
-    float at = -1, fallback = -1;
+    float at = -1;
     std::string inputOwner = "player", eventSource = "self";
     std::array<QteResultSpec, 3> results;
     // QTEs on different channels run, draw and take input independently (0..3). One channel

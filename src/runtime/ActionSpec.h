@@ -26,7 +26,7 @@ constexpr int kMoveDirCount = 4;
 struct RecoverySpec {
     bool enabled = false;
     std::string event;                               // HKX 주석 이벤트 이름 (기본 AI_<id>_Recovery)
-    float fallback = -1.0f;                          // 클립 시작 기준 초. <0 = 없음 (event 가 "@t" 면 시각만)
+    float at = -1.0f;                                // 클립 시작 기준 초. <0 = 이벤트를 기다림
     bool move = true, sprint = false, jump = false;  // 어떤 입력을 이동 입력으로 볼지
     float blend = -1.0f;                             // 이동으로 나갈 때 블렌드 (<0 = Exit 효과)
     std::string recoverEvent;                        // 내부 전이 이벤트 AI_<id>_Recover (Finalize)
@@ -48,12 +48,9 @@ struct ClipVariant {
 struct CancelSpec {
     std::string nativeCancelEvent;
     std::string id;
-    std::string openEvent, closeEvent;  // 이벤트 이름 (Finalize 가 기본값 채움). 시각 지정이면 트리거도 만든다
-    float openAt = 0.0f;                // <0 = HKX 주석이 공급
-    float closeAt = 0.0f;               // 클립 끝에서 뺀 초. <0 = HKX 주석이 공급
-    // 대체값 ("이벤트|@시각"): 주석 이벤트가 그 시각까지 안 오면 플러그인이 대신 보낸다 (늦어도 그 시각). <0 = 없음
-    float openFallback = -1.0f;               // 클립 시작 기준 초
-    float closeFallback = -1.0f;              // 클립 끝에서 뺀 초
+    std::string openEvent, closeEvent;        // 이벤트 이름 (Finalize 가 기본값 채움). 시각 지정이면 트리거도 만든다
+    float openAt = 0.0f;                      // <0 = HKX 주석이 공급
+    float closeAt = 0.0f;                     // 클립 끝에서 뺀 초. <0 = HKX 주석이 공급
     int mode = 2;                             // 0 항상 / 1 창 안에서만 / 2 창 + 선입력
     std::vector<std::string> vanillaMatches;  // 상속할 시작 상태 전이의 이벤트 이름 부분 문자열
     float blend = -1.0f;                      // 이 창으로 나갈 때의 블렌드 길이(초). <0 = 기존 효과 재사용
@@ -81,19 +78,17 @@ struct TriggerSpec {            // 액션 시작 입력
     bool eventCombatTarget = false;
 };
 
-// Recovery 슬롯 (계획서 §4-3): 이 이벤트(또는 대체 시각) 이후에는 이동 입력만으로 액션을 끊고 이동으로 나간다.
+// Recovery 슬롯 (계획서 §4-3): 이 이벤트(또는 시각) 이후에는 이동 입력만으로 액션을 끊고 이동으로 나간다.
 //   이미 누르고 있던 이동키도 인정(MCO 와 다른 점). 다른 창은 그대로 살아 있다.
 
-// 켜기/끄기 슬롯 창 (Rotate·IFrame·HyperArmor·Lock): on/off 각각 "이벤트|@시각" 또는 "@시각". 실행기가 처리(그래프 변경 없음).
-//   시각(@)은 실행기 타이머로 적용, 이벤트는 HKX 주석이 쏘고 대체값이 있으면 그 시각까지 안 오면 적용. off 는 "@end-초" 도 가능.
+// 켜기/끄기 슬롯 창 (Rotate·IFrame·HyperArmor): on/off 각각 이벤트 또는 "@시각". 실행기가 처리(그래프 변경 없음).
+//   시각(@)은 실행기 타이머로 적용, 이벤트는 HKX 주석이 쏠 때만(0.12.278: 대체값 없음). off 는 "@end-초" 도 가능.
 struct SlotWindow {
     bool enabled = false;
     std::string onEvent, offEvent;  // 기본 AI_<id>_<Slot>On/Off (Finalize)
-    float onAt = -1.0f;             // 클립 시작 기준 초 (<0 = 이벤트/대체값)
-    float onFallback = -1.0f;
-    float offAt = -1.0f;  // offRel=false: 시작 기준 초 / offRel=true: 끝에서 뺀 초
+    float onAt = -1.0f;             // 클립 시작 기준 초 (<0 = 이벤트)
+    float offAt = -1.0f;            // offRel=false: 시작 기준 초 / offRel=true: 끝에서 뺀 초
     bool offRel = false;
-    float offFallback = -1.0f;  // 대체값 (off 는 항상 끝 기준)
 };
 
 // 공격 의미 (V8): 종족(BGSAttackDataMap)의 공격 데이터를 우리 상태에 붙인다.
@@ -130,16 +125,14 @@ struct FireArrowSpec {
 // The putdown Action's moment to release the carried target (seconds or annotation event).
 struct CarryReleaseSpec {
     bool enabled = false;
-    std::string event;       // annotation event name; default AI_<id>_CarryRelease
-    float at = -1.0f;        // seconds from the clip start (the runner's timer)
-    float fallback = -1.0f;  // seconds, when waiting for `event`
+    std::string event;  // annotation event name; default AI_<id>_CarryRelease
+    float at = -1.0f;   // seconds from the clip start (the runner's timer)
 };
 
 struct CostSpec {  // 자원 소모. at 생략 = 시작할 때
     bool enabled = false;
     std::string event;  // 기본 AI_<id>_Cost
     float at = -1.0f;   // "@초" 면 실행기 타이머
-    float fallback = -1.0f;
     float stamina = 0.0f, magicka = 0.0f;
 };
 
@@ -187,7 +180,6 @@ struct ActionSpec {
     ConditionSpec condition;
     float safetyDuration = 3.0f;         // 클립 길이를 모를 때의 보험 타이머 (페어 기본은 파서가 30)
     float exitTriggerBeforeEnd = 0.05f;  // 클립 끝 몇 초 전에 exit 발화. <0 = 트리거를 만들지 않음(HKX 주석이 공급)
-    float exitFallback = -1.0f;          // 주석 Exit 의 대체값(끝에서 뺀 초). <0 = 없음
     float enterBlend = -1.0f;            // 진입 블렌드(초). <0 = 기존 효과 재사용
     float exitBlend = -1.0f;             // 퇴장 블렌드(초). <0 = 기존 효과 재사용
     std::string source;                  // 선언 출처 (파일 경로)

@@ -14,6 +14,6 @@
   <Action id="PutDown" clip="Animations\CarryTest\PutDown.hkx">
     <Require cooldown="0.2"/>
     <Advanced safety="0.7"/>
-    <CarryRelease at="event:PutDownRelease" fallback="0.9"/>
+    <CarryRelease at="event:PutDownRelease"/>
   </Action>
 </AnimationSet>

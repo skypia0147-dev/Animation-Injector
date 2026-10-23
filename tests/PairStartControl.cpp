@@ -1,6 +1,7 @@
 #include "runtime/PairStartControl.h"
 #include "runtime/PairStartCamera.h"
 #include "compat/TrueDirectionalMovementAPI.h"
+#include "runtime/MainThread.h"
 #include <cstdlib>
 #include <iostream>
 namespace {
@@ -58,6 +59,8 @@ void Release(Lease& lease) {
 }
 }
 void* GetModuleHandleW(const wchar_t*) { return installed ? &api : nullptr; }
+// The test's own thread; MainThread::IsCurrent() is false until a case captures it.
+std::uint32_t AnimationInjector::MainThread::CurrentId() { return 31337; }
 void* GetProcAddress(void*, const char*) { return reinterpret_cast<void*>(&Request); }
 namespace AnimationInjector::PairStartCamera {
 std::uint64_t cameraOwner = 0, cameraSerial = 0;
@@ -179,6 +182,38 @@ int main(int argc, char**) {
     Check(api.yawWrites == 0 && api.outsideTask == 0, "no forced yaw or API writes outside game tasks");
     Check(api.acquired == api.released && SKSE::taskInterface.tasks.empty(), "all owned requests returned");
     Check(AnimationInjector::PairStartCamera::cameraOwner == 0, "camera protection released on every lifecycle exit");
+    // 0.12.279: a pair's own yaw lease. On the main thread TDM is asked and answered at once (a pair starts in the
+    // same frame); AlreadyGiven is ready but never returned by the lease that did not get it.
+    {
+        using AnimationInjector::PairStartControl::YawLease;
+        namespace main = AnimationInjector::MainThread;
+        YawLease yaw;
+        if (installed) {
+            main::detail::id.store(main::CurrentId());
+            yaw.Acquire();
+            Check(api.owner == 7 && yaw.Ready() == Readiness::kReady && SKSE::taskInterface.tasks.empty(),
+                "the main thread asks TDM at once");
+            YawLease again;
+            again.Acquire();
+            Check(again.Ready() == Readiness::kReady, "a lease this plugin already holds is ready");
+            again.Release();
+            Check(api.owner == 7, "a lease that was not given is not returned");
+            yaw.Release();
+            Check(api.owner == 0 && SKSE::taskInterface.tasks.empty(), "the main thread returns it at once");
+            main::detail::id.store(0);
+            yaw.Acquire();
+            Check(
+                yaw.Ready() == Readiness::kWaiting && SKSE::taskInterface.tasks.size() == 1, "elsewhere it is queued");
+            SKSE::taskInterface.Drain();
+            Check(yaw.Ready() == Readiness::kReady && api.owner == 7, "the queued request is granted");
+            yaw.Release();
+            SKSE::taskInterface.Drain();
+            Check(api.owner == 0, "and returned by a game task");
+        } else {
+            yaw.Acquire();
+            Check(!yaw.request && yaw.Ready() == Readiness::kReady, "without TDM nothing is asked");
+        }
+    }
     std::cout << "PASS: changing game-task workers, retained input, conflict/cancel/load/3D cleanup; TDM=" << installed
               << '\n';
 }

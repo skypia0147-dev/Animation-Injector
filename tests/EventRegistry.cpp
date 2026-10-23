@@ -101,6 +101,67 @@ int main() {
             "windows open at clip times");
         Check(Rejected("<Action id='A' clip='a.hkx'><HyperArmor from='0.1' until='0.5' untilFallback='end'/></Action>"),
             "windows have no event fallbacks");
+        // 0.12.278: an event moment waits for its event only.
+        for (const char* gone : {"<Action id='A' clip='a.hkx'><Recovery at='event:Move' fallback='0.5'/></Action>",
+                 "<Action id='A' clip='a.hkx'><Exit at='event:Out' fallback='end-0.1'/></Action>",
+                 "<Action id='A' clip='a.hkx'><Cancel to='vanilla:Attack'><Window from='event:Open' "
+                 "fromFallback='0.3'/></Cancel></Action>"}) {
+            const auto p = Parse(gone);
+            Check(!p.ok && p.error.find("0.12.278") != std::string::npos, "fallbacks are refused with the version");
+        }
+        {
+            const auto p = Parse("<Action id='A' clip='a.hkx'><Recovery at='0.4'/></Action>"
+                                 "<Action id='B' clip='b.hkx'><Recovery at='event:Move'/></Action>");
+            Check(p.ok && std::fabs(p.actions[0].recovery.at - 0.4f) < 1e-6f && p.actions[1].recovery.at < 0 &&
+                      p.actions[1].recovery.event == "Move",
+                "recovery at a clip time or at its event");
+        }
+
+        // 0.12.278: the ragdoll function; a spell no longer frees a pair's physics hold.
+        {
+            const auto p = Parse(std::string(kAction) + R"(<EventRegistry>
+                <Event name='Down'><Do op='ragdoll'/></Event>
+                <Event name='Side'><Do op='ragdoll' direction='left' force='7'/></Event>
+            </EventRegistry>)");
+            Check(p.ok, "ragdoll functions parse");
+            const auto& down = p.events[0].functions[0];
+            Check(down.op == EventOp::kRagdoll && down.direction == RagdollPush::Direction::kDown && down.force < 0,
+                "a ragdoll falls down with the direction's force by default");
+            const auto& side = p.events[1].functions[0];
+            Check(side.direction == RagdollPush::Direction::kLeft && std::fabs(side.force - 7) < 1e-6f,
+                "direction and force");
+            const auto timed = Parse("<Pair id='P' clip='p.hkx'><Effects><Do at='0.67' op='ragdoll' "
+                                     "direction='forward' target='receiver'/></Effects></Pair>");
+            Check(timed.ok && timed.actions[0].pairFeatures.timed[0].function.op == EventOp::kRagdoll &&
+                      timed.actions[0].pairFeatures.timed[0].function.target == EventTarget::kReceiver &&
+                      timed.actions[0].pairFeatures.timed[0].function.direction == RagdollPush::Direction::kForward,
+                "a pair's clip-time ragdoll names its role");
+        }
+        {
+            const auto p = Parse("<EventRegistry><Event name='X'><Do op='spell' plugin='a.esp' form='1' "
+                                 "releasePhysics='true'/></Event></EventRegistry>");
+            Check(!p.ok && p.error.find("ragdoll") != std::string::npos, "releasePhysics is refused, naming ragdoll");
+        }
+        Check(Rejected("<EventRegistry><Event name='X'><Do op='ragdoll' direction='north'/></Event></EventRegistry>"),
+            "a ragdoll's direction is one of six");
+        Check(Rejected("<EventRegistry><Event name='X'><Do op='ragdoll' force='21'/></Event></EventRegistry>"),
+            "a ragdoll's force is at most 20");
+        Check(Rejected("<EventRegistry><Event name='X'><Do op='hide' direction='down'/></Event></EventRegistry>"),
+            "direction and force only for a ragdoll");
+        {
+            using namespace RagdollPush;
+            auto same = [](float a, float b) { return std::fabs(a - b) < 1e-3f; };
+            // Facing +Y (yaw 0): a forward push comes from behind.
+            const auto behind = PushPoint(Direction::kForward, 10, 20, 30, 0);
+            Check(same(behind.x, 10) && same(behind.y, -30) && same(behind.z, 80), "forward: the point behind");
+            // Facing +X (yaw 90 degrees): the right is -Y, where a left push comes from.
+            const auto right = PushPoint(Direction::kLeft, 0, 0, 0, 1.5707963f);
+            Check(same(right.x, 0) && same(right.y, -50) && same(right.z, 50), "left: the point on the right");
+            Check(same(PushPoint(Direction::kDown, 1, 2, 3, 2.0f).z, 163), "down: the point above");
+            Check(ForceOf(Direction::kForward, -1) == 5 && ForceOf(Direction::kDown, -1) == 1 &&
+                      ForceOf(Direction::kUp, 30) == kMaxForce && ForceOf(Direction::kUp, 3) == 3,
+                "force: the direction's default, the written value, at most 20");
+        }
         Check(Rejected("<Action id='A' clip='a.hkx'><Cost at='event:Pay' stamina='5'/></Action>"),
             "costs are paid at clip times");
 

@@ -5,6 +5,17 @@
 namespace AnimationInjector::PairStartControl {
 enum class Readiness { kWaiting, kReady, kFailed };
 struct YawRequest;
+// TDM's player yaw (RequestYawControl, 0.12.279): while held, TDM neither faces the crosshair (blocking,
+// bashing, aiming) nor steers the body toward movement, so only the engine and the pair's authored rotation
+// turn the player. Asked at once when called on the main thread (TDM's update reads it there), else as a game
+// task. Release returns only what this lease was given (AlreadyGiven/AlreadyTaken are not ours to return).
+// Without TDM it does nothing.
+struct YawLease {
+    std::shared_ptr<YawRequest> request;
+    void Acquire();
+    Readiness Ready() const;  // kReady without TDM
+    void Release();
+};
 // Actor-update lease; optional TDM calls run in scheduled game tasks.
 // The native pair may rotate normally; input steering waits.
 // Explicit release is required before discarding a carry/session state.
@@ -17,7 +28,7 @@ struct Lease {
     std::array<Role, 2> roles;
     bool active = false;
     std::uint64_t cameraToken = 0;
-    std::shared_ptr<YawRequest> yaw;
+    YawLease yaw;
     // true accepts the reservation. Check Ready before native placement/start.
     bool Acquire(RE::Actor* initiator, RE::Actor* target);
     Readiness Ready() const;

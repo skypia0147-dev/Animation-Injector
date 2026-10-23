@@ -637,38 +637,23 @@ void ActionRunner::RestoreSlots() {
     }
 }
 
-// 시각 기반 슬롯: on/off 가 @시각 이거나 대체값이 있는 것
+// 시각 기반 슬롯: on/off 가 @시각인 것
 void ActionRunner::SlotUpdate() {
     if (_state != State::kActive) return;
     const auto& spec = Spec();
     const float dur = _clipDuration > 0.05f ? _clipDuration : spec.safetyDuration;
     const SlotWindow* wins[3] = {&spec.rotate, &spec.iframe, &spec.hyperArmor};
-    auto* p = Owner();
     for (int k = 0; k < 3; ++k) {
         const auto& w = *wins[k];
         auto& st = _slot[k];
         if (!w.enabled) continue;
         bool turnOn = false, turnOff = false;
-        if (!st.onSeen) {
-            if (w.onAt >= 0.0f && _elapsed >= w.onAt)
-                turnOn = true;
-            else if (w.onFallback >= 0.0f && _elapsed >= w.onFallback) {
-                turnOn = true;
-                if (p) p->NotifyAnimationGraph(Fixed(w.onEvent));
-                logger::debug("[{}] 대체값: '{}' 대신 적용", spec.id, w.onEvent);
-            }
-        }
+        if (!st.onSeen && w.onAt >= 0.0f && _elapsed >= w.onAt) turnOn = true;
         if (_state != State::kActive || InterruptIfUnavailable()) return;
         if (turnOn) st.onSeen = true;
         if (st.onSeen && !st.offSeen) {
             const float offT = w.offRel ? dur - w.offAt : w.offAt;
-            if (w.offAt >= 0.0f && _elapsed >= offT)
-                turnOff = true;
-            else if (w.offFallback >= 0.0f && _elapsed >= dur - w.offFallback) {
-                turnOff = true;
-                if (p) p->NotifyAnimationGraph(Fixed(w.offEvent));
-                logger::debug("[{}] 대체값: '{}' 대신 적용", spec.id, w.offEvent);
-            }
+            if (w.offAt >= 0.0f && _elapsed >= offT) turnOff = true;
         }
         if (_state != State::kActive || InterruptIfUnavailable()) return;
         if (turnOff) st.offSeen = true;
@@ -688,12 +673,7 @@ void ActionRunner::SlotUpdate() {
             break;
         }
     }
-    if (spec.cost.enabled && !_costDone) {
-        if (spec.cost.at >= 0.0f && _elapsed >= spec.cost.at)
-            ApplyCost();
-        else if (spec.cost.fallback >= 0.0f && _elapsed >= spec.cost.fallback)
-            ApplyCost();
-    }
+    if (spec.cost.enabled && !_costDone && spec.cost.at >= 0.0f && _elapsed >= spec.cost.at) ApplyCost();
     // An ordinary action's clip-time effects (0.12.274); a pair's run in PairFeatures.
     if (const auto& timed = spec.pairFeatures.timed; !spec.paired.enabled && !timed.empty()) {
         if (_timedFired.size() != timed.size()) _timedFired.assign(timed.size(), false);
@@ -704,12 +684,9 @@ void ActionRunner::SlotUpdate() {
                 if (_state != State::kActive) return;
             }
     }
-    if (spec.carryRelease.enabled && !_carryReleaseDue) {
-        if (spec.carryRelease.at >= 0.0f && _elapsed >= spec.carryRelease.at)
-            ReachCarryRelease("time");
-        else if (spec.carryRelease.fallback >= 0.0f && _elapsed >= spec.carryRelease.fallback)
-            ReachCarryRelease("fallback");
-    }
+    if (spec.carryRelease.enabled && !_carryReleaseDue && spec.carryRelease.at >= 0.0f &&
+        _elapsed >= spec.carryRelease.at)
+        ReachCarryRelease("time");
 }
 
 void ActionRunner::RunTimedEffect(const EventFunctionSpec& function) {
@@ -1084,39 +1061,11 @@ void ActionRunner::OnMoveInput(int a_kind) {
         Recover(a_kind == 0 ? "이동 입력" : a_kind == 1 ? "스프린트" : "점프");
 }
 
-// 대체값: "이벤트|@시각" 로 선언된 슬롯의 주석 이벤트가 그 시각까지 안 왔으면 플러그인이 같은 이벤트를 보낸다 (늦어도 그 시각)
-void ActionRunner::Fallbacks() {
+// Recovery declared at a clip time opens on the runner's timer (an event one waits for its annotation only).
+void ActionRunner::RecoveryClock() {
     if (_state != State::kActive) return;
-    auto* p = Owner();
-    if (!p) return;
-    const auto& spec = Spec();
-    const float dur = _clipDuration > 0.05f ? _clipDuration : spec.safetyDuration;  // 끝 기준 대체값은 클립 길이가 필요
-    for (std::size_t w = 0; w < spec.cancels.size(); ++w) {
-        const auto& win = spec.cancels[w];
-        if (win.openFallback >= 0.0f && !_openSeen[w] && _elapsed >= win.openFallback) {
-            _openSeen[w] = true;
-            p->NotifyAnimationGraph(Fixed(win.openEvent));
-            if (_state != State::kActive || InterruptIfUnavailable()) return;
-            logger::debug(
-                "[{}] 대체값: '{}' 이 {:.2f}s 까지 안 와서 대신 보냄", spec.id, win.openEvent, win.openFallback);
-        }
-        if (win.closeFallback >= 0.0f && !_closeSeen[w] && _elapsed >= dur - win.closeFallback) {
-            _closeSeen[w] = true;
-            p->NotifyAnimationGraph(Fixed(win.closeEvent));
-            if (_state != State::kActive || InterruptIfUnavailable()) return;
-            logger::debug(
-                "[{}] 대체값: '{}' 이 끝-{:.2f}s 까지 안 와서 대신 보냄", spec.id, win.closeEvent, win.closeFallback);
-        }
-    }
-    if (spec.recovery.enabled && spec.recovery.fallback >= 0.0f && !_recoveryOpen && _elapsed >= spec.recovery.fallback)
-        OpenRecovery("대체 시각");
-    if (_state != State::kActive) return;
-    if (spec.exitFallback >= 0.0f && !_exitSeen && !_exitSent && _elapsed >= dur - spec.exitFallback) {
-        _exitSeen = true;
-        p->NotifyAnimationGraph(Fixed(spec.events.exit));
-        logger::debug("[{}] 대체값: Exit '{}' 이 끝-{:.2f}s 까지 안 와서 대신 보냄", spec.id, spec.events.exit,
-            spec.exitFallback);
-    }
+    const auto& r = Spec().recovery;
+    if (r.enabled && r.at >= 0.0f && !_recoveryOpen && _elapsed >= r.at) OpenRecovery("시각");
 }
 
 void ActionRunner::Update(float a_delta) {
@@ -1166,7 +1115,7 @@ void ActionRunner::Update(float a_delta) {
             _airPhysicsNextSample = _airPhysicsAge + 0.1f;
         }
     }
-    Fallbacks();
+    RecoveryClock();
     UpdateNativeCancel();
     SlotUpdate();
     if (_state == State::kActive && _firePlaybackReady && Spec().fireArrow.enabled && !InterruptIfUnavailable()) {

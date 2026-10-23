@@ -156,7 +156,7 @@ private:
     };
     SlotState _slot[3];  // rotate, iframe, hyperArmor
     void ResetPlaybackFlags();
-    void Fallbacks();
+    void RecoveryClock();
     void SlotUpdate();  // 시각 기반 슬롯 적용
     void SlotEvent(const RE::BSFixedString& a_tag);
     void ApplyRotate(bool a_on);

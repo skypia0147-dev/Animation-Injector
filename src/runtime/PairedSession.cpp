@@ -11,6 +11,7 @@
 #include "runtime/InputSink.h"
 #include "runtime/PairRecoveryGate.h"
 #include "runtime/PairStartAir.h"
+#include "runtime/PairStartControl.h"
 
 namespace AnimationInjector::PairedSession {
 namespace {
@@ -66,6 +67,10 @@ struct RecentExit {
     PairStartAir::Exit exit;
 };
 std::array<RecentExit, 2> recentExits{};
+// TDM's player yaw while a pair the player plays runs (0.12.279): TDM would turn the player to the crosshair
+// (blocking, bashing, aiming) away from the alignment. Held by the ticket that asked; a connected pair takes it over.
+PairStartControl::YawLease yawLease;
+std::uint64_t yawOwner = 0;
 
 void TracePlacement(std::uint64_t id, const char* phase, float time, RE::Actor* self, RE::Actor* target) {
     if (!FrameworkSettings::Get().debug) return;
@@ -195,6 +200,10 @@ void Finish(EndReason a_reason) {
         status.initiator.exited, status.target.exited, status.initiator.graphStateRestored,
         status.target.graphStateRestored, status.initiator.graphUnavailable, status.target.graphUnavailable);
     status.lastEnd = a_reason;
+    if (yawOwner == status.ticket.request) {
+        yawLease.Release();
+        yawOwner = 0;
+    }
     recentExits = {RecentExit{status.initiator.actor, {status.initiator.startGrounded, 0.0f}},
         RecentExit{status.target.actor, {status.target.startGrounded, 0.0f}}};
     status.phase = Phase::kIdle;
@@ -360,7 +369,7 @@ bool Submit(const Request& a_request, Ticket& a_ticket) {
             const auto& spec = Actions::Spec(a_request.actionIndex);
             customEndEvent = RE::BSFixedString(spec.events.exit.c_str());
             movementRecovery.enabled = spec.recovery.enabled && spec.recovery.move;
-            movementRecovery.at = spec.recovery.fallback;
+            movementRecovery.at = spec.recovery.at;
             recoveryEvent = RE::BSFixedString(spec.recovery.event.c_str());
             recoveryExitEvent = RE::BSFixedString(spec.recovery.recoverEvent.c_str());
             status.rootExitBudget = std::max({spec.exitBlend, spec.paired.lossBlend,
@@ -389,6 +398,10 @@ bool Submit(const Request& a_request, Ticket& a_ticket) {
         actorTraceSeen = {};
         nextPlacementTrace = 0;
         a_ticket = status.ticket;
+        if (self->IsPlayerRef() || target->IsPlayerRef()) {
+            yawLease.Acquire();  // kept as is when a connected pair still holds it
+            yawOwner = a_ticket.request;
+        }
     }
     PairFeatures::Begin(a_ticket, a_request.actionIndex, a_request.initiator, a_request.target);
     logger::debug("[PairB] #{} 예약: action='{}' player={:08X} target={:08X} idle={:08X} OAR={}, injected-front",
@@ -610,6 +623,8 @@ void ResetOnLoad() {
     status = {};
     status.ticket.generation = generation;
     recentExits = {};
+    yawLease.Release();  // TDM keeps a lease across loads: the old save's pair returns it
+    yawOwner = 0;
     movementRecovery = {};
     recoveryEvent = RE::BSFixedString();
     recoveryExitEvent = RE::BSFixedString();

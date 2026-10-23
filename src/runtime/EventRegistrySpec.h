@@ -1,6 +1,7 @@
 #pragma once
 #include "runtime/QteSpec.h"
 #include "runtime/FireArrowShot.h"
+#include "runtime/RagdollPush.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -36,6 +37,7 @@ enum class EventOp : std::uint8_t {
     kRotateOff,
     kCancel,     // ends the sender's pair
     kFireArrow,  // automatic shot of the bow (drawn, or direct at full power), player only
+    kRagdoll,    // push into the engine's ragdoll once; a pair's role first leaves the pair's physics hold
 };
 // The actors a function changes. A registered event's function changes its sender (kSender, 0.12.273). A pair's
 // clip-time effect names a role (0.12.275): kInitiator started the pair, kReceiver is the actor it was started on
@@ -49,10 +51,11 @@ struct EventFunctionSpec {
     // A registry function always changes the event's sender (0.12.273); only a pair's clip-time effect sets a
     // target (initiator, receiver, both or player, 0.12.275).
     EventTarget target = EventTarget::kSender;
-    float delay = 0.0f;                      // seconds of game time; cancelled by a load
-    std::string plugin, form;                // kSpell, kStateOn, kStateOff (form: local hex id)
-    bool releasePhysics = false;             // kSpell in a pair: first frees the pair's physics hold
-    float stamina = 0.0f, magicka = 0.0f;    // kCost
+    float delay = 0.0f;        // seconds of game time; cancelled by a load
+    std::string plugin, form;  // kSpell, kStateOn, kStateOff (form: local hex id)
+    RagdollPush::Direction direction = RagdollPush::Direction::kDown;  // kRagdoll
+    float force = -1.0f;                                               // kRagdoll: <0 = the direction's default
+    float stamina = 0.0f, magicka = 0.0f;                              // kCost
     float strength = 1.0f, duration = 0.5f;  // kShake (an annotation's own numbers: AI.CamShake)
     float factor = 1.0f;                     // kTimeOn
     FireArrowShot arrow;                     // kFireArrow: drawn or direct, the direct shot's damage

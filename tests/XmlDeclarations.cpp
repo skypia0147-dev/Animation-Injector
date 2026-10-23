@@ -24,27 +24,26 @@ struct Digest {
         for (auto& s : v) add(s);
     }
     void recovery(const RecoverySpec& r) {
-        add(r.enabled, r.event, r.fallback, r.move, r.sprint, r.jump, r.blend, r.recoverEvent);
+        add(r.enabled, r.event, r.at, r.move, r.sprint, r.jump, r.blend, r.recoverEvent);
     }
-    void slot(const SlotWindow& w) {
-        add(w.enabled, w.onEvent, w.offEvent, w.onAt, w.onFallback, w.offAt, w.offRel, w.offFallback);
-    }
+    void slot(const SlotWindow& w) { add(w.enabled, w.onEvent, w.offEvent, w.onAt, w.offAt, w.offRel); }
     void function(const EventFunctionSpec& f) {
-        add(static_cast<int>(f.op), static_cast<int>(f.target), f.delay, f.plugin, f.form, f.releasePhysics, f.stamina,
-            f.magicka, f.strength, f.duration, f.factor, static_cast<int>(f.arrow.mode), f.arrow.damage);
+        add(static_cast<int>(f.op), static_cast<int>(f.target), f.delay, f.plugin, f.form,
+            static_cast<int>(f.direction), f.force, f.stamina, f.magicka, f.strength, f.duration, f.factor,
+            static_cast<int>(f.arrow.mode), f.arrow.damage);
     }
 };
 void qteDigest(Digest& d, const QteSpec& q) {
-    d.add(q.id, q.event, q.control, q.stopEvent, q.replaceActive, q.feedback, q.at, q.fallback, q.key, q.gamepad,
-        q.inputOwner, q.eventSource, q.speed, q.successWindow, q.perfectWindow, q.scale, static_cast<int>(q.anchor),
-        q.x, q.y, q.delay, q.reducedMotion, static_cast<int>(q.type), q.pressCount, q.perfectBefore, q.sequenceCount,
+    d.add(q.id, q.event, q.control, q.stopEvent, q.replaceActive, q.feedback, q.at, q.key, q.gamepad, q.inputOwner,
+        q.eventSource, q.speed, q.successWindow, q.perfectWindow, q.scale, static_cast<int>(q.anchor), q.x, q.y,
+        q.delay, q.reducedMotion, static_cast<int>(q.type), q.pressCount, q.perfectBefore, q.sequenceCount,
         static_cast<int>(q.channel), static_cast<int>(q.design));
     for (unsigned i = 0; i < q.sequenceCount; ++i) d.add(q.sequence[i].key, q.sequence[i].gamepad);
     for (const auto& r : q.results) d.add(r.event, r.recipient, r.soundPlugin, r.soundForm);
 }
 std::string snapshot(const ActionSpec& a) {
     Digest d;
-    d.add(a.id, a.events.exit, a.safetyDuration, a.exitTriggerBeforeEnd, a.exitFallback, a.enterBlend, a.exitBlend);
+    d.add(a.id, a.events.exit, a.safetyDuration, a.exitTriggerBeforeEnd, a.enterBlend, a.exitBlend);
     d.add(static_cast<int>(a.suppress.when));
     d.strings(a.suppress.events);
     d.add(a.rotationLocked);
@@ -113,7 +112,7 @@ std::string snapshot(const ActionSpec& a) {
     }
     for (auto& c : a.clips) d.add(c.tag, c.file, c.syncRole, c.clipName, c.enterEvent, c.airEnterEvent);
     for (auto& w : a.cancels) {
-        d.add(w.id, w.openEvent, w.closeEvent, w.openAt, w.closeAt, w.openFallback, w.closeFallback, w.mode, w.blend);
+        d.add(w.id, w.openEvent, w.closeEvent, w.openAt, w.closeAt, w.mode, w.blend);
         d.strings(w.vanillaMatches);
     }
     auto& t = a.trigger;
@@ -121,15 +120,15 @@ std::string snapshot(const ActionSpec& a) {
     auto& c = a.condition;
     d.add(c.inAir, c.cooldown);
     auto& r = a.recovery;
-    d.add(r.enabled, r.event, r.fallback, r.move, r.sprint, r.jump, r.blend, r.recoverEvent);
+    d.add(r.enabled, r.event, r.at, r.move, r.sprint, r.jump, r.blend, r.recoverEvent);
     d.slot(a.rotate);
     d.slot(a.iframe);
     d.slot(a.hyperArmor);
     auto& cost = a.cost;
-    d.add(cost.enabled, cost.event, cost.at, cost.fallback, cost.stamina, cost.magicka);
+    d.add(cost.enabled, cost.event, cost.at, cost.stamina, cost.magicka);
     d.add(a.attack.enabled, a.attack.data);
     auto& release = a.carryRelease;
-    d.add(release.enabled, release.event, release.at, release.fallback);
+    d.add(release.enabled, release.event, release.at);
     d.add(a.carry.enabled);
     if (a.carry.enabled) {
         const auto& hold = a.carry.hold;
@@ -384,10 +383,9 @@ int wmain(int argc, wchar_t** argv) {
             std::cout << a.id << " key=" << a.trigger.key << " clips=" << a.clips.size()
                       << " targetRig=" << PairedRig::Name(a.paired.targetRig) << '\n';
             if (a.carryRelease.enabled)
-                std::cout << "CarryRelease event=" << a.carryRelease.event << " at=" << a.carryRelease.at
-                          << " fallback=" << a.carryRelease.fallback << '\n';
+                std::cout << "CarryRelease event=" << a.carryRelease.event << " at=" << a.carryRelease.at << '\n';
             if (a.recovery.enabled)
-                std::cout << "Recovery event=" << a.recovery.event << " at=" << a.recovery.fallback
+                std::cout << "Recovery event=" << a.recovery.event << " at=" << a.recovery.at
                           << " blend=" << a.recovery.blend << " move=" << a.recovery.move
                           << " exit=" << a.recovery.recoverEvent << '\n';
             if (a.carry.enabled)

@@ -1,6 +1,7 @@
 #include "runtime/PairStartControl.h"
 #include "runtime/PairStartCamera.h"
 #include "compat/TrueDirectionalMovementAPI.h"
+#include "runtime/MainThread.h"
 #include <mutex>
 
 namespace AnimationInjector::PairStartControl {
@@ -32,7 +33,9 @@ void AcquireYaw(const std::shared_ptr<YawRequest>& request) {
     std::lock_guard apiLock(apiMutex);
     const auto result = TDM()->RequestYawControl(SKSE::GetPluginHandle(), 0);
     request->owned = result == TDM_API::APIResult::OK;
-    request->ready = request->owned ? Readiness::kReady : Readiness::kFailed;
+    // AlreadyGiven: this plugin holds it already (a carry lease and the pair's own); ready, but not ours to return.
+    request->ready =
+        request->owned || result == TDM_API::APIResult::AlreadyGiven ? Readiness::kReady : Readiness::kFailed;
     logger::debug("[PairStartControl] yaw request completed result={} thread={}", static_cast<unsigned>(result),
         GetCurrentThreadId());
 }
@@ -51,7 +54,12 @@ void CancelYaw(const std::shared_ptr<YawRequest>& request) {
         request->cancelled = true;
         if (!request->owned) return;
     }
-    SKSE::GetTaskInterface()->AddTask([request] { ReleaseYaw(request); });
+    // On the main thread return it now, so a lease asked right after (a connected pair, a carry lift) is granted
+    // anew instead of finding this one about to go.
+    if (MainThread::IsCurrent())
+        ReleaseYaw(request);
+    else
+        SKSE::GetTaskInterface()->AddTask([request] { ReleaseYaw(request); });
 }
 }
 bool Lease::Acquire(RE::Actor* self, RE::Actor* target) {
@@ -65,18 +73,12 @@ bool Lease::Acquire(RE::Actor* self, RE::Actor* target) {
     // RequestYawControl resets TDM's pending desired angle. Never SetPlayerYaw:
     // only engine/authored rotation may drive the body after native Start.
     if ((self->IsPlayerRef() || target->IsPlayerRef()) && TDM()) {
-        auto* api = TDM();
-        auto* tasks = SKSE::GetTaskInterface();
-        if (!tasks) {
+        if (!SKSE::GetTaskInterface()) {
             logger::warn("[PairStartControl] task interface unavailable");
             return false;
         }
-        // Always use the game task queue, including requests from the input
-        // callback. Retain the reservation until that task grants or rejects it.
-        yaw = std::make_shared<YawRequest>();
-        logger::debug("[PairStartControl] queue yaw request caller={} apiCreatedOn={} (diagnostic only)",
-            GetCurrentThreadId(), api->GetTDMThreadId());
-        tasks->AddTask([request = yaw] { AcquireYaw(request); });
+        // Retain the reservation until TDM grants or rejects it.
+        yaw.Acquire();
     }
     const std::array<RE::Actor*, 2> actors{self, target};
     active = true;
@@ -111,9 +113,31 @@ bool Lease::Acquire(RE::Actor* self, RE::Actor* target) {
 }
 Readiness Lease::Ready() const {
     if (!active) return Readiness::kFailed;
-    if (!yaw) return Readiness::kReady;
-    std::lock_guard lock(yaw->mutex);
-    return yaw->ready;
+    return yaw.Ready();
+}
+void YawLease::Acquire() {
+    auto* tasks = SKSE::GetTaskInterface();
+    if (request || !TDM() || !tasks) return;
+    request = std::make_shared<YawRequest>();
+    // On the main thread TDM's own update cannot race the call, and a pair that starts in this same frame is
+    // covered from its first frame; elsewhere (an input or graph callback) it waits for the game task.
+    if (MainThread::IsCurrent())
+        AcquireYaw(request);
+    else {
+        logger::debug("[PairStartControl] queue yaw request caller={} apiCreatedOn={} (diagnostic only)",
+            GetCurrentThreadId(), TDM()->GetTDMThreadId());
+        tasks->AddTask([request = request] { AcquireYaw(request); });
+    }
+}
+Readiness YawLease::Ready() const {
+    if (!request) return Readiness::kReady;
+    std::lock_guard lock(request->mutex);
+    return request->ready;
+}
+void YawLease::Release() {
+    if (!request) return;
+    CancelYaw(request);
+    request.reset();
 }
 void Lease::ReleaseForMovement(RE::ActorHandle actor) {
     for (auto& role : roles)
@@ -168,8 +192,7 @@ void Lease::Release(bool restoreActors) {
             if (actor->GetGraphVariableBool(Rotation(), current) && !current)
                 actor->SetGraphVariableBool(Rotation(), true);
         }
-    if (yaw) CancelYaw(yaw);
-    yaw.reset();
+    yaw.Release();
     roles = {};
     active = false;
 }

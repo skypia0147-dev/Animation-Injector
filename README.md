@@ -1,6 +1,6 @@
 # Animation Injector
 
-**버전 0.12.277** · [English](README_EN.md)
+**버전 0.12.279** · [English](README_EN.md)
 
 XML 선언과 HKX 파일만으로 Skyrim에 일반 동작과 두 사람이 하는 페어 동작을 추가하는 SKSE 프레임워크입니다. 동작을 추가할 때 Nemesis·Pandora를 다시 실행할 필요가 없습니다. 다른 모드가 요구하는 비헤이비어 패치는 그대로 유지하세요.
 
@@ -30,7 +30,7 @@ XML 선언과 HKX 파일만으로 Skyrim에 일반 동작과 두 사람이 하�
 | 구분 | 내용 |
 |---|---|
 | 시작 | 키보드 키 이름·스캔코드, 게임패드 버튼 이름, 애니메이션 이벤트. 플레이어와 NPC 모두 |
-| 일반 동작 | 진입·종료 블렌드, 이동 입력으로 끊는 Recovery, 바닐라 동작으로 끊는 Cancel, 다음 동작으로 잇는 Connect, 시작 제한(지상·공중, 재사용 간격), 클립 시각 기능(무기 숨김·표시, 주문, 상태, 카메라 흔들림, 속도 정지, 시간 배율) |
+| 일반 동작 | 진입·종료 블렌드, 이동 입력으로 끊는 Recovery, 바닐라 동작으로 끊는 Cancel, 다음 동작으로 잇는 Connect, 시작 제한(지상·공중, 재사용 간격), 클립 시각 기능(무기 숨김·표시, 주문, 상태, 래그돌, 카메라 흔들림, 속도 정지, 시간 배율) |
 | 기능 슬롯 | 회전, 무적(IFrame), 경직 저항(HyperArmor), 스태미나·매지카 소모, 공격 데이터 |
 | 조건 분기 | `Flow`로 이동 방향·무기·공격 상태·스태미나·공중·누운 방향·장비·종족·성별·확률 등 조건에 따라 재생할 동작 선택 |
 | 이동 | HKX의 AMR 주석(`animmotion`, `animrotation`)대로 이동 |
@@ -56,7 +56,7 @@ HKX 위치: `Data/meshes/actors/character/` 아래 (`clip`은 이 폴더 기준 
       <Test id="Weapon" kind="weaponDrawn" subject="self" pass="Play"/>
       <Play id="Play" action="Slash1"/>
     </Flow>
-    <Recovery at="event:MyMod_Recovery" fallback="0.9" blend="0.15"/>
+    <Recovery at="event:MyMod_Recovery" blend="0.15"/>
     <IFrame from="0.1" until="0.4"/>
     <Connect to="Slash2" key="G" gamepad="RB"><Window from="0.45"/></Connect>
     <Cancel to="vanilla:Block"/>
@@ -68,6 +68,8 @@ HKX 위치: `Data/meshes/actors/character/` 아래 (`clip`은 이 폴더 기준 
 ```
 
 - 무기를 뽑았을 때만 시작하게 하는 검사는 위처럼 조건 분기(`Flow`)에 둡니다. `<Require>`는 `air`·`cooldown`만 받습니다(0.12.276). 예전 XML의 `weapon`·`blockWhileAttacking`·`stamina`는 `python tools/require_to_flow.py --write <xml>`이 조건 분기로 옮깁니다.
+- 시점을 이벤트(`event:이름`)로 두면 그 이벤트가 올 때만 동작합니다. 「안 오면 n초」(`fallback`)는 없어졌습니다(0.12.278).
+- 래그돌은 `<Do op="ragdoll" direction="down|up|forward|backward|left|right" force="0~20"/>`입니다. 페어 중이면 그 액터의 페어 물리 고정을 먼저 풀고 래그돌 뒤 기상을 지켜봅니다(0.12.278, 예전 `releasePhysics`는 거부).
 - 루트는 `<AnimationSet version="4">`만 읽습니다. 다른 형식의 파일은 로그에 이유를 남기고 파일 전체를 건너뜁니다.
 - 파일 하나는 전부 읽히거나 전부 건너뜁니다. 오류가 하나라도 있으면 그 파일의 동작은 하나도 등록되지 않습니다.
 - HKX 경로의 파일·폴더 이름은 ASCII 영문·숫자·일반 기호만 쓸 수 있습니다(한글 불가).

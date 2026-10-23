@@ -484,7 +484,7 @@ void InjectPairedAction(int actionIndex, RE::hkbBehaviorGraph* graph, RE::hkbSta
         // Preserve annotation conversion and use clip-relative completion,
         // rather than copying the original 3.467-second clip's trigger times.
         std::vector<TriggerDef> pairTriggers;
-        const float exitAt = spec.exitTriggerBeforeEnd >= 0 ? spec.exitTriggerBeforeEnd : spec.exitFallback;
+        const float exitAt = spec.exitTriggerBeforeEnd;
         if (exitAt >= 0) pairTriggers.push_back({exitAt, customEnd, true});
         auto* clip = MakeClip(
             variant.clipName.c_str(), variant.file.c_str(), binding, MakeTriggerArray(pairTriggers), nullptr, true);
@@ -748,7 +748,7 @@ void InjectCreaturePair(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateMac
     const int index = EnsureAnimationName(character, variant.file.c_str());
     if (enter < 0 || end < 0 || index < 0 || index > 32767) return fail("event or clip registration failed");
     std::vector<TriggerDef> triggers;
-    const float exitAt = spec.exitTriggerBeforeEnd >= 0 ? spec.exitTriggerBeforeEnd : spec.exitFallback;
+    const float exitAt = spec.exitTriggerBeforeEnd;
     if (exitAt >= 0) triggers.push_back({exitAt, end, true});
     auto* clip = MakeClip(variant.clipName.c_str(), variant.file.c_str(), static_cast<std::uint16_t>(index),
         MakeTriggerArray(triggers), nullptr, true);

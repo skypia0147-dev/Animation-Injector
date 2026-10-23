@@ -310,8 +310,7 @@ void Update(float delta) {
         for (auto& e : entries)
             for (std::size_t i = 0; i < e.nodes.size(); ++i) {
                 auto& q = e.nodes[i];
-                const bool due = e.time >= 0 && (q.ready || (q.spec.at >= 0 && e.time >= q.spec.at) ||
-                                                    (q.spec.fallback >= 0 && e.time >= q.spec.fallback));
+                const bool due = e.time >= 0 && (q.ready || (q.spec.at >= 0 && e.time >= q.spec.at));
                 if (q.fired || !due) continue;
                 q.fired = true;
                 q.ready = false;  // the next time its event comes asks again (ObserveEvent)

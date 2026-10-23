@@ -292,19 +292,17 @@ std::vector<ActionSpec> LoadAllFrom(const std::filesystem::path& root, std::vect
         if (!FrameworkSettings::Get().debug) break;
         std::string wins;
         for (const auto& w : s.cancels)
-            wins += fmt::format("[{} mode {} {}{}~{}{} {}] ", w.id, w.mode,
+            wins += fmt::format("[{} mode {} {}~{} {}] ", w.id, w.mode,
                 w.openAt >= 0 ? fmt::format("@{:.2f}", w.openAt) : w.openEvent,
-                w.openFallback >= 0 ? fmt::format("|@{:.2f}", w.openFallback) : "",
                 w.closeAt >= 0 ? fmt::format("@end-{:.2f}", w.closeAt) : w.closeEvent,
-                w.closeFallback >= 0 ? fmt::format("|@end-{:.2f}", w.closeFallback) : "",
                 w.vanillaMatches.size() ? "vanilla" : "");
         logger::debug(
             "[Decl] 액션 '{}' ← {} : 클립 {}개, 키 {}, 바닐라 전환 {} exit='{}' 블렌드 enter {:.2f} exit {:.2f}, recovery {}",
             s.id, s.source, s.clips.size(), s.trigger.key, wins, s.events.exit, s.enterBlend, s.exitBlend,
             s.recovery.enabled
                 ? fmt::format("'{}'{} 입력 {}{}{}", s.recovery.event,
-                      s.recovery.fallback >= 0 ? fmt::format("|@{:.2f}", s.recovery.fallback) : "",
-                      s.recovery.move ? "move " : "", s.recovery.sprint ? "sprint " : "", s.recovery.jump ? "jump" : "")
+                      s.recovery.at >= 0 ? fmt::format("@{:.2f}", s.recovery.at) : "", s.recovery.move ? "move " : "",
+                      s.recovery.sprint ? "sprint " : "", s.recovery.jump ? "jump" : "")
                 : std::string("없음"));
         auto slotTxt = [](const SlotWindow& w) {
             return !w.enabled

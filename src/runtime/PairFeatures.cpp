@@ -568,7 +568,7 @@ void End(Ticket value, bool completed, bool handoff) {
             if (actor->Is3DLoaded())
                 if (auto* controller = actor->GetCharController()) {
                     const auto before = controller->flags.get();
-                    // A releasePhysics event transfers this role to native physics.
+                    // A ragdoll function transfers this role to native physics.
                     // Reconcile at exit even without AMR translation. Preserve flags
                     // predating this pair, and never modify a chained destination.
                     if (!handoff && !role.movementTransferred) {
