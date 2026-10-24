@@ -573,7 +573,7 @@ void InjectPairedAction(int actionIndex, RE::hkbBehaviorGraph* graph, RE::hkbSta
             static_cast<int>(sourceSync[i]->cloneState.get()));
     }
     // The shared exit effect finds the action through the pair session (ExitBlendHooks).
-    if (spec.exitBlend >= 0) ExitBlendHooks::RegisterPairDestination(actionIndex);
+    if (spec.exitBlend >= 0 || spec.paired.lossBlend > 0.0f) ExitBlendHooks::RegisterPairDestination(actionIndex);
     sm->areBindablesCached = false;
     graph->areBindablesCached = false;
     if (graph->rootGenerator) graph->rootGenerator->areBindablesCached = false;
@@ -1149,6 +1149,7 @@ const char* PreparePairContainers(RE::hkbBehaviorGraph* graph, RE::hkbStateMachi
         role.entry.toNestedStateId = 0;
         role.entry.flags = static_cast<std::int16_t>(role.entry.flags & ~TransitionInfo::kToNestedStateIdIsValid);
         ExitBlendHooks::RegisterSharedPairExit(role.effects[kPairExit]);
+        ExitBlendHooks::RegisterSharedPairLoss(role.effects[kPairLoss]);
     }
     for (int i = 0; i < 3; ++i) ids.insert(base + i);
     pairs.graph = graph;

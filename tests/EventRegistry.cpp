@@ -137,6 +137,11 @@ int main() {
                       timed.actions[0].pairFeatures.timed[0].function.target == EventTarget::kReceiver &&
                       timed.actions[0].pairFeatures.timed[0].function.direction == RagdollPush::Direction::kForward,
                 "a pair's clip-time ragdoll names its role");
+            const auto own = Parse("<Action id='A' clip='a.hkx'><Effects><Do at='0.5' op='ragdoll' "
+                                   "direction='backward' force='8'/></Effects></Action>");
+            Check(own.ok && own.actions[0].pairFeatures.timed[0].function.op == EventOp::kRagdoll &&
+                      own.actions[0].pairFeatures.timed[0].function.force == 8.0f,
+                "an ordinary action's clip-time ragdoll pushes the actor playing it");
         }
         {
             const auto p = Parse("<EventRegistry><Event name='X'><Do op='spell' plugin='a.esp' form='1' "

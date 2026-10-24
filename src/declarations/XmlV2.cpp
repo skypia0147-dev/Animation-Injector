@@ -1049,7 +1049,7 @@ struct Compiler {
                             "일반 동작의 시각 기능은 그 동작을 재생하는 액터에게 적용됩니다: target·from을 쓰지 않습니다");
                     const auto op = get(d, "op");
                     if (!op.empty() && !has({"hide", "show", "spell", "stateOn", "stateOff", "shake", "stopVelocity",
-                                                "timeOn", "timeOff"},
+                                                "timeOn", "timeOff", "ragdoll"},
                                            op))
                         fail(d, "일반 동작의 시각 기능이 아닙니다: " + op +
                                     " (무적·슈퍼아머·회전·비용은 IFrame·HyperArmor·Rotate·Cost, 활 발사는 FireArrow, "

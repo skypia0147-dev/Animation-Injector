@@ -16,6 +16,8 @@ struct FrameworkSettings {
     // [Preload] (core/AnimationPreloader.h)
     bool preloadOrdinary = true;      // ordinary action animations too, not only paired ones
     int preloadOrdinaryBudgetMB = 0;  // their file size per project; 0 = no limit
+    // [Camera]
+    float switchZoom = 0.5f;  // third-person zoom of a first-person start before any zoom of the player's was seen
     // [Compatibility]
     bool fireArrow = true;
     int nativePairAlignment = 2;  // 0 off, 1 Animation Injector pairs only, 2 every native paired scene

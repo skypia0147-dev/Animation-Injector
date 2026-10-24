@@ -6,6 +6,7 @@
 #include "runtime/EventRegistry.h"
 #include "runtime/PairFeatures.h"
 #include "runtime/PairedSession.h"
+#include "Settings.h"
 
 namespace AnimationInjector::ViewGuard {
 namespace {
@@ -24,6 +25,37 @@ bool restorePending = false;          // back to first person once the pair came
 constexpr float kEndGrace = 0.3f;     // between two linked actions nothing may run for a few frames
 constexpr float kExpectLimit = 3.0f;  // a switch the plugin makes settles well within this
 
+// The player's own third-person zoom (0.12.288): the last one seen in third person outside a run the plugin switched,
+// given back when a first-person start switches to third person (the engine's own is its closest). None seen yet:
+// the INI's [Camera] fSwitchZoom.
+float rememberedZoom = 0.0f;
+bool zoomRemembered = false;
+bool zoomCheck = false;  // log the zoom the frame after a switch: whether the engine kept it
+RE::ThirdPersonState* ThirdPerson() {
+    auto* camera = RE::PlayerCamera::GetSingleton();
+    auto* state = camera ? camera->currentState.get() : nullptr;
+    return state && state->id == RE::CameraStates::kThirdPerson ? static_cast<RE::ThirdPersonState*>(state) : nullptr;
+}
+void RememberZoom() {
+    if (run.switched || restorePending) return;
+    if (auto* state = ThirdPerson(); state && std::isfinite(state->targetZoomOffset)) {
+        rememberedZoom = state->targetZoomOffset;
+        zoomRemembered = true;
+    }
+}
+void ApplyZoom() {
+    auto* state = ThirdPerson();
+    if (!state) {
+        logger::info("[ViewGuard] third-person zoom not set: the camera is not in third person after the switch");
+        return;
+    }
+    const float zoom = zoomRemembered ? rememberedZoom : FrameworkSettings::Get().switchZoom;
+    const float target = state->targetZoomOffset, current = state->currentZoomOffset, saved = state->savedZoomOffset;
+    state->targetZoomOffset = state->currentZoomOffset = state->savedZoomOffset = zoom;
+    zoomCheck = true;
+    logger::info("[ViewGuard] third-person zoom {:.3f} ({}): engine target={:.3f} current={:.3f} saved={:.3f}", zoom,
+        zoomRemembered ? "last used" : "INI fSwitchZoom", target, current, saved);
+}
 const char* Name(CameraView camera) {
     return camera == CameraView::kFirst ? "first" : camera == CameraView::kThird ? "third" : "scene";
 }
@@ -32,9 +64,10 @@ void Switch(CameraView to) {
     auto* camera = RE::PlayerCamera::GetSingleton();
     if (!camera) return;
     ExpectCamera(to);
-    if (to == CameraView::kThird)
+    if (to == CameraView::kThird) {
         camera->ForceThirdPerson();
-    else
+        ApplyZoom();
+    } else
         camera->ForceFirstPerson();
 }
 // What the player plays now and the view it plays in (third for a pair or a carry).
@@ -98,6 +131,10 @@ CameraView Current() {
 }
 bool AllowStart(int action) {
     if (action < 0 || action >= Actions::Count()) return true;
+    // A selecting action plays nothing: the action its Flow picks is checked when it starts (0.12.287). Its own
+    // view (third, first person blocked by default) refused every first-person start of a mod that picks its
+    // dodge by direction (Dynamic Dodge Shot), though each dodge it picks switches to third person.
+    if (Actions::Spec(action).SelectsOnly()) return true;
     return MayStart(Actions::Spec(action).view, Current());
 }
 void ExpectCamera(CameraView to) {
@@ -108,6 +145,13 @@ void Update(float delta) {
     auto* player = RE::PlayerCharacter::GetSingleton();
     if (!player || !player->Is3DLoaded()) return;
     const auto camera = Current();
+    if (zoomCheck) {
+        zoomCheck = false;
+        if (auto* state = ThirdPerson())
+            logger::info("[ViewGuard] third-person zoom a frame later: target={:.3f} current={:.3f}",
+                state->targetZoomOffset, state->currentZoomOffset);
+    }
+    RememberZoom();
     const bool ours = expected != CameraView::kOther && camera == expected;
     if (expected != CameraView::kOther && (ours || (expectedAge += delta) > kExpectLimit))
         expected = CameraView::kOther;

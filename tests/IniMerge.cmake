@@ -1,6 +1,6 @@
 # ctest IniMerge: cmake/deploy_ini.ps1 on an old installed INI (P-2).
 # Inputs: TEMPLATE (misc/AnimationInjector.ini), OLD (an installed file with three retired keys and
-# without four new keys), EXPECTED (the merge: every old value kept), WORK (a scratch directory).
+# without six new keys), EXPECTED (the merge: every old value kept), WORK (a scratch directory).
 set(script "${CMAKE_CURRENT_LIST_DIR}/../cmake/deploy_ini.ps1")
 file(MAKE_DIRECTORY "${WORK}")
 function(deploy target out)
@@ -24,7 +24,7 @@ endfunction()
 file(REMOVE "${WORK}/AnimationInjector.ini" "${WORK}/AnimationInjector.ini.previous")
 file(COPY_FILE "${OLD}" "${WORK}/AnimationInjector.ini")
 deploy("${WORK}/AnimationInjector.ini" first)
-if(NOT first MATCHES "added: 5; dropped: 3" OR NOT first MATCHES "dropped \\[Inject\\] fStopTriggerBeforeEnd")
+if(NOT first MATCHES "added: 6; dropped: 3" OR NOT first MATCHES "dropped \\[Inject\\] fStopTriggerBeforeEnd")
     message(FATAL_ERROR "unexpected merge report: ${first}")
 endif()
 same("${WORK}/AnimationInjector.ini" "${EXPECTED}" "merge")

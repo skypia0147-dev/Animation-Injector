@@ -27,7 +27,8 @@ namespace AnimationInjector::ViewGuard {
 // Main thread. The player camera's state as a view.
 CameraView Current();
 // Main thread, the player's runner checking whether `action` may start: false when its view does not fit
-// the camera (MayStart). No side effect: a switch happens when the run has started (Update).
+// the camera (MayStart). A selecting action always may: the action it picks is checked (0.12.287). No side effect:
+// a switch happens when the run has started (Update).
 bool AllowStart(int action);
 // Main thread: this plugin is about to move the player's camera to `to`; not a change of the player's.
 void ExpectCamera(CameraView to);

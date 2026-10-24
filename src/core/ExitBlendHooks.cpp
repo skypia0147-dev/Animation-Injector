@@ -36,9 +36,11 @@ struct NameHash {
     std::size_t operator()(std::string_view text) const noexcept { return std::hash<std::string_view>{}(text); }
 };
 std::shared_mutex exitsLock;
-// Exit effect name -> action, or kSessionPair for the shared pair exits.
+// Exit effect name -> action, or kSessionPair / kSessionPairLoss for the shared pair exits.
 std::unordered_map<std::string, int, NameHash, std::equal_to<>> exits;
 constexpr int kSessionPair = -2;
+// The shared partner-loss exit (0.12.286): the survivor's blend when its partner dies or ragdolls.
+constexpr int kSessionPairLoss = -3;
 ExitBlendMailbox<Request> mailbox;
 // The mailbox's held items, read without the lock: with none, an activation has nothing to clear.
 std::atomic<std::size_t> mailboxItems{0};
@@ -74,7 +76,8 @@ bool ValidStatus(const PairedSession::Status& status, const DestinationOwner& ow
            (status.phase == PairedSession::Phase::kPlaying ||
                (status.phase == PairedSession::Phase::kStopping &&
                    (status.lastEnd == PairedSession::EndReason::kCompleted ||
-                       status.lastEnd == PairedSession::EndReason::kMovementRecovery)));
+                       status.lastEnd == PairedSession::EndReason::kMovementRecovery ||
+                       status.lastEnd == PairedSession::EndReason::kParticipantUnavailable)));
 }
 // The pair this actor plays through a shared exit effect, when that pair authored an exit blend.
 int SessionPairAction(const RE::hkbContext& context) {
@@ -87,10 +90,24 @@ int SessionPairAction(const RE::hkbContext& context) {
     const auto& spec = Actions::Spec(action);
     return spec.paired.enabled && spec.exitBlend >= 0 ? action : -1;
 }
+// The pair whose survivor this actor is, through the shared partner-loss exit, when that pair authored a loss blend
+// (0.12.286): an ending the pair intends (a throw that ragdolls its partner) hands movement back as its exit does.
+int SessionPairLossAction(const RE::hkbContext& context) {
+    PairedSession::Ticket ticket;
+    RE::ActorHandle participant;
+    if (!PairedSession::TryGetParticipant(context, participant, ticket)) return -1;
+    const auto status = PairedSession::ReadStatus();
+    const int action = status.action;
+    if (!(status.ticket == ticket) || action < 0 || action >= Actions::Count()) return -1;
+    const auto& spec = Actions::Spec(action);
+    return spec.paired.enabled && spec.paired.lossBlend > 0.0f ? action : -1;
+}
 void AddDestinationEvents(int action) {
     const auto& spec = Actions::Spec(action);
     destinationEvents.insert_or_assign(spec.events.exit, action);
     if (spec.HasRecovery()) destinationEvents.insert_or_assign(spec.recovery.recoverEvent, action);
+    if (spec.paired.lossBlend > 0.0f && !spec.paired.lossExitEvent.empty())
+        destinationEvents.insert_or_assign(spec.paired.lossExitEvent, action);
 }
 auto Key(RE::hkbNode* node, const RE::hkbContext& context) {
     return ExitBlendMailbox<Request>::Key{
@@ -168,7 +185,10 @@ struct Activate {
                 DeactivateLocked(Key(node, context));
             }
         }
-        if (action == kSessionPair) action = SessionPairAction(context);
+        if (action == kSessionPair)
+            action = SessionPairAction(context);
+        else if (action == kSessionPairLoss)
+            action = SessionPairLossAction(context);
         if (action >= 0 && action < Actions::Count()) {
             // Keep the last pair pose before the first blend step.
             Carry::ObserveExitBlend(context);
@@ -285,6 +305,12 @@ void RegisterSharedPairExit(RE::hkReferencedObject* effect) {
     if (!node || !node->name.c_str()) return;
     std::unique_lock lock(exitsLock);
     exits.insert_or_assign(node->name.c_str(), kSessionPair);
+}
+void RegisterSharedPairLoss(RE::hkReferencedObject* effect) {
+    auto* node = static_cast<RE::hkbNode*>(effect);
+    if (!node || !node->name.c_str()) return;
+    std::unique_lock lock(exitsLock);
+    exits.insert_or_assign(node->name.c_str(), kSessionPairLoss);
 }
 void RegisterPairDestination(int action) {
     if (action < 0 || action >= Actions::Count() || !Actions::Spec(action).paired.enabled) return;

@@ -423,15 +423,17 @@ bool BeginNormalExitMovement(Ticket value, RE::ActorHandle player, int action) {
             status.rootHandoffSuppressed || featuresReleased || Participant(player) < 0 || !status.initiator.entered ||
             !status.target.entered ||
             (status.phase != Phase::kPlaying &&
-                !(status.phase == Phase::kStopping && status.lastEnd == EndReason::kCompleted)))
+                !(status.phase == Phase::kStopping &&
+                    (status.lastEnd == EndReason::kCompleted || status.lastEnd == EndReason::kParticipantUnavailable))))
             return false;
         status.exitMovementReturned = true;
     }
     PairFeatures::Suspend(value);
     const bool released = PairFeatures::BeginMovementRecovery(value, player);
     if (released) Carry::ReleaseMovementControl(value, player);
-    logger::debug("[ExitBlendMove] pair=#{} movement={} preserveBlend={:.3f}", value.request, released,
-        Actions::Spec(action).exitBlend);
+    const bool loss = ReadStatus().lastEnd == EndReason::kParticipantUnavailable;
+    logger::debug("[ExitBlendMove] pair=#{} movement={} preserveBlend={:.3f}{}", value.request, released,
+        loss ? Actions::Spec(action).paired.lossBlend : Actions::Spec(action).exitBlend, loss ? " (partner lost)" : "");
     return released;
 }
 bool TryGetTicket(RE::ActorHandle a_actor, Ticket& a_ticket) {
