@@ -3,6 +3,7 @@
 #include "core/GroundPolicy.h"
 #include <pugixml.hpp>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace AnimationInjector::ConditionFlowXml {
@@ -133,4 +134,9 @@ struct Program {
 // One <Check> (subject defaults to self). Atomic: on failure `output` is left as it was and `error` holds the path and
 // the reason.
 bool ReadCheck(pugi::xml_node check, Predicate& output, std::string& error);
+// A check that takes several values (0.12.301): `type`, `state` or `option` as a comma list, true when any value
+// holds. The attribute that may list values for a condition kind, or null.
+const char* MultiValueKey(std::string_view kind);
+// One <Check> as one predicate per value (one for a single value). Atomic like ReadCheck.
+bool ReadChecks(pugi::xml_node check, std::vector<Predicate>& output, std::string& error);
 }

@@ -20,6 +20,7 @@ int main() {
     Check(!Read("kind='movementDirection'"));
     Check(!Read("kind='movementDirection' option='diagonal'"));
     Check(!Read("kind='movementDirection' option='left' value='1'"));
+    Check(!Read("kind='movementDirection' option='left' subject='partner'"));
     ConditionValues::Request movement;
     movement.CaptureMovement(2);
     auto pendingMovement = movement;

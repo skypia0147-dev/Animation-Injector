@@ -74,17 +74,70 @@ int main() {
             Check(Pick(s, {1, 3}) == "B", "a failing row tries the next");
             Check(Pick(s, {1}) == "C", "no row holds: False");
             Check(Pick(s, {2, 3}) == "C", "a common condition fails: False");
+            // A row going nowhere (the editor's "none") holds an empty card: it stops there, the rows below untried.
+            const auto none = Parse("<Start id='S' key='G'><Row>" + G(1) + "<Condition/></Row><Row to='A'>" + G(2) +
+                                    "</Row><False to='B'/></Start>" + kABC);
+            Check(none.ok, none.error.c_str());
+            Check(Pick(none["S"], {1, 2}).empty() && Pick(none["S"], {2}) == "A" && Pick(none["S"], {}) == "B",
+                "an empty <Condition/> row plays nothing and stops");
+            Check(Refused(Parse("<Start id='S' key='G'><Row>" + G(1) + "</Row></Start>" + kABC), "하나가 필요"),
+                "a row with no destination at all is refused");
         }
         {
             const auto p = Parse("<Start id='S' key='G'>" + G(1) + "<True to='A'/></Start>" + kABC);
             Check(p.ok && Pick(p["S"], {1}) == "A" && Pick(p["S"], {}).empty(), "True without False plays nothing");
             const auto n = Parse("<Start id='S' key='G'>" + G(1, " not='true'") + "<True to='A'/></Start>" + kABC);
             Check(n.ok && Pick(n["S"], {}) == "A" && Pick(n["S"], {1}).empty(), "not='true' negates");
-            const auto g = Parse("<Start id='S' key='G'><Or>" + G(1) + G(2) + "</Or><And not='true'>" + G(3) + G(4) +
-                                 "</And><True to='A'/></Start>" + kABC);
-            Check(g.ok && Pick(g["S"], {2}) == "A" && Pick(g["S"], {1, 3}) == "A" && Pick(g["S"], {1, 3, 4}).empty() &&
-                      Pick(g["S"], {3}).empty(),
-                "And/Or groups, negated");
+            const auto g = Parse("<Start id='S' key='G'><Or>" + G(1) + G(2) + "</Or><Or not='true'>" + G(3) + G(4) +
+                                 "</Or><True to='A'/></Start>" + kABC);
+            Check(g.ok && Pick(g["S"], {2}) == "A" && Pick(g["S"], {1}) == "A" && Pick(g["S"], {1, 3}).empty() &&
+                      Pick(g["S"], {4}).empty(),
+                "Or groups among AND conditions, negated");
+        }
+        // 0.12.301: an OR row (match="any"), its And groups; groups are one level of the opposite operator.
+        {
+            const auto p = Parse("<Start id='S' key='G'><Row to='A' match='any'>" + G(1) + "<And>" + G(2) + G(3) +
+                                 "</And></Row><Row to='B'>" + G(4) + "<Or>" + G(5) + G(6) +
+                                 "</Or></Row><False to='C'/></Start>" + kABC);
+            Check(p.ok, p.error.c_str());
+            Check(Pick(p["S"], {1}) == "A" && Pick(p["S"], {2, 3}) == "A" && Pick(p["S"], {2}) == "C",
+                "an OR row: one condition or its And group is enough");
+            Check(Pick(p["S"], {4, 6}) == "B" && Pick(p["S"], {4}) == "C", "an AND row with an Or group");
+            const std::pair<std::string, const char*> refused[] = {
+                {"<Row to='A'><And>" + G(1) + G(2) + "</And></Row>", "<Or>"},
+                {"<Row to='A' match='any'><Or>" + G(1) + G(2) + "</Or></Row>", "<And>"},
+                {"<Row to='A'><Or>" + G(1) + "<And>" + G(2) + G(3) + "</And></Or></Row>", "한 단계"},
+                {"<Row to='A'><Or>" + G(1) + "</Or></Row>", "둘 이상"},
+                {"<Row to='A' match='all'>" + G(1) + "</Row>", "match"},
+                {"<And>" + G(1) + G(2) + "</And><True to='A'/>", "<Or>"},
+            };
+            for (const auto& [body, hint] : refused)
+                Check(Refused(Parse("<Start id='S' key='G'>" + body + "</Start>" + kABC), hint),
+                    (body + " refused naming " + hint).c_str());
+        }
+        // 0.12.301: a check that lists values holds when any of them does.
+        {
+            const auto p =
+                Parse(std::string("<Start id='S' key='G'><Row to='A'><Check kind='equippedType' hand='right' "
+                                  "type='sword,dagger,axe'/></Row><False to='B'/></Start>") +
+                      kABC);
+            Check(p.ok, p.error.c_str());
+            const auto& f = p["S"].flow;
+            Check(f.predicates.size() == 3 && f.predicates[1].equippedType == ConditionFlowXml::EquippedType::kDagger,
+                "one predicate per value");
+            Check(std::count_if(f.nodes.begin(), f.nodes.end(),
+                      [](const auto& n) { return n.kind == ConditionFlow::Kind::kAny; }) == 1,
+                "joined by one Any node");
+            for (const char* bad : {"type='sword,,axe'", "type='sword,sword'", "type='sword,lance'"})
+                Check(!Parse(std::string("<Start id='S' key='G'><Row to='A'><Check kind='equippedType' hand='right' ") +
+                             bad + "/></Row></Start>" + kABC)
+                          .ok,
+                    bad);
+            Check(!Parse(std::string("<Start id='S' key='G'><Row to='A'><Check kind='resource' option='health,stamina' "
+                                     "measure='current' compare='ge' value='10'/></Row></Start>") +
+                         kABC)
+                      .ok,
+                "a value compared by number takes one");
         }
         // Destinations: to with common conditions, an inner card, a shared card (copied per program, K6).
         {

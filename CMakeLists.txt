@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING "" FORCE)
-project(AnimationInjector VERSION 0.12.300)
+project(AnimationInjector VERSION 0.12.301)
 enable_language(RC)
 add_executable(AnimationInjectorFileLifetimeTests EXCLUDE_FROM_ALL tests/AnimationFileLifetime.cpp)
 target_include_directories(AnimationInjectorFileLifetimeTests PRIVATE tests/file_lifetime_stubs src)

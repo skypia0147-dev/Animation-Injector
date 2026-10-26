@@ -58,28 +58,46 @@ struct Builder {
         flags.playsPair |= pairs[n.action];
         return add(at, std::move(n));
     }
-    // A condition (K1, K2): a node without ports, which a chain gives ports or a group takes as an operand.
-    int condition(Node g) {
+    // A condition (K1, K2): a node without ports, which a chain gives ports or a group takes as an operand. `inAny`:
+    // it sits among conditions of which one is enough (an OR row's); `inGroup`: it is a group's member.
+    int condition(Node g, bool inAny, bool inGroup) {
         const std::string_view kind = g.name();
         if (!guard(kind)) fail(g, "조건은 <Check>·<And>·<Or>로 씁니다");
         if (g.attribute("not") && get(g, "not") != "true" && get(g, "not") != "false")
             fail(g, "not은 true 또는 false여야 합니다");
         int id;
         if (kind == "Check") {
-            ConditionFlowXml::Predicate predicate;
+            std::vector<ConditionFlowXml::Predicate> predicates;
             std::string error;
-            if (!ConditionFlowXml::ReadCheck(g, predicate, error)) throw std::runtime_error(error);
-            ConditionFlow::Node n;
-            n.kind = ConditionFlow::Kind::kTest;
-            n.predicate = static_cast<int>(program.predicates.size());
-            program.predicates.push_back(std::move(predicate));
-            id = add(g, std::move(n));
+            if (!ConditionFlowXml::ReadChecks(g, predicates, error)) throw std::runtime_error(error);
+            std::vector<int> tests;
+            for (auto& predicate : predicates) {
+                ConditionFlow::Node n;
+                n.kind = ConditionFlow::Kind::kTest;
+                n.predicate = static_cast<int>(program.predicates.size());
+                program.predicates.push_back(std::move(predicate));
+                tests.push_back(add(g, std::move(n)));
+            }
+            if (tests.size() == 1)
+                id = tests.front();
+            else {
+                ConditionFlow::Node any;
+                any.kind = ConditionFlow::Kind::kAny;
+                any.operands = std::move(tests);
+                id = add(g, std::move(any));
+            }
         } else {
+            // A group is one level, the opposite of what holds it (0.12.301): <Or> among AND conditions, <And> in an
+            // OR row.
+            if (inGroup) fail(g, "묶음 안에는 묶음을 넣지 않습니다(한 단계까지)");
+            if ((kind == "And") != inAny)
+                fail(g, inAny ? "OR 행 안의 묶음은 <And>로 씁니다(같은 연산자는 묶지 않습니다)"
+                              : "AND 조건 사이의 묶음은 <Or>로 씁니다(같은 연산자는 묶지 않습니다)");
             attributes(g, {"not"});
             ConditionFlow::Node n;
             n.kind = kind == "And" ? ConditionFlow::Kind::kAll : ConditionFlow::Kind::kAny;
-            for (auto c : elements(g)) n.operands.push_back(condition(c));
-            if (n.operands.empty()) fail(g, std::string(kind) + "에는 조건이 하나 이상 필요합니다");
+            for (auto c : elements(g)) n.operands.push_back(condition(c, !inAny, true));
+            if (n.operands.size() < 2) fail(g, std::string(kind) + " 묶음에는 조건이 둘 이상 필요합니다");
             id = add(g, std::move(n));
         }
         if (get(g, "not") != "true") return id;
@@ -88,11 +106,20 @@ struct Builder {
         n.operands.push_back(id);
         return add(g, std::move(n));
     }
-    // Conditions in a chain (K3): each passes to the next, the last to `pass`; any failure goes to `fail`.
-    int chain(const std::vector<Node>& conditions, int pass, int failTo) {
+    // Conditions in a chain (K3): each passes to the next, the last to `pass`; any failure goes to `fail`. `any` (an
+    // OR row): one Any node of them all instead.
+    int chain(const std::vector<Node>& conditions, int pass, int failTo, bool any = false) {
+        if (any) {
+            ConditionFlow::Node n;
+            n.kind = ConditionFlow::Kind::kAny;
+            for (auto c : conditions) n.operands.push_back(condition(c, true, false));
+            n.pass = pass;
+            n.fail = failTo;
+            return add(conditions.front(), std::move(n));
+        }
         int next = pass;
         for (auto it = conditions.rbegin(); it != conditions.rend(); ++it) {
-            const int id = condition(*it);
+            const int id = condition(*it, false, false);
             program.nodes[id].pass = next;
             program.nodes[id].fail = failTo;
             next = id;
@@ -161,7 +188,8 @@ struct Builder {
     }
     // One row (K4): its conditions pass to its destination; a failure tries `next`.
     int row(Node r, int next) {
-        attributes(r, {"to", "condition"});
+        attributes(r, {"to", "condition", "match"});
+        if (r.attribute("match") && get(r, "match") != "any") fail(r, "match는 any만 씁니다(없으면 모든 조건)");
         if (r.attribute("to") && r.attribute("condition")) fail(r, "to와 condition 중 하나만 씁니다");
         std::vector<Node> conditions;
         Node inner;
@@ -189,7 +217,7 @@ struct Builder {
             attributes(inner, {});
             target = card(inner);
         }
-        return chain(conditions, target, next);
+        return chain(conditions, target, next, !r.attribute("match").empty());
     }
 };
 }

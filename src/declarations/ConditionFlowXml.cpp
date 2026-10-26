@@ -10,7 +10,11 @@ namespace AnimationInjector::ConditionFlowXml {
 namespace {
 using XML = pugi::xml_node;
 [[noreturn]] void Fail(XML n, const std::string& message) { throw std::runtime_error(n.path() + ": " + message); }
+// One of a multi-value check's values (0.12.301): it stands in for its attribute while that predicate is read.
+thread_local const char* overrideKey = nullptr;
+thread_local std::string overrideValue;
 std::string Required(XML n, const char* name) {
+    if (overrideKey && std::string_view(name) == overrideKey) return overrideValue;
     std::string v = n.attribute(name).value();
     if (v.empty()) Fail(n, std::string("missing ") + name);
     return v;
@@ -253,6 +257,9 @@ Predicate ReadPredicate(XML n) {
         predicate.subject = Subject::kPartner;
     else if (subject != "self")
         Fail(n, "invalid subject");
+    // The player's own movement keys (0.12.301): no partner to read them from.
+    if (predicate.test == Test::kMovementDirection && predicate.subject != Subject::kSelf)
+        Fail(n, "movement direction has no partner subject");
     if (oneOf(test, {"magicEffect", "global", "race", "faction", "equippedKeyword", "wornKeyword", "keyword", "perk",
                         "spell", "location"})) {
         predicate.plugin = Required(n, "plugin");
@@ -324,11 +331,58 @@ bool ReadCheck(XML check, Predicate& output, std::string& error) {
     error.clear();
     try {
         if (std::string_view(check.name()) != "Check") Fail(check, "expected Check");
+        if (const char* key = MultiValueKey(check.attribute("kind").as_string());
+            key && std::string_view(check.attribute(key).value()).find(',') != std::string_view::npos)
+            Fail(check, "several values: read with ReadChecks");
         output = ReadPredicate(check);
         return true;
     } catch (const std::exception& e) {
         error = e.what();
         return false;
     }
+}
+const char* MultiValueKey(std::string_view kind) {
+    if (kind == "equippedType") return "type";
+    if (kind == "attackState") return "state";
+    for (std::string_view k :
+        {"movementDirection", "lying", "rig", "actorType", "actorStatus", "relationship", "weather"})
+        if (kind == k) return "option";
+    return nullptr;
+}
+bool ReadChecks(XML check, std::vector<Predicate>& output, std::string& error) {
+    error.clear();
+    std::vector<Predicate> read;
+    try {
+        if (std::string_view(check.name()) != "Check") Fail(check, "expected Check");
+        const char* key = MultiValueKey(check.attribute("kind").as_string());
+        const std::string list = key ? check.attribute(key).value() : "";
+        if (!key || list.find(',') == std::string::npos) {
+            read.push_back(ReadPredicate(check));
+        } else {
+            std::vector<std::string> values;
+            for (std::size_t at = 0; at <= list.size();) {
+                const auto end = std::min(list.find(',', at), list.size());
+                auto value = list.substr(at, end - at);
+                if (value.empty()) Fail(check, std::string("empty value in ") + key);
+                if (std::find(values.begin(), values.end(), value) != values.end())
+                    Fail(check, std::string("repeated value in ") + key + ": " + value);
+                values.push_back(std::move(value));
+                at = end + 1;
+            }
+            struct Reset {
+                ~Reset() { overrideKey = nullptr; }
+            } reset;
+            overrideKey = key;
+            for (const auto& v : values) {
+                overrideValue = v;
+                read.push_back(ReadPredicate(check));
+            }
+        }
+    } catch (const std::exception& e) {
+        error = e.what();
+        return false;
+    }
+    output = std::move(read);
+    return true;
 }
 }
