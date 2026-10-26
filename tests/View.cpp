@@ -19,7 +19,7 @@ struct Parsed {
     std::string error;
 };
 Parsed Parse(const std::string& body, const std::string& rootView = "") {
-    const std::string xml = "<AnimationSet version='4' id='Test'" +
+    const std::string xml = "<AnimationSet version='6' id='Test'" +
                             (rootView.empty() ? std::string() : " view='" + rootView + "'") + ">" + body +
                             "</AnimationSet>";
     pugi::xml_document doc;

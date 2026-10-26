@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Starting while down (ragdoll="recover", 0.12.247) is gone: the Ragdoll Recovery plugin gets the player up. -->
-<AnimationSet version="4" id="RecoverGone">
-  <Action id="Up" clip="Animations\EventQte\Up.hkx">
-    <Start event="Ragdoll" actor="player"/>
-    <Require ragdoll="recover"/>
-  </Action>
+<AnimationSet version="6" id="RecoverGone">
+  <Start event="Ragdoll" actor="player" to="Up"/>
+  <Action id="Up" clip="Animations\EventQte\Up.hkx" ragdoll="recover"/>
 </AnimationSet>

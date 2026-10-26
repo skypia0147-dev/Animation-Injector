@@ -106,6 +106,64 @@ int main() {
     send(trigger);
     // The key starts its own action; a movement key in the same batch only feeds the direction condition.
     assert(Actions::runner.requests == 1 && Actions::runner.lastOrigin == 0);
-    std::cout
-        << "InputSink menu, console, missing UI, held input, device disconnect, batch origin and reset checks passed\n";
+    // A start on a game control (0.12.292): any device's press of it starts the action, and that press and its
+    // release are kept from the game; a press that starts nothing goes to the game.
+    sink->Reset();
+    Actions::runner = {};
+    Actions::runner.spec.trigger.key = 0;
+    Actions::runner.spec.trigger.gamepad = 0;
+    Actions::runner.spec.trigger.control = GameControl::kJump;
+    RE::ButtonEvent jump;
+    jump.userEvent = "Jump";
+    jump.code = 57;
+    jump.pressed = jump.down = true;
+    send(jump);
+    assert(Actions::runner.requests == 1 && sink->Taken(&jump));
+    jump.pressed = jump.down = false;
+    send(jump);
+    assert(sink->Taken(&jump));  // its release too
+    RE::ButtonEvent padJump = jump;
+    padJump.code = 32768;
+    padJump.device.value = RE::INPUT_DEVICE::kGamepad;
+    padJump.pressed = padJump.down = true;
+    send(padJump);
+    assert(Actions::runner.requests == 2 && sink->Taken(&padJump));
+    padJump.pressed = padJump.down = false;
+    send(padJump);
+    Actions::runner.accept = false;
+    jump.pressed = jump.down = true;
+    send(jump);
+    assert(Actions::runner.requests == 3 && !sink->Taken(&jump));
+    jump.pressed = jump.down = false;
+    send(jump);
+    assert(!sink->Taken(&jump));
+    RE::ButtonEvent sprint;
+    sprint.userEvent = "Sprint";
+    sprint.code = 57;
+    sprint.pressed = sprint.down = true;
+    send(sprint);
+    assert(Actions::runner.requests == 3 && !sink->Taken(&sprint));  // the same key under another control
+    // Drawing or sheathing (0.12.298): kept from the game while the player's action plays, press and release; the
+    // game gets it when nothing plays.
+    sink->Reset();
+    Actions::runner = {};
+    RE::ButtonEvent ready;
+    ready.userEvent = "Ready Weapon";
+    ready.code = 19;
+    ready.pressed = ready.down = true;
+    send(ready);
+    assert(!sink->Taken(&ready));
+    ready.pressed = ready.down = false;
+    send(ready);
+    assert(!sink->Taken(&ready));
+    Actions::runner.state = ActionRunner::State::kActive;
+    ready.pressed = ready.down = true;
+    send(ready);
+    assert(sink->Taken(&ready) && Actions::runner.requests == 0);
+    Actions::runner.state = ActionRunner::State::kIdle;
+    ready.pressed = ready.down = false;
+    send(ready);
+    assert(sink->Taken(&ready));  // the release of a kept press, after the action ended
+    std::cout << "InputSink menu, console, missing UI, held input, device disconnect, batch origin, reset and game "
+                 "control and ready weapon checks passed\n";
 }

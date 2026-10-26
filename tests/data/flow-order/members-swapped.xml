@@ -1,16 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The group's members in the other order: a different flow (the order members are tried in counts). -->
-<AnimationSet version="4" id="FlowOrder">
-  <Action id="Back" clip="Animations\FlowOrder\Back.hkx">
-    <Start key="G"/>
-    <Flow entry="direction">
-      <Any id="direction" pass="Play">
-        <Use node="idle"/>
-        <Use node="held"/>
-      </Any>
-      <Test id="held" kind="movementDirection" subject="self" option="back"/>
-      <Test id="idle" kind="movementDirection" subject="self" option="none"/>
-      <Play id="Play" action="Back"/>
-    </Flow>
-  </Action>
+<!-- The group's members in the other order: a different choice (the order members are tried in counts). -->
+<AnimationSet version="6" id="FlowOrder">
+  <Start id="Back_Start" to="Back" key="G">
+    <Or><Check kind="movementDirection" option="none"/><Check kind="movementDirection" option="back"/></Or>
+  </Start>
+  <Action id="Back" clip="Animations\FlowOrder\Back.hkx"/>
 </AnimationSet>

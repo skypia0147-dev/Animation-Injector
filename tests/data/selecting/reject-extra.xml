@@ -1,16 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- No clip, with a playback setting that would never apply. -->
-<AnimationSet version="4" id="SelectingExtra">
-  <Inputs><Input id="Use" key="G"/></Inputs>
-  <Action id="Pick">
-    <Start input="Use"/>
+<!-- A start holds no playback setting: only its condition card. -->
+<AnimationSet version="6" id="SelectingExtra">
+  <Inputs>
+    <Input id="Use" key="G"/>
+  </Inputs>
+  <Start id="Pick" input="Use">
     <Enter blend="0.1"/>
-    <Flow entry="Held">
-      <Test id="Held" kind="global" subject="self" plugin="Skyrim.esm" form="38" equals="1" pass="ToA" fail="ToB"/>
-      <Play id="ToA" action="A"/>
-      <Play id="ToB" action="B"/>
-    </Flow>
-  </Action>
+    <Check kind="global" plugin="Skyrim.esm" form="38" equals="1"/>
+    <True to="A"/>
+    <False to="B"/>
+  </Start>
   <Action id="A" clip="Animations\Selecting\A.hkx"/>
   <Action id="B" clip="Animations\Selecting\B.hkx"/>
 </AnimationSet>

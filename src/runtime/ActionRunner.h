@@ -39,6 +39,9 @@ public:
     // The nearest target in `action`'s pair range and cone of `actor`, without a runner (a target
     // search must not create one per candidate action).
     static RE::ActorHandle PairedTargetFor(RE::Actor* actor, int action);
+    // The nearest living, loaded actor of any rig within `range` and the `angle` cone ahead of `actor` (0.12.299: the
+    // target of a start choosing among non-pair actions).
+    static RE::ActorHandle FrontTargetFor(RE::Actor* actor, float range, float angle);
     bool ValidPairedTarget(RE::ActorHandle target) const;
     bool CanRequestPairLink(RE::ActorHandle target) const;
     bool ExitForLink();

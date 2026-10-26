@@ -13,7 +13,7 @@ void Check(bool value, const char* message) {
 bool Parse(const std::string& content, std::vector<ActionSpec>& out, bool pair = false) {
     pugi::xml_document doc;
     const std::string tag = pair ? "Pair" : "Action";
-    doc.load_string(("<AnimationSet version='4' id='QteTest'><" + tag + " id='A' clip='a.hkx'>" + content + "</" + tag +
+    doc.load_string(("<AnimationSet version='6' id='QteTest'><" + tag + " id='A' clip='a.hkx'>" + content + "</" + tag +
                      "><Action id='B' clip='b.hkx'/><Action id='C' clip='c.hkx'/></AnimationSet>")
             .c_str());
     std::string mod, error;
@@ -201,6 +201,8 @@ int main(int argc, char** argv) {
                 "gamepad-only QTE keeps no key");
             Check(Parse("<QTE id='Q' at='0' key='LMB' control='rightAttack'/>", out) && std::string_view(key()) == "0",
                 "control replaces an unused key name");
+            Check(Parse("<QTE id='Q' at='0' control='jump'/>", out) && std::string_view(key()) == "0",
+                "any game control is a QTE input (0.12.292)");
             Check(Parse("<QTE id='Q' at='0' key='LMB' type='keySequence'><Input key='E'/><Input key='Q'/></QTE>", out),
                 "sequence ignores the single key");
         }

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING "" FORCE)
-project(AnimationInjector VERSION 0.12.289)
+project(AnimationInjector VERSION 0.12.300)
 enable_language(RC)
 add_executable(AnimationInjectorFileLifetimeTests EXCLUDE_FROM_ALL tests/AnimationFileLifetime.cpp)
 target_include_directories(AnimationInjectorFileLifetimeTests PRIVATE tests/file_lifetime_stubs src)
@@ -128,8 +128,8 @@ if(MSVC)
 endif()
 
 # Offline CLI and semantic comparisons compile the same parser used by the DLL.
-add_executable(AnimationInjectorXmlCheck EXCLUDE_FROM_ALL tests/XmlDeclarations.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/ConditionFlowXml.cpp src/runtime/RagdollProfile.cpp)
-add_executable(AnimationInjectorQteTests EXCLUDE_FROM_ALL tests/Qte.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/ConditionFlowXml.cpp)
+add_executable(AnimationInjectorXmlCheck EXCLUDE_FROM_ALL tests/XmlDeclarations.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp src/runtime/RagdollProfile.cpp)
+add_executable(AnimationInjectorQteTests EXCLUDE_FROM_ALL tests/Qte.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
 target_include_directories(AnimationInjectorQteTests PRIVATE src)
 target_compile_definitions(AnimationInjectorQteTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(AnimationInjectorQteTests PRIVATE /utf-8)
@@ -150,7 +150,7 @@ target_compile_features(AnimationInjectorQteLayoutTests PRIVATE cxx_std_20)
 target_include_directories(AnimationInjectorQteLifecycleTests PRIVATE tests/qte_stubs src)
 target_compile_features(AnimationInjectorQteLifecycleTests PRIVATE cxx_std_20)
 target_compile_options(AnimationInjectorQteLifecycleTests PRIVATE /utf-8)
-add_executable(AnimationInjectorRuntimeExtensionTests EXCLUDE_FROM_ALL tests/RuntimeExtensions.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/ConditionFlowXml.cpp)
+add_executable(AnimationInjectorRuntimeExtensionTests EXCLUDE_FROM_ALL tests/RuntimeExtensions.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
 target_include_directories(AnimationInjectorRuntimeExtensionTests PRIVATE src)
 target_compile_definitions(AnimationInjectorRuntimeExtensionTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_precompile_headers(AnimationInjectorRuntimeExtensionTests PRIVATE src/PCH.h)
@@ -159,28 +159,28 @@ if(MSVC)
     target_compile_options(AnimationInjectorRuntimeExtensionTests PRIVATE /utf-8)
 endif()
 # The global event registry (XML format 3 on): grammar, rejected old forms and the merge of every file.
-add_executable(AnimationInjectorEventRegistryTests EXCLUDE_FROM_ALL tests/EventRegistry.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/ConditionFlowXml.cpp)
+add_executable(AnimationInjectorEventRegistryTests EXCLUDE_FROM_ALL tests/EventRegistry.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
 target_include_directories(AnimationInjectorEventRegistryTests PRIVATE src)
 target_compile_definitions(AnimationInjectorEventRegistryTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(AnimationInjectorEventRegistryTests PRIVATE /utf-8)
 target_precompile_headers(AnimationInjectorEventRegistryTests PRIVATE src/PCH.h)
 target_link_libraries(AnimationInjectorEventRegistryTests PRIVATE CommonLibSSE::CommonLibSSE pugixml::pugixml)
-# XML format 4: keys in place, pad names, the omitted Window, unified defaults, removed forms named.
-add_executable(AnimationInjectorFormat4Tests EXCLUDE_FROM_ALL tests/Format4.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/ConditionFlowXml.cpp)
-target_include_directories(AnimationInjectorFormat4Tests PRIVATE src)
-target_compile_definitions(AnimationInjectorFormat4Tests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_compile_options(AnimationInjectorFormat4Tests PRIVATE /utf-8)
-target_precompile_headers(AnimationInjectorFormat4Tests PRIVATE src/PCH.h)
-target_link_libraries(AnimationInjectorFormat4Tests PRIVATE CommonLibSSE::CommonLibSSE pugixml::pugixml)
+# XML format 6: condition cards, starts onto actions (T1-T7), the attributes and renamed elements, older forms named.
+add_executable(AnimationInjectorFormat6Tests EXCLUDE_FROM_ALL tests/Format6.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
+target_include_directories(AnimationInjectorFormat6Tests PRIVATE src)
+target_compile_definitions(AnimationInjectorFormat6Tests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(AnimationInjectorFormat6Tests PRIVATE /utf-8)
+target_precompile_headers(AnimationInjectorFormat6Tests PRIVATE src/PCH.h)
+target_link_libraries(AnimationInjectorFormat6Tests PRIVATE CommonLibSSE::CommonLibSSE pugixml::pugixml)
 # Declaration folders named outside the ANSI code page load without throwing (code review 2026-09-30 R-14).
-add_executable(AnimationInjectorDeclarationPathsTests EXCLUDE_FROM_ALL tests/DeclarationPaths.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/ConditionFlowXml.cpp src/runtime/RagdollProfile.cpp)
+add_executable(AnimationInjectorDeclarationPathsTests EXCLUDE_FROM_ALL tests/DeclarationPaths.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp src/runtime/RagdollProfile.cpp)
 target_include_directories(AnimationInjectorDeclarationPathsTests PRIVATE src)
 target_compile_definitions(AnimationInjectorDeclarationPathsTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(AnimationInjectorDeclarationPathsTests PRIVATE /utf-8)
 target_precompile_headers(AnimationInjectorDeclarationPathsTests PRIVATE src/PCH.h)
 target_link_libraries(AnimationInjectorDeclarationPathsTests PRIVATE CommonLibSSE::CommonLibSSE pugixml::pugixml)
 # Camera views (runtime/ViewSpec.h): the rules ViewGuard applies and the view / firstPerson grammar.
-add_executable(AnimationInjectorViewTests EXCLUDE_FROM_ALL tests/View.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/ConditionFlowXml.cpp)
+add_executable(AnimationInjectorViewTests EXCLUDE_FROM_ALL tests/View.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
 target_include_directories(AnimationInjectorViewTests PRIVATE src)
 target_compile_definitions(AnimationInjectorViewTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(AnimationInjectorViewTests PRIVATE /utf-8)
@@ -196,7 +196,7 @@ endif()
 
 # Scale bench (not a ctest): the declaration pipeline at load over a stress folder
 # (tools/scale/generate_stress.py). Built on demand: --target AnimationInjectorScaleBench.
-add_executable(AnimationInjectorScaleBench EXCLUDE_FROM_ALL tests/ScaleBench.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/ConditionFlowXml.cpp src/runtime/RagdollProfile.cpp)
+add_executable(AnimationInjectorScaleBench EXCLUDE_FROM_ALL tests/ScaleBench.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp src/runtime/RagdollProfile.cpp)
 target_include_directories(AnimationInjectorScaleBench PRIVATE src)
 target_compile_definitions(AnimationInjectorScaleBench PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_precompile_headers(AnimationInjectorScaleBench PRIVATE src/PCH.h)
@@ -206,7 +206,7 @@ if(MSVC)
 endif()
 
 # Stage 3 (R-6): clip index equivalence with the former linear lookup, plus its cost.
-add_executable(AnimationInjectorClipIndexTests EXCLUDE_FROM_ALL tests/ClipIndex.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/ConditionFlowXml.cpp)
+add_executable(AnimationInjectorClipIndexTests EXCLUDE_FROM_ALL tests/ClipIndex.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
 target_include_directories(AnimationInjectorClipIndexTests PRIVATE src)
 target_compile_definitions(AnimationInjectorClipIndexTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_precompile_headers(AnimationInjectorClipIndexTests PRIVATE src/PCH.h)
@@ -223,10 +223,11 @@ target_link_libraries(AnimationInjectorExtendedConditionTests PRIVATE pugixml::p
 target_compile_features(AnimationInjectorExtendedConditionTests PRIVATE cxx_std_20)
 add_executable(AnimationInjectorConditionFlowXmlTests EXCLUDE_FROM_ALL tests/ConditionFlowXml.cpp src/declarations/ConditionFlowXml.cpp)
 target_include_directories(AnimationInjectorConditionFlowXmlTests PRIVATE src)
-add_executable(AnimationInjectorGrappleFlowTests EXCLUDE_FROM_ALL tests/GrappleFlow.cpp src/declarations/ConditionFlowXml.cpp)
+add_executable(AnimationInjectorGrappleFlowTests EXCLUDE_FROM_ALL tests/GrappleFlow.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
 target_include_directories(AnimationInjectorGrappleFlowTests PRIVATE src)
 target_link_libraries(AnimationInjectorGrappleFlowTests PRIVATE pugixml::pugixml)
 target_compile_features(AnimationInjectorGrappleFlowTests PRIVATE cxx_std_20)
+target_compile_options(AnimationInjectorGrappleFlowTests PRIVATE /utf-8)
 target_link_libraries(AnimationInjectorConditionFlowXmlTests PRIVATE pugixml::pugixml)
 target_compile_features(AnimationInjectorConditionFlowXmlTests PRIVATE cxx_std_20)
 target_include_directories(AnimationInjectorConditionFlowTests PRIVATE src)
@@ -338,8 +339,8 @@ if(MSVC)
 endif()
 
 # Production registration helpers plus the real parser, compared to frozen 0.12.95 behavior.
-add_executable(AnimationInjectorInjectionTests EXCLUDE_FROM_ALL tests/InjectionOptimization.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/ConditionFlowXml.cpp)
-add_executable(AnimationInjectorClipRecoveryTests EXCLUDE_FROM_ALL tests/ClipRecovery.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/ConditionFlowXml.cpp)
+add_executable(AnimationInjectorInjectionTests EXCLUDE_FROM_ALL tests/InjectionOptimization.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
+add_executable(AnimationInjectorClipRecoveryTests EXCLUDE_FROM_ALL tests/ClipRecovery.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
 target_include_directories(AnimationInjectorClipRecoveryTests PRIVATE src)
 target_compile_definitions(AnimationInjectorClipRecoveryTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_precompile_headers(AnimationInjectorClipRecoveryTests PRIVATE src/PCH.h)
@@ -353,7 +354,7 @@ if(MSVC)
     target_compile_options(AnimationInjectorInjectionTests PRIVATE /utf-8)
 endif()
 
-add_executable(AnimationInjectorFireArrowTests EXCLUDE_FROM_ALL tests/FireArrow.cpp src/core/FireArrowResolver.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/ConditionFlowXml.cpp)
+add_executable(AnimationInjectorFireArrowTests EXCLUDE_FROM_ALL tests/FireArrow.cpp src/core/FireArrowResolver.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
 target_include_directories(AnimationInjectorFireArrowTests PRIVATE src "${AI_HDE64_SOURCE_DIR}/src/hde")
 target_compile_definitions(AnimationInjectorFireArrowTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(AnimationInjectorFireArrowTests PRIVATE /utf-8)
@@ -417,15 +418,10 @@ if(NOT AI_PORT_DECLARATIONS)
 endif()
 add_test(NAME ClipIndex COMMAND AnimationInjectorClipIndexTests "${AI_TEST_DATA}/vanilla-clip-names.txt" ${AI_PORT_DECLARATIONS})
 add_test(NAME XmlCheck COMMAND AnimationInjectorXmlCheck --json "${AI_DDS_PORT}")
-# --compare: a branch into <Stop> equals a missing one (the editor's form); a flow that only stops
-# still differs from no flow.
+# --compare on cards: an empty False (format 5's Stop) equals none, and to="X" with common conditions equals the
+# same conditions with <True to="X"/>; the order of a group's members counts.
 add_test(NAME XmlCompareFlowStop COMMAND AnimationInjectorXmlCheck --compare
     "${AI_TEST_DATA}/flow-stop/stop.xml" "${AI_TEST_DATA}/flow-stop/folded.xml")
-add_test(NAME XmlCompareFlowStopOnly COMMAND AnimationInjectorXmlCheck --compare
-    "${AI_TEST_DATA}/flow-stop/folded.xml" "${AI_TEST_DATA}/flow-stop/no-flow.xml")
-set_tests_properties(XmlCompareFlowStopOnly PROPERTIES PASS_REGULAR_EXPRESSION "Semantic mismatch: Never")
-# --compare walks a flow from its entry: the order nodes are written in and their IDs do not count (the editor
-# writes a Play right after the branch reaching it), the order of a group's members does.
 add_test(NAME XmlCompareFlowOrder COMMAND AnimationInjectorXmlCheck --compare
     "${AI_TEST_DATA}/flow-order/written.xml" "${AI_TEST_DATA}/flow-order/editor.xml")
 add_test(NAME XmlCompareFlowMembers COMMAND AnimationInjectorXmlCheck --compare
@@ -465,16 +461,6 @@ endforeach()
 add_test(NAME IniMerge COMMAND ${CMAKE_COMMAND} -D "TEMPLATE=${CMAKE_SOURCE_DIR}/misc/AnimationInjector.ini"
     -D "OLD=${AI_TEST_DATA}/ini/user-old.ini" -D "EXPECTED=${AI_TEST_DATA}/ini/merged.ini"
     -D "WORK=${CMAKE_BINARY_DIR}/ini-merge-test" -P "${CMAKE_SOURCE_DIR}/tests/IniMerge.cmake")
-# Format 2/3 -> 4 converter (tools/convert_v4.py): golden bytes, the result parses, combos refused.
-find_package(Python3 COMPONENTS Interpreter)
-if(Python3_Interpreter_FOUND)
-    add_test(NAME ConvertV4 COMMAND ${CMAKE_COMMAND} -D "PYTHON=${Python3_EXECUTABLE}"
-        -D "CONVERTER=${CMAKE_SOURCE_DIR}/tools/convert_v4.py" -D "CHECK=$<TARGET_FILE:AnimationInjectorXmlCheck>"
-        -D "DATA=${AI_TEST_DATA}/convert-v4" -D "WORK=${CMAKE_BINARY_DIR}/convert-v4-test"
-        -P "${CMAKE_SOURCE_DIR}/tests/ConvertV4.cmake")
-else()
-    message(WARNING "Python 3 not found: the ConvertV4 test is unavailable")
-endif()
 # Carry fix moment: <Fix at="seconds"/> inside Carry (docs/설계-운반-개편.md).
 add_test(NAME CarryFixXml COMMAND AnimationInjectorXmlCheck "${AI_TEST_DATA}/carry/fix.xml")
 foreach(case fix-event fix-negative fix-duplicate fix-missing)
@@ -484,19 +470,6 @@ endforeach()
 # Carry weapon is "sheathed" or "sheathe"; any other value is refused.
 add_test(NAME CarryWeaponReject-weapon-mode
     COMMAND AnimationInjectorXmlCheck --reject "${AI_TEST_DATA}/carry/reject-weapon-mode.xml")
-# Removed in 0.12.238 (unused by every installed declaration): Carry weapon="keep" and weaponShow, the
-# Lock window with the lock/unlock event functions, and External. Each refused for that reason.
-foreach(case carry/reject-weapon-keep carry/reject-weapon-show removed/lock-window removed/lock-function
-        removed/external)
-    string(REPLACE "/" "-" name "${case}")
-    add_test(NAME Removed0238-${name}
-        COMMAND AnimationInjectorXmlCheck --json "${AI_TEST_DATA}/${case}.xml")
-    set_tests_properties(Removed0238-${name} PROPERTIES PASS_REGULAR_EXPRESSION "\"valid\":false.*0\\.12\\.238")
-endforeach()
-# Removed in 0.12.255: the per-pair EndPosition (the end position applies to every pair, INI iPairEndPosition).
-add_test(NAME Removed0255-end-position
-    COMMAND AnimationInjectorXmlCheck --json "${AI_TEST_DATA}/removed/end-position.xml")
-set_tests_properties(Removed0255-end-position PROPERTIES PASS_REGULAR_EXPRESSION "\"valid\":false.*0\\.12\\.255")
 # <Hold pose> is "lift-end" only (carry stage 2b, an HKX hold pose, was dropped).
 foreach(case hold-pose hold-time)
     add_test(NAME CarryHoldReject-${case}
@@ -516,10 +489,11 @@ foreach(case hangul star)
         COMMAND AnimationInjectorXmlCheck --json "${AI_TEST_DATA}/hkx-path/reject-${case}.xml")
     set_tests_properties(HkxPathReason-${case} PROPERTIES PASS_REGULAR_EXPRESSION "\"valid\":false.*ASCII")
 endforeach()
-# A selecting action may leave its clip out (0.12.244): only with a Flow that never plays the action itself,
-# and only Start, Require, Suppress and Flow. The reason tests prove which check rejected each file.
+# Selecting (0.12.244) is a start with a condition card in format 6: an action needs its clip, a card names actions
+# that exist (a start's id is not one), and a start holds no playback setting. The reason tests prove which check
+# rejected each file.
 add_test(NAME SelectingNoClipXml COMMAND AnimationInjectorXmlCheck "${AI_TEST_DATA}/selecting/selecting.xml")
-foreach(item "no-flow|0[.]12[.]244" "self|SelfPick" "extra|Flow.*: Enter")
+foreach(item "no-flow|clip" "self|SelfPick" "extra|Start/Enter")
     string(REPLACE "|" ";" parts "${item}")
     list(GET parts 0 case)
     list(GET parts 1 reason)

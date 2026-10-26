@@ -3,7 +3,6 @@
 #include "core/SpaceQueryMath.h"
 #include "core/QueryPhantom.h"
 #include "core/SpaceContactPolicy.h"
-#include "core/PairPreflight.h"
 #include "RE/H/hkpWorldRayCastInput.h"
 #include "RE/H/hkpWorldRayCastOutput.h"
 #include "RE/H/hkpClosestRayHitCollector.h"
@@ -11,6 +10,7 @@
 #include "Settings.h"
 #include <array>
 #include <limits>
+#include <optional>
 
 // CommonLib declares these trivial methods without definitions.
 namespace RE {
@@ -127,12 +127,14 @@ ConditionFlow::Value Read(std::uint64_t id, int role, RE::Actor* actor, RE::Acto
     constexpr auto unavailable = ConditionFlow::Value::kUnavailable;
     auto* cc = actor->GetCharController();
     auto* world = cc ? cc->GetHavokWorld() : nullptr;
-    if (!world || !world->GetWorld1() || !partner->GetCharController() ||
-        partner->GetCharController()->GetHavokWorld() != world)
-        return unavailable;
-    const Body body = Collision(cc), otherBody = Collision(partner->GetCharController());
+    if (!world || !world->GetWorld1()) return unavailable;
+    // The partner (a start's target) is no obstacle. Without one, or with one outside this world, only the actor
+    // itself is left out (0.12.299).
+    auto* otherCc = partner ? partner->GetCharController() : nullptr;
+    if (otherCc && otherCc->GetHavokWorld() != world) otherCc = nullptr;
+    const Body body = Collision(cc), otherBody = Collision(otherCc);
     auto* source = body.Object();
-    if (!source || !otherBody.Object()) return unavailable;
+    if (!source || (otherCc && !otherBody.Object())) return unavailable;
     const float scale = RE::bhkWorld::GetWorldScale();
     if (!std::isfinite(scale) || scale <= 0 || !std::isfinite(yaw) || !std::isfinite(distance) || distance <= 0 ||
         distance > 2000)
@@ -150,7 +152,7 @@ ConditionFlow::Value Read(std::uint64_t id, int role, RE::Actor* actor, RE::Acto
     bool unchanged = false;
     {
         RE::BSReadLockGuard lock(world->worldLock);
-        if (source->world != world->GetWorld1() || otherBody.Object()->world != source->world ||
+        if (source->world != world->GetWorld1() || (otherBody.Object() && otherBody.Object()->world != source->world) ||
             !source->collidable.shape)
             return unavailable;
         auto* motion = source->GetMotionState();
@@ -219,10 +221,6 @@ ConditionFlow::Value Read(std::uint64_t id, int role, RE::Actor* actor, RE::Acto
     return verdict;
 }
 }
-// The heading a check's direction turns from (0.12.280): the initiator's on its mark or the partner's turned one.
-static float HeadingOf(const PairPreflight::Placement& placement, ConditionFlowXml::DirectionBasis basis) {
-    return basis == ConditionFlowXml::DirectionBasis::kSelf ? placement.initiatorYaw : placement.targetYaw;
-}
 ConditionFlow::Value Path(std::uint64_t id, RE::Actor* actor, RE::Actor* partner, const RE::NiPoint3& destination) {
     if (!actor || !partner || !actor->GetCharController()) return ConditionFlow::Value::kUnavailable;
     const auto from = actor->GetPosition();
@@ -233,37 +231,45 @@ ConditionFlow::Value Path(std::uint64_t id, RE::Actor* actor, RE::Actor* partner
     return Read(id, 1, actor, partner, actor->GetCharController(), RE::hkVector4{from.x, from.y, from.z, 0},
         std::max(length, 1.0f), length > 0 ? std::atan2(dx, dy) : actor->GetAngleZ(), false);
 }
-ConditionFlow::Value Evaluate(RE::ActorHandle initiator, RE::ActorHandle target, int candidate, int role,
-    float distance, float direction, ConditionFlowXml::DirectionBasis basis) {
-    constexpr auto unavailable = ConditionFlow::Value::kUnavailable;
-    if (role < 0 || role > 1 || !std::isfinite(direction)) return unavailable;
-    const auto placement = PairPreflight::Read(initiator, target, candidate);
-    auto self = initiator.get(), other = target.get();
-    if (!placement || !self || !other) return unavailable;
-    const auto& p = placement->positions[role];
-    auto* actor = role == 0 ? self.get() : other.get();
-    auto* partner = role == 0 ? other.get() : self.get();
-    return Read(0, role, actor, partner, actor->GetCharController(), RE::hkVector4{p.x, p.y, p.z, 0}, distance,
-        HeadingOf(*placement, basis) + direction, false);
+namespace {
+// Where a check measures (0.12.299): the actor's position now, along its heading now turned by `direction`. Not where an
+// action would put it: a check decides before anything is picked.
+struct Spot {
+    RE::NiPointer<RE::Actor> self, other;  // the actor, and the start's target or none
+    RE::NiPoint3 at;
+    float yaw = 0;
+};
+std::optional<Spot> Here(RE::ActorHandle initiator, RE::ActorHandle target, float direction) {
+    Spot s{initiator.get(), target.get()};
+    if (!std::isfinite(direction) || !s.self || !s.self->Is3DLoaded()) return std::nullopt;
+    if (s.other && (s.other.get() == s.self.get() || !s.other->Is3DLoaded())) s.other.reset();
+    s.at = s.self->GetPosition();
+    s.yaw = s.self->GetAngleZ() + direction;
+    if (!std::isfinite(s.yaw)) return std::nullopt;
+    return s;
 }
-ConditionFlow::Value EvaluateGround(RE::ActorHandle initiator, RE::ActorHandle target, int candidate, int role,
-    float distance, float direction, ConditionFlowXml::DirectionBasis basis, GroundPolicy::Limits limits) {
+}
+ConditionFlow::Value Evaluate(RE::ActorHandle initiator, RE::ActorHandle target, float distance, float direction) {
+    const auto spot = Here(initiator, target, direction);
+    if (!spot) return ConditionFlow::Value::kUnavailable;
+    // No moving controller: Read sweeps from the actor's own feet.
+    return Read(0, 0, spot->self.get(), spot->other.get(), nullptr,
+        RE::hkVector4{spot->at.x, spot->at.y, spot->at.z, 0}, distance, spot->yaw, false);
+}
+ConditionFlow::Value EvaluateGround(
+    RE::ActorHandle initiator, RE::ActorHandle target, float distance, float direction, GroundPolicy::Limits limits) {
     using V = ConditionFlow::Value;
-    if (role < 0 || role > 1 || !GroundPolicy::Valid(limits) || !std::isfinite(distance) || distance < 0 ||
-        distance > 2000 || !std::isfinite(direction))
+    if (!GroundPolicy::Valid(limits) || !std::isfinite(distance) || distance < 0 || distance > 2000)
         return V::kUnavailable;
-    const auto placement = PairPreflight::Read(initiator, target, candidate);
-    auto self = initiator.get(), other = target.get();
-    if (!placement || !self || !other) return V::kUnavailable;
-    auto* actor = role ? other.get() : self.get();
+    const auto spot = Here(initiator, target, direction);
+    if (!spot) return V::kUnavailable;
+    auto* actor = spot->self.get();
     auto* cc = actor->GetCharController();
     auto* world = cc ? cc->GetHavokWorld() : nullptr;
-    if (!world || !world->GetWorld1() || !self->GetCharController() || !other->GetCharController() ||
-        self->GetCharController()->GetHavokWorld() != world || other->GetCharController()->GetHavokWorld() != world)
-        return V::kUnavailable;
-    const float scale = RE::bhkWorld::GetWorldScale(), yaw = HeadingOf(*placement, basis) + direction;
-    if (!std::isfinite(scale) || scale <= 0 || !std::isfinite(yaw)) return V::kUnavailable;
-    const auto p = placement->positions[role];
+    if (!world || !world->GetWorld1()) return V::kUnavailable;
+    const float scale = RE::bhkWorld::GetWorldScale(), yaw = spot->yaw;
+    if (!std::isfinite(scale) || scale <= 0) return V::kUnavailable;
+    const auto p = spot->at;
     const unsigned segments = static_cast<unsigned>(std::ceil(distance / 25.0f));
     const std::array<std::array<float, 2>, 5> offsets{
         {{0, 0}, {limits.radius, 0}, {-limits.radius, 0}, {0, limits.radius}, {0, -limits.radius}}};
@@ -326,12 +332,11 @@ ConditionFlow::Value EvaluateGround(RE::ActorHandle initiator, RE::ActorHandle t
                 }
             }
     }
+    logger::debug("[GroundRay] actor={:08X} samples={} callbacks={} ignored={} ignoredLayers={:016X}",
+        actor->GetFormID(), samples, callbacks, ignored, ignoredLayers);
     logger::debug(
-        "[GroundRay] actor={:08X} candidate={} role={} samples={} callbacks={} ignored={} ignoredLayers={:016X}",
-        actor->GetFormID(), candidate, role, samples, callbacks, ignored, ignoredLayers);
-    logger::debug(
-        "[GroundCondition] actor={:08X} candidate={} role={} distance={} samples={} result={} reason={} layer={} height={:.3f} normalZ={:.4f} rise={} drop={} slope={} radius={}",
-        actor->GetFormID(), candidate, role, distance, samples,
+        "[GroundCondition] actor={:08X} distance={} samples={} result={} reason={} layer={} height={:.3f} normalZ={:.4f} rise={} drop={} slope={} radius={}",
+        actor->GetFormID(), distance, samples,
         result == V::kTrue    ? "clear"
         : result == V::kFalse ? "blocked"
                               : "unavailable",

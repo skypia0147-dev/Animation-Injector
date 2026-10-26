@@ -1,6 +1,7 @@
 #pragma once
 #include "PCH.h"
 #include "runtime/QteSpec.h"
+#include "runtime/GameControls.h"
 #include "runtime/FireArrowShot.h"
 #include <optional>
 #include "runtime/PairedRig.h"
@@ -63,19 +64,25 @@ struct SlotEvents {    // 기능 슬롯 ↔ 이벤트 이름 (기본값은 Final
 // 이름 있는 입력: <Inputs><Input id="attack" key="G" gamepad="0x1000"/></Inputs> → <Trigger input="attack"/>, <Window input="attack"/>
 struct InputDef {
     std::string id;
-    std::uint32_t key = 0;      // DXScanCode (마우스는 +256). 0 = 없음
-    std::uint32_t gamepad = 0;  // 패드 버튼 마스크. 0 = 없음
+    std::uint32_t key = 0;                     // DXScanCode (마우스는 +256). 0 = 없음
+    std::uint32_t gamepad = 0;                 // 패드 버튼 마스크. 0 = 없음
+    GameControl control = GameControl::kNone;  // a game control instead of a key (0.12.292)
 };
 
-struct TriggerSpec {            // 액션 시작 입력
-    std::string inputId;        // <Inputs> 참조 (있으면 Finalize 가 key/gamepad 를 채운다)
-    std::uint32_t key = 0x38;   // DXScanCode (마우스는 +256)
-    std::uint32_t gamepad = 0;  // 패드 버튼 마스크 (0 = 없음)
+struct TriggerSpec {                           // 액션 시작 입력
+    std::string inputId;                       // <Inputs> 참조 (있으면 Finalize 가 key/gamepad 를 채운다)
+    std::uint32_t key = 0x38;                  // DXScanCode (마우스는 +256)
+    std::uint32_t gamepad = 0;                 // 패드 버튼 마스크 (0 = 없음)
+    GameControl control = GameControl::kNone;  // a game control instead of a key (0.12.292)
     bool onKeyUp = false;
     // 이벤트 발화 (NPC/플레이어 공통): 액터의 그래프가 이 이벤트를 쏘면 시작. actor = "player" | "npc" | "both"
     std::string onEvent;
     bool onEventPlayer = false, onEventNpc = true;
-    bool eventCombatTarget = false;
+    // The target its conditions read (0.12.299): the sender's combat target (an event start's is captured when the
+    // event fires), or for a start choosing among non-pair actions the nearest actor ahead within range and angle.
+    bool combatTarget = false;
+    bool frontTarget = false;
+    float targetRange = 200.0f, targetAngle = 90.0f;
 };
 
 // Recovery 슬롯 (계획서 §4-3): 이 이벤트(또는 시각) 이후에는 이동 입력만으로 액션을 끊고 이동으로 나간다.
@@ -230,6 +237,7 @@ struct ActionSpec {
             if (const auto* in = findInput(trigger.inputId)) {
                 trigger.key = in->key;
                 trigger.gamepad = in->gamepad;
+                trigger.control = in->control;
             }
         int k = 0;
         for (auto& w : cancels) {

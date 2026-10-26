@@ -17,7 +17,7 @@ int wmain(int argc, wchar_t** argv) {
         Check(argc == 2, "XML argument required");
         std::vector<ActionSpec> specs;
         Check(Declarations::LoadXmlFile(argv[1], specs), "editor XML parses");
-        Check(specs.size() == 3, "three actions preserved");
+        Check(specs.size() == 4, "three actions preserved, and the start's selecting action (format 5)");
         const auto* back = Find(specs, "BowDodgeBack");
         const auto* left = Find(specs, "BowDodgeLeft");
         const auto* right = Find(specs, "BowDodgeRight");

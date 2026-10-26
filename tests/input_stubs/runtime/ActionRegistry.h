@@ -23,6 +23,13 @@ inline const std::vector<int>& ActionsForGamepad(std::uint32_t button) {
     if (button && button == runner.spec.trigger.gamepad) keyed.push_back(0);
     return keyed;
 }
+// Its own list: the sink holds the key list and this one at once.
+inline std::vector<int> controlled;
+inline const std::vector<int>& ActionsForControl(GameControl control) {
+    controlled.clear();
+    if (control != GameControl::kNone && control == runner.spec.trigger.control) controlled.push_back(0);
+    return controlled;
+}
 inline int NextRunner(RE::PlayerCharacter*, int after, ActionRunner** r) {
     *r = after < 0 ? &runner : nullptr;
     return after < 0 ? 0 : -1;

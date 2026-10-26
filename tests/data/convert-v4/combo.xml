@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- A combo has no mechanical translation: the converter refuses it and leaves the file as it was. -->
-<AnimationSet version="3" id="ConvertV4Combo">
-  <Combo id="Sword" entry="A1">
-    <Start key="G"/>
-    <Step id="A1" clip="Animations\Sword\A1.hkx"/>
-    <Step id="A2" clip="Animations\Sword\A2.hkx"/>
-  </Combo>
-</AnimationSet>

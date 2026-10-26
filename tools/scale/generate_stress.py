@@ -38,7 +38,8 @@ def action_ids(root):
 
 def clone(root, k, tag):
     root = ET.fromstring(ET.tostring(root))
-    ids = action_ids(root)
+    # Starts and condition cards (format 6) are named per clone too: what refers to them names them the same way.
+    ids = action_ids(root) | {e.get("id") for e in root if e.tag in {"Start", "Condition"} and e.get("id")}
     suffix = f"_{tag}{k:05d}"
     root.set("id", root.get("id", "Set") + suffix)
     for e in root.iter():

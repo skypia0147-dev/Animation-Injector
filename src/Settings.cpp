@@ -209,7 +209,7 @@ bool FromXml(
         return false;
     }
     if (!doc.child("AnimationSet")) {
-        logger::error("[Decl] {}: unsupported XML format; the root must be <AnimationSet version=\"4\">", file);
+        logger::error("[Decl] {}: unsupported XML format; the root must be <AnimationSet version=\"6\">", file);
         return false;
     }
     // A file loads completely or not at all: Link and Flow refer to sibling actions, so a

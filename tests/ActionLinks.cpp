@@ -248,8 +248,8 @@ int main() {
         const int stage = cycle % 3, next = (stage + 1) % 3;
         const int before = runners[1][next].starts;
         for (int press = 0; press < 20; ++press) {
-            assert(ActionLinks::Input(9, false));
-            assert(ActionLinks::Input(9, false, false));
+            assert(ActionLinks::Input(9, false).claimed);
+            assert(ActionLinks::Input(9, false, GameControl::kNone, false).claimed);
             ActionLinks::ObserveTime({1}, stage, .01f * press, 2);
             ActionLinks::Update(.01f);
             assert(runners[1][next].starts == before);
@@ -260,12 +260,12 @@ int main() {
         // Model the production activation/retirement callbacks.
         ActionLinks::Begin({1}, next, false, true);
         ActionLinks::End({1}, stage);
-        assert(ActionLinks::Input(9, false, false));
-        assert(!ActionLinks::Input(10, false));  // Unrelated dodge key remains available.
-        assert(!ActionLinks::Input(9, true));    // Device namespaces remain distinct.
+        assert(ActionLinks::Input(9, false, GameControl::kNone, false).claimed);
+        assert(!ActionLinks::Input(10, false).claimed);  // Unrelated dodge key remains available.
+        assert(!ActionLinks::Input(9, true).claimed);    // Device namespaces remain distinct.
     }
     ActionLinks::End({1}, 0);
-    assert(!ActionLinks::Input(9, false));
+    assert(!ActionLinks::Input(9, false).claimed);
 
     // Non-buffered windows still reserve the key outside their acceptance range.
     Setup("", false);
@@ -275,40 +275,52 @@ int main() {
     specs[0].links[0].closeAt = 1;
     specs[0].links[0].buffered = false;
     ActionLinks::Begin({1}, 0, false, true);
-    assert(ActionLinks::Input(9, false));
+    assert(ActionLinks::Input(9, false).claimed);
     ActionLinks::ObserveTime({1}, 0, .6f, 2);
     ActionLinks::Update(.01f);
     assert(runners[1][1].starts == 0);  // Early press was claimed but not buffered.
-    assert(ActionLinks::Input(9, false, false));
+    assert(ActionLinks::Input(9, false, GameControl::kNone, false).claimed);
     ActionLinks::Update(.01f);
     assert(runners[1][1].starts == 0);  // Key-up does not trigger the link.
     ActionLinks::ObserveTime({1}, 0, 1.1f, 2);
     ActionLinks::Update(.01f);
-    assert(ActionLinks::Input(9, false));
+    assert(ActionLinks::Input(9, false).claimed);
     ActionLinks::Update(.01f);
     assert(runners[1][1].starts == 0);
     ActionLinks::ResetOnLoad();
-    assert(!ActionLinks::Input(9, false));
+    assert(!ActionLinks::Input(9, false).claimed);
 
     // Pending pair cleanup retains ownership even after the source entry ends.
     Setup("");
     specs[0].links[0].action = "OtherPair";
     Press();
     ActionLinks::End({1}, 0);
-    assert(ActionLinks::Input(9, false));
-    assert(ActionLinks::Input(9, false, false));
-    assert(!ActionLinks::Input(10, false));
+    assert(ActionLinks::Input(9, false).claimed);
+    assert(ActionLinks::Input(9, false, GameControl::kNone, false).claimed);
+    assert(!ActionLinks::Input(10, false).claimed);
     ActionLinks::Update(8.1f);
-    assert(!ActionLinks::Input(9, false));
+    assert(!ActionLinks::Input(9, false).claimed);
     Setup("", false);
     ActionLinks::Begin({2}, 0, false, false);
-    assert(!ActionLinks::Input(9, false));  // NPC links do not own player input.
+    assert(!ActionLinks::Input(9, false).claimed);  // NPC links do not own player input.
     Setup("", false);
     specs[0].links[0].gamepad = 8;
     ActionLinks::Begin({1}, 0, false, true);
-    assert(ActionLinks::Input(8, true, false));
-    assert(!ActionLinks::Input(8, false));
-    assert(!ActionLinks::Input(0, false));
+    assert(ActionLinks::Input(8, true, GameControl::kNone, false).claimed);
+    assert(!ActionLinks::Input(8, false).claimed);
+    assert(!ActionLinks::Input(0, false).claimed);
+    // A game control (0.12.292): any device's press of that control, and only that control, is the transition's.
+    Setup("", false);
+    specs[0].links[0].key = 0;
+    specs[0].links[0].control = GameControl::kJump;
+    ActionLinks::Begin({1}, 0, false, true);
+    {
+        const auto keyboard = ActionLinks::Input(57, false, GameControl::kJump);
+        assert(keyboard.claimed && keyboard.taken);
+    }
+    assert(ActionLinks::Input(32768, true, GameControl::kJump).taken);
+    assert(!ActionLinks::Input(57, false).claimed);                        // The same key without the control.
+    assert(!ActionLinks::Input(42, false, GameControl::kSprint).claimed);  // Another control.
     Setup("");
     specs[0].links[0].action = "OtherPair";
     PairRootRuntime::busy = true;

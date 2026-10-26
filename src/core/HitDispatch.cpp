@@ -2,6 +2,7 @@
 #include "core/HitDispatch.h"
 #include "runtime/PairFeatures.h"
 #include "runtime/Carry.h"
+#include "runtime/Strike.h"
 
 namespace AnimationInjector::HitDispatch {
 
@@ -13,6 +14,8 @@ public:
         return &s;
     }
     RE::BSEventNotifyControl ProcessEvent(const RE::TESHitEvent* a_ev, RE::BSTEventSource<RE::TESHitEvent>*) override {
+        // A strike's own hit event (Strike::Sending) is the action's: it neither ends a carry nor is a third party's.
+        if (Strike::Sending()) return RE::BSEventNotifyControl::kContinue;
         if (a_ev && a_ev->target) Carry::ObserveHit(a_ev->target->As<RE::Actor>());
         if (a_ev && a_ev->target && a_ev->cause) {
             auto* victim = a_ev->target->As<RE::Actor>();

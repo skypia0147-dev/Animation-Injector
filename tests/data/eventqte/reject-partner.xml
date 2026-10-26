@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- An event's QTE is the player's own: no recipient, no partner input. -->
-<AnimationSet version="4" id="EventQtePartner">
+<AnimationSet version="6" id="EventQtePartner">
   <EventRegistry>
-    <Event name="Ragdoll"><QTE id="Ask"><Success event="Up" recipient="both"/></QTE></Event>
+    <Event name="Ragdoll">
+      <QTE id="Ask">
+        <Success event="Up" recipient="both"/>
+      </QTE>
+    </Event>
   </EventRegistry>
 </AnimationSet>

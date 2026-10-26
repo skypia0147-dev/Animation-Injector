@@ -38,6 +38,7 @@ struct Pending {
     RE::BSFixedString enter, airEnter;
     bool player = false;
     std::uint32_t key = 0, gamepad = 0;
+    GameControl control = GameControl::kNone;
     int flow = -1;
     bool explicitBlend = false;
     ConditionValues::Request conditionRequest;
@@ -158,23 +159,28 @@ void ObserveEvent(RE::ActorHandle actor, const RE::BSFixedString& event) {
                     w.pressed = true;
             }
 }
-bool Input(std::uint32_t code, bool gamepad, bool down) {
+InputResult Input(std::uint32_t code, bool gamepad, GameControl control, bool down) {
     std::lock_guard lock(mutex);
-    if (!code) return false;
-    bool claimed = false;
+    InputResult result;
+    if (!code && control == GameControl::kNone) return result;
+    const auto matches = [&](std::uint32_t key, std::uint32_t pad, GameControl own) {
+        return own != GameControl::kNone ? own == control : code && (gamepad ? pad : key) == code;
+    };
     for (auto& e : entries)
         if (e.player)
             for (auto& w : e.windows) {
-                const auto key = gamepad ? w.spec.gamepad : w.spec.key;
-                if (key != code) continue;
+                if (!matches(w.spec.key, w.spec.gamepad, w.spec.control)) continue;
                 // A closed window rejects the press; it must not turn into a new start.
-                claimed = true;
-                if (down && !w.closed && (w.opened || w.spec.buffered)) w.pressed = true;
+                result.claimed = true;
+                if (down && !w.closed && (w.opened || w.spec.buffered)) {
+                    w.pressed = true;
+                    result.taken = true;
+                }
             }
     // Source cleanup can finish before a queued destination becomes ready.
     for (const auto& p : pending)
-        if (p.player && (gamepad ? p.gamepad : p.key) == code) claimed = true;
-    return claimed;
+        if (p.player && matches(p.key, p.gamepad, p.control)) result.claimed = true;
+    return result;
 }
 void Update(float delta) {
     if (!std::isfinite(delta) || delta < 0) return;
@@ -200,6 +206,7 @@ void Update(float delta) {
                     item.player = e.player;
                     item.key = w.spec.key;
                     item.gamepad = w.spec.gamepad;
+                    item.control = w.spec.control;
                     item.enter = w.enter;
                     item.airEnter = w.airEnter;
                     item.routes = w.routes;

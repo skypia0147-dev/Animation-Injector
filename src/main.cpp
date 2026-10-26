@@ -9,6 +9,7 @@
 #include "core/PairInputGate.h"
 #include "runtime/PairFeatures.h"
 #include "runtime/EventEffects.h"
+#include "runtime/ActionHistory.h"
 #include "runtime/EventRegistry.h"
 #include "runtime/ActionLinks.h"
 #include "Settings.h"
@@ -89,6 +90,7 @@ void EndSession() {
     EventRegistry::ResetOnLoad();
     AnnotationCommands::ResetOnLoad();
     EventEffects::ResetOnLoad();
+    ActionHistory::ResetOnLoad();
     PairedSession::ResetOnLoad();
     PairRootScale::Reset();
     // Every holder has let go above; a lease still held would keep its actor a ghost in the next session.
@@ -107,7 +109,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
     SKSE::Init(a_skse, false);
     AnimationInjector::MainThread::Capture();
     SetupLog();
-    logger::info("AnimationInjector {} (extended conditions) loaded (runtime {})", AI_VERSION_STRING,
+    logger::info("AnimationInjector {} (format 6 only, no older forms) loaded (runtime {})", AI_VERSION_STRING,
         REL::Module::get().version().string());
     AnimationInjector::Carry::InstallSerialization();
     SKSE::AllocTrampoline(4096);

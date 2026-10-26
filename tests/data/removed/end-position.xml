@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<AnimationSet version="4" id="RemovedEndPosition">
-  <Pair id="P" clip="Animations\Test\Pair.hkx">
-    <Start key="G"/>
-    <EndPosition mode="root"/>
-  </Pair>
-</AnimationSet>

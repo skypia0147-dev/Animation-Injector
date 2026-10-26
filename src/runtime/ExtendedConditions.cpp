@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "runtime/ExtendedConditions.h"
+#include "runtime/ActionHistory.h"
 #include "runtime/LyingSide.h"
 #include "runtime/PairedRig.h"
 #include "runtime/PairedSession.h"
@@ -46,6 +47,75 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
         logger::debug("[FlowTest] actor={:08X} test=lying chest=({:.2f},{:.2f},{:.2f}) back={} expected={}",
             subject->GetFormID(), chest.x, chest.y, chest.z, back, p.option);
         return boolean(back == (p.option == "back"));
+    }
+    case Test::kPreviousAction: {
+        // The last of our actions the subject finished (recorded only while such a check is loaded).
+        ActionHistory::Last last;
+        if (!ActionHistory::LastOf(subject->GetHandle(), last)) return Value::kFalse;
+        if (std::find(p.actions.begin(), p.actions.end(), last.index) == p.actions.end()) return Value::kFalse;
+        if (p.within >= 0.0f && last.ago > p.within) return Value::kFalse;
+        if (p.ended == "completed" && !last.completed) return Value::kFalse;
+        if (p.ended == "cancelled" && last.completed) return Value::kFalse;
+        return Value::kTrue;
+    }
+    case Test::kFalling: {
+        // The engine's own fall: in the air, the controller's vertical speed, and the height it left the ground
+        // at (fallStartHeight); nothing is tracked here.
+        auto* controller = subject->GetCharController();
+        if (!controller || controller->context.currentState != RE::hkpCharacterStateType::kInAir) return Value::kFalse;
+        RE::hkVector4 velocity;
+        controller->GetLinearVelocityImpl(velocity);
+        const bool rising = velocity.quad.m128_f32[2] > 0.0f;
+        if (rising != (p.option == "rising")) return Value::kFalse;
+        if (p.compare.empty()) return Value::kTrue;
+        const double fallen = static_cast<double>(controller->fallStartHeight) - subject->GetPositionZ();
+        logger::debug("[FlowTest] actor={:08X} test=falling start={:.1f} z={:.1f} fallen={:.1f}", subject->GetFormID(),
+            controller->fallStartHeight, subject->GetPositionZ(), fallen);
+        return numeric(fallen);
+    }
+    case Test::kSlope: {
+        // The ground the controller stands on (its surface normal, no ray): the angle from level, and whether the
+        // subject faces down or up it.
+        auto* controller = subject->GetCharController();
+        if (!controller || controller->context.currentState == RE::hkpCharacterStateType::kInAir)
+            return Value::kUnavailable;
+        const auto& n = controller->surfaceInfo.surfaceNormal.quad.m128_f32;
+        if (!std::isfinite(n[0]) || !std::isfinite(n[1]) || !std::isfinite(n[2]) || n[2] <= 0.0f)
+            return Value::kUnavailable;
+        const double slope = std::acos(std::clamp(static_cast<double>(n[2]), 0.0, 1.0)) * 180.0 / std::numbers::pi;
+        if (p.option != "any" && slope > 0.5) {
+            // The normal leans downhill: facing along it is facing downhill.
+            const float yaw = subject->GetAngleZ();
+            const double along = std::sin(yaw) * n[0] + std::cos(yaw) * n[1];
+            if ((p.option == "downhill") != (along > 0.0)) return Value::kFalse;
+        }
+        return numeric(slope);
+    }
+    case Test::kActorValue: {
+        if (p.option == "level") return numeric(subject->GetLevel());
+        const auto av = RE::ActorValueList::LookupActorValueByName(p.option.c_str());
+        auto* values = subject->AsActorValueOwner();
+        if (av == RE::ActorValue::kNone || !values) return Value::kUnavailable;
+        return numeric(p.measure == "base" ? values->GetBaseActorValue(av) : values->GetActorValue(av));
+    }
+    case Test::kGameHour: {
+        auto* calendar = RE::Calendar::GetSingleton();
+        if (!calendar) return Value::kUnavailable;
+        const double hour = calendar->GetHour();
+        // A range past midnight (20 to 5) is the two ends of the day.
+        if (p.compare == "range" && p.upper < p.value) return boolean(hour >= p.value || hour <= p.upper);
+        return numeric(hour);
+    }
+    case Test::kWeather: {
+        auto* sky = RE::Sky::GetSingleton();
+        auto* weather = sky ? sky->currentWeather : nullptr;
+        if (!weather) return Value::kUnavailable;
+        using Flag = RE::TESWeather::WeatherDataFlag;
+        const auto flag = p.option == "pleasant" ? Flag::kPleasant
+                          : p.option == "cloudy" ? Flag::kCloudy
+                          : p.option == "rainy"  ? Flag::kRainy
+                                                 : Flag::kSnow;
+        return boolean(weather->data.flags.any(flag));
     }
     case Test::kMovementDirection: {
         auto* player = RE::PlayerCharacter::GetSingleton();

@@ -30,9 +30,9 @@ XML 선언과 HKX 파일만으로 Skyrim에 일반 동작과 두 사람이 하�
 | 구분 | 내용 |
 |---|---|
 | 시작 | 키보드 키 이름·스캔코드, 게임패드 버튼 이름, 애니메이션 이벤트. 플레이어와 NPC 모두 |
-| 일반 동작 | 진입·종료 블렌드, 이동 입력으로 끊는 Recovery, 바닐라 동작으로 끊는 Cancel, 다음 동작으로 잇는 Connect, 시작 제한(지상·공중, 재사용 간격), 클립 시각 기능(무기 숨김·표시, 주문, 상태, 래그돌, 카메라 흔들림, 속도 정지, 시간 배율) |
+| 일반 동작 | 진입·종료 블렌드, 이동 입력으로 끊는 MoveCancel, 바닐라 동작으로 끊는 Vanilla, 다음 동작으로 잇는 Transition, 시작 제한(지상·공중, 재사용 간격), 클립 시각 기능(무기 숨김·표시, 주문, 상태, 래그돌, 카메라 흔들림, 속도 정지, 시간 배율) |
 | 기능 슬롯 | 회전, 무적(IFrame), 경직 저항(HyperArmor), 스태미나·매지카 소모, 공격 데이터 |
-| 조건 분기 | `Flow`로 이동 방향·무기·공격 상태·스태미나·공중·누운 방향·장비·종족·성별·확률 등 조건에 따라 재생할 동작 선택 |
+| 조건 분기 | 시작·전환 안의 조건 카드(`Check`·`Row`·`True`·`False`)로 이동 방향·무기·공격 상태·스태미나·공중·누운 방향·장비·종족·성별·확률 등 조건에 따라 재생할 동작 선택 |
 | 이동 | HKX의 AMR 주석(`animmotion`, `animrotation`)대로 이동 |
 | 페어 | 두 역할이 든 HKX 하나로 페어 재생, 시작 정렬(피해자는 제자리 회전, 가해자 이동), 종료 위치 보정, 상대를 잃었을 때의 종료 블렌드 |
 | 이벤트 등록 | HKX 주석 이벤트에 무기 숨김·표시, 무적 켜고 끄기, 소모, 화살 발사(당긴 만큼·바로 발사) 등 기능을 전역으로 연결. 기능은 이벤트를 보낸 액터에게 적용 |
@@ -49,17 +49,15 @@ XML 위치: `Data/SKSE/Plugins/AnimationInjector/<모드 이름>/<파일>.xml`
 HKX 위치: `Data/meshes/actors/character/` 아래 (`clip`은 이 폴더 기준 상대 경로)
 
 ```xml
-<AnimationSet version="4" id="MyMod">
+<AnimationSet version="6" id="MyMod">
+  <Start key="G" gamepad="RB" cooldown="0.3" to="Slash1">
+    <Check kind="weaponDrawn"/>
+  </Start>
   <Action id="Slash1" clip="Animations\MyMod\Slash1.hkx">
-    <Start key="G" gamepad="RB"/>
-    <Flow entry="Weapon">
-      <Test id="Weapon" kind="weaponDrawn" subject="self" pass="Play"/>
-      <Play id="Play" action="Slash1"/>
-    </Flow>
-    <Recovery at="event:MyMod_Recovery" blend="0.15"/>
+    <MoveCancel at="event:MyMod_Recovery" blend="0.15"/>
     <IFrame from="0.1" until="0.4"/>
-    <Connect to="Slash2" key="G" gamepad="RB"><Window from="0.45"/></Connect>
-    <Cancel to="vanilla:Block"/>
+    <Transition to="Slash2" key="G" gamepad="RB" from="0.45"/>
+    <Vanilla to="Block"/>
   </Action>
   <Action id="Slash2" clip="Animations\MyMod\Slash2.hkx">
     <Exit blend="0.2"/>
@@ -67,15 +65,21 @@ HKX 위치: `Data/meshes/actors/character/` 아래 (`clip`은 이 폴더 기준 
 </AnimationSet>
 ```
 
-- 무기를 뽑았을 때만 시작하게 하는 검사는 위처럼 조건 분기(`Flow`)에 둡니다. `<Require>`는 `air`·`cooldown`만 받습니다(0.12.276). 예전 XML의 `weapon`·`blockWhileAttacking`·`stamina`는 `python tools/require_to_flow.py --write <xml>`이 조건 분기로 옮깁니다.
+- 시작(`<Start>`)은 루트에 씁니다(형식 6, 0.12.291). `to`로 동작을 가리키거나 안에 조건 카드를 둡니다. 카드는 공통 조건(`<Check>`·`<And>`·`<Or>`, 뒤집기는 `not="true"`), 위에서부터 조건이 모두 맞는 첫 행(`<Row to="동작">조건</Row>`), 공통 조건만 쓴 카드의 `<True>`, 아무것도 맞지 않을 때의 `<False>`로 씁니다. 여러 곳이 함께 쓰는 카드는 루트의 `<Condition id="이름">`으로 두고 `condition="이름"`으로 가리킵니다. 전환(`<Transition>`)과 QTE 결과도 같은 방법으로 목적지를 정합니다. 한 동작에 시작을 여러 개 둘 수 있습니다.
+- 쿨다운은 시작의 것입니다(`<Start cooldown="0.3">`): 그 시작이 시작시킨 동작이 끝난 뒤 그동안 그 시작만 막습니다. 동작의 공중 규칙은 `air="both"`(땅·공중)·`"only"`(공중만) 속성이고, 생략하면 땅에서만입니다.
+- 무기를 뽑았을 때만 시작하게 하는 검사는 위처럼 시작 안의 `<Check>`로 둡니다.
 - 시점을 이벤트(`event:이름`)로 두면 그 이벤트가 올 때만 동작합니다. 「안 오면 n초」(`fallback`)는 없어졌습니다(0.12.278).
 - 공간·지면 확보(`kind="space"`·`"ground"`)의 `direction`에 본인 기준 `selfForward|selfBack|selfLeft|selfRight`가 생겼습니다. 본인이 그 페어의 시작 자리에 섰을 때 바라보는 방향이 기준입니다(0.12.280). 예전 `partner*`(상대 기준)도 그대로 읽습니다.
 - 이벤트 등록의 `<Do>`에는 기능과 그 대상만 씁니다: `op`, 마법의 `plugin`·`form`, 래그돌의 `direction`. 수치(`delay`, `mode`·`damage`, `strength`·`duration`, `stamina`·`magicka`, `factor`, `force`)는 그 이벤트를 보내는 동작이나 페어의 `<EventValues><Event name="이름"><Do op="…" …/></Event></EventValues>`에 씁니다. 이벤트가 오면 보낸 액터가 재생 중인 동작의 수치로 실행하고, 없으면 기본값으로 실행합니다. `cost`·`timeOn`은 동작의 수치가 있을 때만 실행합니다(0.12.281). 같은 이벤트의 같은 op끼리 순서대로 짝짓습니다.
+- 타격(0.12.293)은 `<Do op="strike"/>`입니다. 기능이 바꾸는 액터가 공격자이고, 엔진이 그 무기로 때릴 때의 피해(무기·기술·특성·대상 방어구·막기, 난이도는 적용 시)를 계산해 넣습니다. HitFrame 판정 원뿔은 쓰지 않습니다. 등록(또는 시점 기능)에 대상 `pick="combatTarget|partner|crosshair|area"`(기본 전투 대상, 플레이어는 십자선 대상), `hit="hostile|all"`(범위의 맞는 대상), `hand="right|left|both"`, `block="vanilla|ignore"`; 동작의 `<EventValues>`(또는 시점 기능)에 `ratio`(무기 데미지 배율, 기본 1) 또는 `amount`(고정 피해), 범위 `radius`·`angle`(전체 폭, 360 = 원)·`up`·`down`(발 높이 기준)·`edge`(반경 끝 피해 비율), `duration`(초, 그동안 들어온 대상을 한 번씩). 래그돌 중인 대상과 벽 너머 대상은 맞지 않습니다. 피해 뒤(0.12.294) 반응은 등록에 `reaction="none|stagger|push"`, 세기는 값에 경직 `strength="0~1"` 또는 밀쳐내기 `force="0~20"`(감쇠 적용, 죽은 대상 제외)입니다. 진짜 타격처럼 무기 마법부여(플레이어는 충전량 소모)·독(1회분 소모)·「Apply Combat Hit Spell」 특성·임팩트(타격음·피)·피격 이벤트(TESHitEvent)가 따라오며, 등록의 `without="enchantment,poison,perks,impact,hitEvent"`로 뺄 수 있습니다.
+- 조건(0.12.296): `<Check kind="previousAction" actions="A,B" within="0.8" ended="any|completed|cancelled"/>`(이 액터가 마지막으로 끝낸 우리 동작, 그 조건을 쓰는 선언이 있을 때만 기록), `kind="falling" option="rising|falling"`(공중, 선택으로 낙하 거리 `compare`·`value`), `kind="slope" option="downhill|uphill|any" compare value`(발밑 경사 도), `kind="actorValue" option="OneHanded|…|level" measure="current|base" compare value`, `kind="gameHour" compare value [upper]`(range는 자정을 넘어도 됨, 20~5), `kind="weather" option="pleasant|cloudy|rainy|snow"`. 모두 조건 카드를 판정할 때만 계산합니다.
+- 기능(0.12.296): `<Do op="sound" file="sound\fx\…\a.wav"|plugin form bone="spine|head|rightHand|leftHand|root"/>`(값: `volume` 0~1), `op="globalSet" plugin form restore="end"`(값: `value`; restore면 실행이 끝날 때·저장 뒤 불러올 때 원래 값으로), `op="modEvent" name text`(값: `number`, Papyrus `RegisterForModEvent`가 받음, sender는 그 액터).
 - 래그돌은 등록에 `<Do op="ragdoll" direction="down|up|forward|backward|left|right"/>`, 힘은 동작의 `<EventValues>`에 `force="0~20"`입니다. 페어 중이면 그 액터의 페어 물리 고정을 먼저 풀고 래그돌 뒤 기상을 지켜봅니다(0.12.278, 예전 `releasePhysics`는 거부).
-- 루트는 `<AnimationSet version="4">`만 읽습니다. 다른 형식의 파일은 로그에 이유를 남기고 파일 전체를 건너뜁니다.
+- 루트는 `<AnimationSet version="6">`만 읽습니다. 다른 형식의 파일은 로그에 이유를 남기고 파일 전체를 건너뜁니다. 형식 4·5 파일은 `python tools/convert_format6.py --backup <폴더> <xml>...`로 바꿉니다(바꾼 결과가 같은 동작인지는 `AnimationInjectorXmlCheck --compare-starts <옛.xml> <새.xml>`).
 - 파일 하나는 전부 읽히거나 전부 건너뜁니다. 오류가 하나라도 있으면 그 파일의 동작은 하나도 등록되지 않습니다.
 - HKX 경로의 파일·폴더 이름은 ASCII 영문·숫자·일반 기호만 쓸 수 있습니다(한글 불가).
 - 키 이름은 물리 키 기준이라 한/영 입력 상태와 무관합니다.
+- 키 대신 게임 동작을 쓸 수 있습니다(0.12.292): `key`·`gamepad` 자리에 `control="jump"`처럼 씁니다. 플레이어가 그 동작에 묶어 둔 키보드·마우스·게임패드 키 모두로 동작하고, 게임 설정에서 키를 바꾸면 그대로 따라갑니다. 시작·전환·QTE·운반 내려놓기와 `<Inputs><Input>`에 쓸 수 있고, 한 요소에는 `input`, `key`·`gamepad`, `control` 중 하나만 씁니다. 그 입력으로 우리 동작이 시작되거나 전환·QTE가 입력을 받으면 게임에는 넘기지 않습니다(점프 키로 시작하면 실제 점프는 하지 않음). 조건이 맞지 않아 아무것도 시작하지 않으면 게임이 평소처럼 받습니다. `onKeyUp="true"`면 누를 때의 게임 동작은 이미 일어난 뒤입니다. 이름: `jump` `sprint` `sneak` `activate` `readyWeapon` `shout` `rightAttack` `leftAttack` `togglePOV` `run` `toggleRun` `autoMove` `wait` `favorites` `tweenMenu`. QTE `keySequence`는 키로만 씁니다.
 - XML이나 HKX를 바꾼 뒤에는 게임을 완전히 다시 시작하세요.
 
 더 많은 문법은 Animation Injector를 쓰는 공개 동작 모드의 XML을 참고하세요. 참고용 모드 링크는 모드 페이지에 있습니다.

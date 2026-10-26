@@ -2,6 +2,7 @@
 #include "runtime/PairTargetMath.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/ActionRegistry.h"
+#include "runtime/ActionHistory.h"
 #include "core/GraphInjector.h"
 #include "core/AirControl.h"
 #include "core/AnimDataRegistry.h"
@@ -339,6 +340,25 @@ bool ActionRunner::ExitForLink() {
         _state = State::kActive;
     }
     return accepted;
+}
+
+RE::ActorHandle ActionRunner::FrontTargetFor(RE::Actor* actor, float range, float angle) {
+    auto* lists = RE::ProcessLists::GetSingleton();
+    if (!lists || !actor || !actor->Is3DLoaded()) return {};
+    RE::Actor* best = nullptr;
+    float bestDistance = range;
+    const auto consider = [&](RE::Actor* a) {
+        if (!a || a == actor || !a->Is3DLoaded() || a->IsDead()) return;
+        const float d = actor->GetPosition().GetDistance(a->GetPosition());
+        if (d > bestDistance) return;
+        if (PairTargetMath::AbsoluteHeading(actor->GetHeadingAngle(a->GetPosition(), false)) > angle * 0.5f) return;
+        best = a;
+        bestDistance = d;
+    };
+    for (auto& h : lists->highActorHandles) consider(h.get().get());
+    // The player is not guaranteed to be in the high-process list (as FindPairedTarget).
+    consider(RE::PlayerCharacter::GetSingleton());
+    return best ? best->GetHandle() : RE::ActorHandle{};
 }
 
 RE::ActorHandle ActionRunner::CapturePairedTarget(RE::ActorHandle existing) const {
@@ -766,6 +786,24 @@ namespace {
 // Clips whose HKX was seen without AMR motion (main thread, clip activation): a clip does not move unless its
 // HKX carries "animmotion" annotations.
 std::unordered_set<std::string> g_stillClips;
+
+// A weapon draw or sheathe asked while an action played (the R key, an NPC's AI) is sent to the graph as WeapEquip or
+// Unequip; our state has no transition for it, so the engine is left wanting to draw or sheathe with no animation and
+// draws again on its own seconds later (user report 10-26: R during a sprint stop). Back in the vanilla graph the
+// request still waiting is sent again, so it plays now, as after a vanilla attack.
+void ReplayWeaponRequest(RE::Actor* actor, std::string_view action) {
+    auto* state = actor && actor->Is3DLoaded() && !actor->IsDead() ? actor->AsActorState() : nullptr;
+    if (!state) return;
+    static const RE::BSFixedString unequip("Unequip"), equip("WeapEquip");
+    const auto weapon = state->GetWeaponState();
+    const RE::BSFixedString* event = weapon == RE::WEAPON_STATE::kWantToSheathe ? &unequip
+                                     : weapon == RE::WEAPON_STATE::kWantToDraw  ? &equip
+                                                                                : nullptr;
+    if (!event) return;
+    const bool sent = actor->NotifyAnimationGraph(*event);
+    logger::info("[WeaponRequest] action='{}' actor={:08X} weaponState={} -> '{}' sent={}", action, actor->GetFormID(),
+        static_cast<int>(weapon), event->c_str(), sent);
+}
 }
 
 void ActionRunner::BeginAirPhysics(bool a_inAir) {
@@ -1221,9 +1259,10 @@ void ActionRunner::Finish() {
             logger::debug("[{}] 공중에서 종료 → JumpFall 재개 notify={}", Spec().id, ok);
         }
     }
-    if (_exitSent)
+    if (_exitSent) {
         SetAnimationDriven(false, true);
-    else
+        ReplayWeaponRequest(Owner(), Spec().id);
+    } else
         _animDrivenSet = false;  // 다음 상태(공격)가 쓰는 중 — PostCancelWatch 가 끝에 정리
     if (FrameworkSettings::Get().debug) {
         auto* actor = Owner();
@@ -1231,11 +1270,16 @@ void ActionRunner::Finish() {
         auto* controller = actorReady ? actor->GetCharController() : nullptr;
         bool driven = false;
         const bool graphReadable = actorReady && actor->GetGraphVariableBool(VarAnimDriven(), driven);
-        logger::debug("[{}] FinishState normalExit={} controller={} state={} inAir={} graphReadable={} driven={}",
+        auto* actorState = actorReady ? actor->AsActorState() : nullptr;
+        logger::debug(
+            "[{}] FinishState normalExit={} controller={} state={} inAir={} graphReadable={} driven={} weaponState={}",
             Spec().id, _exitSent, controller != nullptr,
             controller ? static_cast<int>(controller->context.currentState) : -1,
-            controller && controller->context.currentState == RE::hkpCharacterStateType::kInAir, graphReadable, driven);
+            controller && controller->context.currentState == RE::hkpCharacterStateType::kInAir, graphReadable, driven,
+            actorState ? static_cast<int>(actorState->GetWeaponState()) : -1);
     }
+    // The previousAction condition's record: completed = played to its own exit (only while a check needs it).
+    ActionHistory::Record(_owner, _idx, _exitSent);
     _state = State::kIdle;
     _elapsed = 0.0f;
     _exitSent = false;

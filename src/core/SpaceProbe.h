@@ -2,15 +2,12 @@
 #include "PCH.h"
 #include "runtime/ConditionFlow.h"
 #include "core/GroundPolicy.h"
-#include "declarations/ConditionFlowXml.h"
 namespace AnimationInjector::SpaceProbe {
-ConditionFlow::Value EvaluateGround(RE::ActorHandle initiator, RE::ActorHandle target, int candidate, int role,
-    float distance, float direction, ConditionFlowXml::DirectionBasis basis, GroundPolicy::Limits limits);
-// Production condition. Uses predicted role positions without moving either actor. The direction turns from
-// the basis actor's planned heading: the partner's after the start turns it (0.12.256: the start keeps the
-// partner's position and turns it toward the initiator) or the initiator's on its mark (0.12.280).
-ConditionFlow::Value Evaluate(RE::ActorHandle initiator, RE::ActorHandle target, int candidate, int role,
-    float distance, float direction, ConditionFlowXml::DirectionBasis basis);
+// Production conditions (0.12.299): from where the initiator stands now, along its current heading turned by
+// `direction`. The target may be none; the room check then leaves only the initiator out. Neither actor is moved.
+ConditionFlow::Value EvaluateGround(
+    RE::ActorHandle initiator, RE::ActorHandle target, float distance, float direction, GroundPolicy::Limits limits);
+ConditionFlow::Value Evaluate(RE::ActorHandle initiator, RE::ActorHandle target, float distance, float direction);
 // Sweep the actor's own collision shape from where it stands, straight to a destination on the same
 // height. The partner never blocks. kFalse = blocked; kUnavailable when the query cannot run.
 ConditionFlow::Value Path(std::uint64_t id, RE::Actor* actor, RE::Actor* partner, const RE::NiPoint3& destination);

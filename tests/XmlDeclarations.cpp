@@ -2,6 +2,8 @@
 #include "declarations/XmlV2.h"
 #include "runtime/RagdollProfile.h"
 #include <algorithm>
+#include <functional>
+#include <iterator>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -105,8 +107,8 @@ std::string snapshot(const ActionSpec& a) {
     }
     for (int i : tests) {
         const auto& p = a.flow.predicates[i];
-        d.add(static_cast<int>(p.test), static_cast<int>(p.subject), p.minimum, p.candidate, p.distance, p.direction,
-            p.ground.rise, p.ground.drop, p.ground.slope, p.ground.radius, p.plugin, p.form, p.equals);
+        d.add(static_cast<int>(p.test), static_cast<int>(p.subject), p.minimum, p.distance, p.direction, p.ground.rise,
+            p.ground.drop, p.ground.slope, p.ground.radius, p.plugin, p.form, p.equals);
         d.add(p.leftHand, static_cast<int>(p.equippedType), static_cast<int>(p.attackState));
         d.add(p.option, p.compare, p.measure, p.value, p.upper);
     }
@@ -116,7 +118,8 @@ std::string snapshot(const ActionSpec& a) {
         d.strings(w.vanillaMatches);
     }
     auto& t = a.trigger;
-    d.add(t.key, t.gamepad, t.onKeyUp, t.onEvent, t.onEventPlayer, t.onEventNpc, t.eventCombatTarget);
+    d.add(t.key, t.gamepad, t.onKeyUp, t.onEvent, t.onEventPlayer, t.onEventNpc, t.combatTarget, t.frontTarget,
+        t.targetRange, t.targetAngle);
     auto& c = a.condition;
     d.add(c.inAir, c.cooldown);
     auto& r = a.recovery;
@@ -193,6 +196,105 @@ bool load(const wchar_t* path, std::vector<ActionSpec>& out, std::vector<EventRu
 bool load(const wchar_t* path, std::vector<ActionSpec>& out) {
     std::vector<EventRuleSpec> events;
     return load(path, out, events);
+}
+// --compare-starts <a.xml> <b.xml>: the same behaviour, start by start, whatever order the file writes them in. A start
+// goes by its trigger: what holds it back (cooldown, suppression) and what it picks (its flow walked from the entry, each
+// play naming its action and the air both the start and that action allow) are compared, not which action holds the
+// start. Actions with a clip are compared without their start, flow, cooldown and start-time suppression; a transition
+// into a flow is compared by that flow.
+namespace behaviour {
+using Specs = std::vector<ActionSpec>;
+int air(const ActionSpec& a) { return a.condition.inAir == 1 ? 3 : a.condition.inAir == 2 ? 2 : 1; }
+const ActionSpec* find(const Specs& all, const std::string& id) {
+    for (const auto& s : all)
+        if (_stricmp(s.id.c_str(), id.c_str()) == 0) return &s;
+    return nullptr;
+}
+std::string predicate(const ActionSpec&, const ConditionFlowXml::Predicate& p) {
+    Digest d;
+    d.add(static_cast<int>(p.test), static_cast<int>(p.subject), p.minimum, p.distance, p.direction, p.ground.rise,
+        p.ground.drop, p.ground.slope, p.ground.radius, p.plugin, p.form, p.equals);
+    d.add(p.leftHand, static_cast<int>(p.equippedType), static_cast<int>(p.attackState));
+    d.add(p.option, p.compare, p.measure, p.value, p.upper);
+    return d.out.str();
+}
+// What `origin` picks, as text: the flow from its entry, or itself.
+std::string picks(const Specs& all, const ActionSpec& origin) {
+    const auto& nodes = origin.flow.nodes;
+    if (nodes.empty()) return "P(" + origin.id + "," + std::to_string(air(origin)) + ")";
+    std::function<std::string(int)> walk = [&](int id) -> std::string {
+        if (id < 0 || static_cast<std::size_t>(id) >= nodes.size()) return "E";
+        const auto& n = nodes[id];
+        switch (n.kind) {
+        case ConditionFlow::Kind::kStop: return "E";
+        case ConditionFlow::Kind::kAction: {
+            const auto name = n.action >= 0 && static_cast<std::size_t>(n.action) < origin.flowActions.size()
+                                  ? origin.flowActions[n.action]
+                                  : std::string("?");
+            const auto* dest = find(all, name);
+            return "P(" + name + "," + std::to_string(air(origin) & (dest ? air(*dest) : 0)) + ")";
+        }
+        case ConditionFlow::Kind::kTest:
+            return "T(" + predicate(origin, origin.flow.predicates[n.predicate]) + "?" + walk(n.pass) + ":" +
+                   walk(n.fail) + ")";
+        default: {
+            std::string group = "G" + std::to_string(static_cast<int>(n.kind)) + "(";
+            for (int o : n.operands) group += walk(o) + ";";
+            return group + "?" + walk(n.pass) + ":" + walk(n.fail) + ")";
+        }
+        }
+    };
+    return walk(origin.flow.entry);
+}
+std::vector<std::string> of(const Specs& all) {
+    std::vector<std::string> out;
+    for (const auto& a : all) {
+        const auto& t = a.trigger;
+        if (t.key || t.gamepad || !t.onEvent.empty()) {
+            Digest d;
+            d.add("start", t.key, t.gamepad, t.onKeyUp, t.onEvent, t.onEventPlayer, t.onEventNpc, t.combatTarget,
+                t.frontTarget, t.targetRange, t.targetAngle);
+            // The start's block: while it can start (format 4's startable, or both's half).
+            d.add(a.condition.cooldown);
+            d.strings(a.suppress.when != SuppressSpec::When::kActive ? a.suppress.events : std::vector<std::string>{});
+            out.push_back(d.out.str() + picks(all, a));
+        }
+        if (a.clips.empty()) continue;
+        ActionSpec b = a;
+        b.trigger = {};
+        b.flow = {};
+        b.flowActions.clear();
+        b.condition.cooldown = 0.0f;
+        // The HKX's block: while it plays (active, or both's other half).
+        if (b.suppress.when == SuppressSpec::When::kStartable)
+            b.suppress = {};
+        else
+            b.suppress.when = SuppressSpec::When::kActive;
+        for (auto& l : b.links)
+            if (const auto* to = find(all, l.action); to && !to->flow.nodes.empty())
+                l.action = "flow:" + picks(all, *to);
+        out.push_back("action\x1f" + snapshot(b));
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+int compare(const wchar_t* first, const wchar_t* second) {
+    Specs a, b;
+    std::vector<EventRuleSpec> ea, eb;
+    if (!load(first, a, ea) || !load(second, b, eb)) return 2;
+    const auto x = of(a), y = of(b);
+    std::vector<std::string> onlyA, onlyB;
+    std::set_difference(x.begin(), x.end(), y.begin(), y.end(), std::back_inserter(onlyA));
+    std::set_difference(y.begin(), y.end(), x.begin(), x.end(), std::back_inserter(onlyB));
+    if (onlyA.empty() && onlyB.empty() && registrySnapshot(ea) == registrySnapshot(eb)) {
+        std::cout << "Same behaviour: " << x.size() << " starts and actions\n";
+        return 0;
+    }
+    for (const auto& s : onlyA) std::cerr << "Only in the first:\n" << s << "\n";
+    for (const auto& s : onlyB) std::cerr << "Only in the second:\n" << s << "\n";
+    if (registrySnapshot(ea) != registrySnapshot(eb)) std::cerr << "Event registry differs\n";
+    return 4;
+}
 }
 // --dump <list>: each listed file's verdict, logged warnings/errors (path shown as XML) and full
 // declarations, for a before/after comparison of the loader.
@@ -293,6 +395,7 @@ int wmain(int argc, wchar_t** argv) {
     spdlog::set_level(spdlog::level::warn);
     if (argc == 3 && std::wstring_view(argv[1]) == L"--json") return validateJson(argv[2]);
     if (argc == 3 && std::wstring_view(argv[1]) == L"--dump") return dump(argv[2]);
+    if (argc == 4 && std::wstring_view(argv[1]) == L"--compare-starts") return behaviour::compare(argv[2], argv[3]);
     if (argc == 4 && std::wstring_view(argv[1]) == L"--compare") {
         std::vector<ActionSpec> a, b;
         std::vector<EventRuleSpec> ea, eb;
@@ -405,7 +508,8 @@ int wmain(int argc, wchar_t** argv) {
         return 0;
     }
     std::cout
-        << "AnimationInjectorXmlCheck <file.xml>\n  --compare <v1.xml> <v2.xml>\n  --reject <invalid.xml>\n  --json <file.xml>\n"
+        << "AnimationInjectorXmlCheck <file.xml>\n  --compare <v1.xml> <v2.xml>\n"
+           "  --compare-starts <a.xml> <b.xml>\n  --reject <invalid.xml>\n  --json <file.xml>\n"
            "  --ragdoll <profile.xml>\n  --ragdoll-reject <invalid.xml>\n  --ragdoll-resolve <Data> <rig> <lift clip>\n";
     return 1;
 }

@@ -335,7 +335,8 @@ void Update(float delta) {
                 c.view.spec = q.spec;
                 c.soundSent = false;
                 c.holdSession = 0;
-                if (q.spec.control == "rightAttack") QteServices::ResolveAttack(c.view.spec);
+                if (const auto control = ParseGameControl(q.spec.control); control != GameControl::kNone)
+                    QteServices::ResolveControl(c.view.spec, control);
                 logger::info("[QTE] start session={} channel={} from='{}' id={}", c.view.session, ChannelOf(q.spec),
                     Name(e), q.spec.id);
             }

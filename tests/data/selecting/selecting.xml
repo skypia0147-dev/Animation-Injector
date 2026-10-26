@@ -1,27 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Selecting actions without a clip (0.12.244): the Flow sends every route to another action. -->
-<AnimationSet version="4" id="SelectingNoClip">
-  <Inputs><Input id="Use" key="G"/></Inputs>
-  <Action id="Pick" view="both">
-    <Start input="Use"/>
-    <Require air="allow"/>
-    <Suppress events="SprintStop"/>
-    <Flow entry="Held">
-      <Test id="Held" kind="global" subject="self" plugin="Skyrim.esm" form="38" equals="1" pass="ToA" fail="ToB"/>
-      <Play id="ToA" action="A"/>
-      <Play id="ToB" action="B"/>
-    </Flow>
-  </Action>
+<!-- Starts that select (0.12.244): each card sends every route to an action. -->
+<AnimationSet version="6" id="SelectingNoClip">
+  <Inputs>
+    <Input id="Use" key="G"/>
+  </Inputs>
+  <Start id="Pick" input="Use" block="SprintStop">
+    <Check kind="global" plugin="Skyrim.esm" form="38" equals="1"/>
+    <True to="A"/>
+    <False to="B"/>
+  </Start>
   <Action id="A" clip="Animations\Selecting\A.hkx"/>
   <Action id="B" clip="Animations\Selecting\B.hkx"/>
-  <Pair id="PairPick">
-    <Start event="Pick_Contact" actor="both" target="combatTarget"/>
-    <Require air="allow"/>
-    <Flow entry="Held">
-      <Test id="Held" kind="global" subject="self" plugin="Skyrim.esm" form="38" equals="1" pass="ToPair" fail="None"/>
-      <Play id="ToPair" action="PairA"/>
-      <Stop id="None"/>
-    </Flow>
-  </Pair>
+  <Start id="PairPick" to="PairA" event="Pick_Contact" target="combatTarget">
+    <Check kind="global" plugin="Skyrim.esm" form="38" equals="1"/>
+  </Start>
   <Pair id="PairA" clip="Animations\Selecting\PairA.hkx"/>
 </AnimationSet>

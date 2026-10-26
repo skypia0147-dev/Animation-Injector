@@ -15,7 +15,12 @@ void Check(bool value, const char* name) {
 }
 bool Near(float a, float b) { return std::fabs(a - b) < 0.002f; }
 std::string Wrap(const std::string& content) {
-    return "<AnimationSet version='4' id='Test'><Action id='A' clip='a.hkx'>" + content + "</Action></AnimationSet>";
+    return "<AnimationSet version='6' id='Test'><Action id='A' clip='a.hkx'>" + content + "</Action></AnimationSet>";
+}
+// A start of A with these attributes and children (at the root).
+std::string Start(const std::string& attrs, const std::string& children = "") {
+    return "<AnimationSet version='6' id='Test'><Start " + attrs + " to='A'>" + children +
+           "</Start><Action id='A' clip='a.hkx'/></AnimationSet>";
 }
 std::string Error(const std::string& xml) {
     pugi::xml_document in;
@@ -39,7 +44,8 @@ int wmain(int argc, wchar_t** argv) {
         const auto& normal = specs[0];
         Check(normal.suppress.events.size() == 2 && normal.suppress.when == SuppressSpec::When::kStartable,
             "suppress contract");
-        for (const auto& spec : specs) Check(spec.clips.size() == 1, "one clip per action; a Flow picks the direction");
+        for (const auto& spec : specs)
+            Check(spec.SelectsOnly() || spec.clips.size() == 1, "one clip per action; a Flow picks the direction");
         DeclarationCatalog catalog;
         std::vector<std::string> registered;
         for (const auto& rule : events) registered.push_back(rule.name);
@@ -52,26 +58,30 @@ int wmain(int argc, wchar_t** argv) {
         Check(NativeAttackState(ConditionFlowXml::AttackState::kBowFollowThrough) ==
                   RE::ATTACK_STATE_ENUM::kBowFollowThrough,
             "last attack state");
-        for (const auto& bad : {"<Suppress events='A' when='always'/>", "<Suppress when='active'/>"})
-            Check(!Valid(Wrap(bad)), "invalid extension rejected");
-        Check(Valid(Wrap("<Suppress events='A'/>")), "suppress when defaults to startable");
-        // Motion is the HKX's AMR annotations only (0.12.231): every former motion form names the removal.
+        for (const auto& bad : {"event='E' block='A' blockWhen='always'", "event='E' blockWhen='active'"})
+            Check(!Valid(Start(bad)), "invalid extension rejected");
+        Check(Valid(Start("event='E' block='A'")), "a start's block defaults to while it can start");
+        Check(!Valid(Wrap("<Suppress events='A'/>")), "no Suppress element (a block is an attribute)");
+        Check(Valid("<AnimationSet version='6' id='Test'><Action id='A' clip='a.hkx' block='A'/></AnimationSet>"),
+            "an action keeps its while-playing block");
+        // Motion is the HKX's AMR annotations only (0.12.231): there is no motion syntax.
         for (const auto& gone : {"<Motion type='keys'><Key at='0' x='0' y='0'/><Key at='1' x='0' y='-10'/></Motion>",
                  "<Motion type='none'/>", "<Motion type='annotation'/>",
                  "<Motion type='curve' distance='100' duration='0.5' direction='back'/>",
-                 "<Clips><Clip file='a.hkx' direction='back'/></Clips>", "<Start event='E' direction='movement'/>",
-                 "<Start event='E' defaultDirection='none'/>", "<Start event='E' strict='true'/>"})
-            Check(Error(Wrap(gone)).find("0.12.231") != std::string::npos, "removed motion syntax named");
-        // Combos went in format 4: each names its replacement (an Action per HKX joined by Connect).
-        Check(Error("<AnimationSet version='4' id='Test'><Combo id='A' entry='First'><Step id='First' clip='a.hkx'/>"
-                    "</Combo></AnimationSet>")
-                      .find("Connect") != std::string::npos,
-            "combo refused with its replacement");
-        Check(Error(Wrap("<Step id='First' clip='a.hkx'/>")).find("Connect") != std::string::npos,
-            "step inside an action refused");
-        Check(Valid(Wrap("<Start event='E'/>")), "start without direction accepted");
+                 "<Clips><Clip file='a.hkx' direction='back'/></Clips>"})
+            Check(!Valid(Wrap(gone)), "no motion syntax");
+        for (const auto& gone :
+            {"event='E' direction='movement'", "event='E' defaultDirection='none'", "event='E' strict='true'"})
+            Check(!Valid(Start(gone)), "no start direction");
+        // Combos went in format 4 (an Action per HKX joined by a Transition).
+        Check(!Valid("<AnimationSet version='6' id='Test'><Combo id='A' entry='First'><Step id='First' clip='a.hkx'/>"
+                     "</Combo></AnimationSet>"),
+            "combo refused");
+        Check(!Valid(Wrap("<Step id='First' clip='a.hkx'/>")), "step inside an action refused");
+        Check(Valid(Start("event='E'")), "start without direction accepted");
         auto flow = [](const std::string& test) {
-            return Wrap("<Flow entry='T'><Test id='T' " + test + " pass='P'/><Play id='P' action='A'/></Flow>");
+            return "<AnimationSet version='6' id='Test'><Start id='S' event='E' to='A'><Check " + test +
+                   "/></Start><Action id='A' clip='a.hkx'/></AnimationSet>";
         };
         for (auto type : {"bow", "crossbow", "sword", "dagger", "axe", "mace", "greatsword", "battleaxe", "warhammer",
                  "staff", "shield", "spell", "torch", "unarmed"})

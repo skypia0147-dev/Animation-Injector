@@ -82,7 +82,7 @@ std::uint32_t Read(std::ifstream& f) {
     return v;
 }
 bool Valid(const std::string& slot, const char* kind = "Action") {
-    std::string xml = "<AnimationSet version='4' id='Test'><" + std::string(kind) + " id='A' clip='a.hkx'>" + slot +
+    std::string xml = "<AnimationSet version='6' id='Test'><" + std::string(kind) + " id='A' clip='a.hkx'>" + slot +
                       "</" + kind + "></AnimationSet>";
     pugi::xml_document input;
     input.load_string(xml.c_str());
@@ -205,10 +205,10 @@ int wmain(int argc, wchar_t** argv) {
             Check(!Valid(slot), "invalid timing/duplicate rejected");
         Check(!Valid("<FireArrow at='0'/>", "Pair"), "Pair explicitly rejected");
         pugi::xml_document timings;
-        Check(timings.load_string(R"(<AnimationSet version="4" id="FireTiming">
+        Check(timings.load_string(R"(<AnimationSet version="6" id="FireTiming">
           <Action id="Seconds" clip="a.hkx"><FireArrow at="0.67" onRelease="false"/></Action>
           <Action id="Release" clip="a.hkx"><FireArrow/></Action>
-          <Action id="First" clip="a.hkx"><FireArrow at="0.5"/><Connect to="Second" key="E"/></Action>
+          <Action id="First" clip="a.hkx"><FireArrow at="0.5"/><Transition to="Second" key="E"/></Action>
           <Action id="Second" clip="b.hkx"/>
         </AnimationSet>)"),
             "timing fixture XML");
@@ -226,14 +226,14 @@ int wmain(int argc, wchar_t** argv) {
                   !timed[3].fireArrow.enabled,
             "a connected action keeps its own slots");
         pugi::xml_document directDoc;
-        Check(directDoc.load_string(R"(<AnimationSet version="4" id="FireDirect">
+        Check(directDoc.load_string(R"(<AnimationSet version="6" id="FireDirect">
           <EventRegistry>
             <Event name="ShotA"><Do op="fireArrow"/></Event>
             <Event name="ShotB"><Do op="fireArrow"/></Event>
           </EventRegistry>
           <Action id="Timed" clip="a.hkx"><FireArrow at="0.6" mode="direct" damage="150"/>
             <EventValues><Event name="ShotA"><Do op="fireArrow" mode="direct" damage="80"/></Event></EventValues></Action>
-          <Action id="Pick"><Start key="E"/><Flow entry="t"><Test id="t" kind="sneaking" subject="self" pass="p"/><Play id="p" action="Timed"/></Flow></Action>
+          <Start id="Pick" key="E" to="Timed"><Check kind="sneaking"/></Start>
         </AnimationSet>)"),
             "direct fixture XML");
         const auto directPath = std::filesystem::temp_directory_path() / "AnimationInjectorFireArrow-direct.xml";
@@ -263,7 +263,8 @@ int wmain(int argc, wchar_t** argv) {
         Check(Declarations::LoadXmlFile(argv[1], specs, events), "DDS port parses");
         Check(specs.size() == 7, "DDS dispatcher and six direction actions");
         for (const auto& spec : specs)
-            Check(spec.fireArrow.enabled && spec.fireArrow.onRelease && spec.fireArrow.at < 0, "release shot kept");
+            if (!spec.SelectsOnly())  // the dispatcher only picks (format 5: a start into a flow)
+                Check(spec.fireArrow.enabled && spec.fireArrow.onRelease && spec.fireArrow.at < 0, "release shot kept");
         const auto shot =
             std::find_if(events.begin(), events.end(), [](const auto& e) { return e.name == "DodgeShotFire"; });
         Check(shot != events.end() && shot->functions.size() == 1 && shot->functions[0].op == EventOp::kFireArrow &&

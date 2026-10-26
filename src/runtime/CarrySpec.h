@@ -3,6 +3,7 @@
 #include <string_view>
 #include <cstdint>
 #include <vector>
+#include "runtime/GameControls.h"
 
 namespace AnimationInjector {
 // <Hold> inside <Carry>: the carrier's upper-body pose while carrying (stage 2).
@@ -46,6 +47,7 @@ struct CarrySpec {
     // the moment the target is released as a ragdoll (docs/설계-운반-래그돌-내려놓기.md).
     std::string putdownAction;
     std::uint32_t key = 0xFFFFFFFF, gamepad = 0;
+    GameControl control = GameControl::kNone;  // a game control instead of a key (0.12.292)
     CarryHoldSpec hold;
     CarryTargetMode mode = CarryTargetMode::kPose;
     // kPhysics: the target bone whose ragdoll body stays fixed. Empty = the body nearest the

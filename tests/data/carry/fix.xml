@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<AnimationSet version="4" id="CarryFixTest">
-  <Inputs><Input id="Use" key="G"/></Inputs>
-  <Pair id="Lift" clip="Animations\CarryTest\Lift.hkx">
-    <Start input="Use"/>
-    <Require cooldown="0.2"/>
-    <Advanced safety="0.7"/>
+<AnimationSet version="6" id="CarryFixTest">
+  <Inputs>
+    <Input id="Use" key="G"/>
+  </Inputs>
+  <Start to="Lift" input="Use" cooldown="0.2"/>
+  <Pair id="Lift" clip="Animations\CarryTest\Lift.hkx" safety="0.7">
     <Carry bone="NPC R Hand [RHnd]" targetRoot="NPC Root [Root]" putdown="PutDown" input="Use" target="physics" part="Neck1">
       <Fix at="1.7"/>
-      <Hold blendOut="0.2"><Bone name="NPC R Clavicle [RClv]" weight="1"/></Hold>
+      <Hold blendOut="0.2">
+        <Bone name="NPC R Clavicle [RClv]" weight="1"/>
+      </Hold>
     </Carry>
-    <Target rig="chicken" range="250" angle="160"/>
+    <FindPartner rig="chicken" range="250" angle="160"/>
   </Pair>
-  <Action id="PutDown" clip="Animations\CarryTest\PutDown.hkx">
-    <Require cooldown="0.2"/>
-    <Advanced safety="0.7"/>
+  <Action id="PutDown" clip="Animations\CarryTest\PutDown.hkx" safety="0.7">
     <CarryRelease at="0.8"/>
   </Action>
 </AnimationSet>

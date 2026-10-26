@@ -58,7 +58,10 @@ void Begin(RE::ActorHandle, int, bool, bool, RE::ActorHandle = {});
 void End(RE::ActorHandle, int);
 void ObserveTime(RE::ActorHandle, int, float, float = 0);
 void ObserveEvent(RE::ActorHandle, const RE::BSFixedString&);
-bool Input(std::uint32_t, bool, bool = true);
+struct InputResult {
+    bool claimed = false, taken = false;
+};
+InputResult Input(std::uint32_t, bool, GameControl = GameControl::kNone, bool = true);
 void Update(float);
 void ResetOnLoad();
 bool HasPendingTransition(RE::ActorHandle);

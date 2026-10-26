@@ -14,7 +14,7 @@ std::vector<unsigned> soundSends;
 std::vector<std::pair<unsigned, std::string>> started;  // an event QTE result's actions (0.12.249)
 std::vector<std::string> partnerStarted;                // and the pair partner's (0.12.264)
 namespace AnimationInjector::QteServices {
-bool ResolveAttack(QteStyle& style) {
+bool ResolveControl(QteStyle& style, GameControl) {
     style.key = 33;
     style.alternateKey = 256;
     style.gamepad = 10;

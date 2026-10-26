@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<AnimationSet version="4" id="Grapple">
+<AnimationSet version="6" id="Grapple">
   <EventRegistry>
     <Event name="Grapple_Land">
       <Do op="stopVelocity"/>
@@ -68,337 +68,133 @@
       <Do op="ragdoll" direction="right"/>
     </Event>
   </EventRegistry>
-  <Pair id="GrappleFront" clip="Animations\Grapple\Grapple_Crimson_Front_01.hkx">
-    <EventValues>
-      <Event name="Grapple_CamShake"><Do op="shake" strength="1.5"/></Event>
-      <Event name="Grapple_Bodyfall"><Do op="spell" delay="0.4"/></Event>
-    </EventValues>
-    <Start event="Grapple_ContactFront" actor="both" onKeyUp="false" target="combatTarget"/>
-    <Require air="allow" cooldown="0"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
-    <Flow entry="Choice1">
-      <Test id="AirNormal" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="82E" pass="Destination1" fail="AirBoss"/>
-      <Play id="Destination1" action="GrappleAirFront"/>
-      <Test id="AirBoss" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="82F" pass="Destination2" fail="ForHonor"/>
-      <Play id="Destination2" action="GrappleAirFront"/>
-      <Test id="ForHonor" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="831" pass="Destination3" fail="FailureMode"/>
-      <Play id="Destination3" action="GrappleForHonorFront"/>
-      <Test id="FailureMode" kind="global" subject="self" plugin="FH_Grapple.esp" form="804" equals="1" pass="ResistanceGround" fail="SprintKind"/>
-      <Test id="SprintKind" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="830" pass="Stage01" fail="AttackKind"/>
-      <Test id="Stage01" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="833" pass="AttackKind" fail="PoundingGroundSelf"/>
-      <Test id="PoundingGroundSelf" kind="ground" subject="self" candidate="GrapplePounding" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="PoundingGroundPartner" fail="AttackKind"/>
-      <Test id="PoundingGroundPartner" kind="ground" subject="partner" candidate="GrapplePounding" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="PoundingRoomSelf" fail="AttackKind"/>
-      <Test id="PoundingRoomSelf" kind="space" subject="self" candidate="GrapplePounding" distance="250" direction="partnerForward" pass="PoundingRoomPartner" fail="AttackKind"/>
-      <Test id="PoundingRoomPartner" kind="space" subject="partner" candidate="GrapplePounding" distance="250" direction="partnerForward" pass="Destination4" fail="AttackKind"/>
-      <Play id="Destination4" action="GrapplePounding"/>
-      <Test id="AttackKind" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="832" pass="AttackFrontGroundSelf" fail="GroundNormal"/>
-      <Test id="AttackFrontGroundSelf" kind="ground" subject="self" candidate="GrappleAttackFront" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="AttackFrontGroundPartner" fail="AttackRearGroundSelf"/>
-      <Test id="AttackFrontGroundPartner" kind="ground" subject="partner" candidate="GrappleAttackFront" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="AttackFrontRoomSelf" fail="AttackRearGroundSelf"/>
-      <Test id="AttackFrontRoomSelf" kind="space" subject="self" candidate="GrappleAttackFront" distance="250" direction="partnerBack" pass="AttackFrontRoomPartner" fail="AttackRearGroundSelf"/>
-      <Test id="AttackFrontRoomPartner" kind="space" subject="partner" candidate="GrappleAttackFront" distance="250" direction="partnerBack" pass="Destination5" fail="AttackRearGroundSelf"/>
-      <Play id="Destination5" action="GrappleAttackFront"/>
-      <Test id="AttackRearGroundSelf" kind="ground" subject="self" candidate="GrappleAttackRear" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="AttackRearGroundPartner"/>
-      <Test id="AttackRearGroundPartner" kind="ground" subject="partner" candidate="GrappleAttackRear" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="Destination6"/>
-      <Play id="Destination6" action="GrappleAttackRear"/>
-      <Test id="GroundNormal" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="82C" pass="GiantSwingGroundSelf" fail="GroundBoss"/>
-      <Test id="GroundBoss" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="82D" pass="GiantSwingGroundSelf" fail="SprintFallback"/>
-      <Test id="SprintFallback" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="830" pass="RKOGroundSelf" fail="Destination7"/>
-      <Play id="Destination7" action="GrappleRKO"/>
-      <Test id="GiantSwingGroundSelf" kind="ground" subject="self" candidate="GrappleGiantSwing" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="GiantSwingGroundPartner" fail="RKOGroundSelf"/>
-      <Test id="GiantSwingGroundPartner" kind="ground" subject="partner" candidate="GrappleGiantSwing" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="GiantSwingRoomSelf" fail="RKOGroundSelf"/>
-      <Test id="GiantSwingRoomSelf" kind="space" subject="self" candidate="GrappleGiantSwing" distance="250" direction="partnerForward" pass="GiantSwingRoomPartner" fail="RKOGroundSelf"/>
-      <Test id="GiantSwingRoomPartner" kind="space" subject="partner" candidate="GrappleGiantSwing" distance="250" direction="partnerForward" pass="Destination8" fail="RKOGroundSelf"/>
-      <Play id="Destination8" action="GrappleGiantSwing"/>
-      <Test id="RKOGroundSelf" kind="ground" subject="self" candidate="GrappleRKO" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="RKOGroundPartner"/>
-      <Test id="RKOGroundPartner" kind="ground" subject="partner" candidate="GrappleRKO" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="Destination9"/>
-      <Play id="Destination9" action="GrappleRKO"/>
-      <Any id="ResistanceGround" pass="ResistanceHands" fail="SprintKind">
-        <Use node="ResistanceNormal"/>
-        <Use node="ResistanceBoss"/>
-      </Any>
-      <Test id="ResistanceNormal" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="82C"/>
-      <Test id="ResistanceBoss" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="82D"/>
-      <Any id="ResistanceHands" pass="Destination10" fail="SprintKind">
-        <Use node="RightUnarmed"/>
-        <Use node="Sheathed"/>
-      </Any>
-      <Play id="Destination10" action="GrappleResistanceFront"/>
-      <Test id="RightUnarmed" kind="equippedType" subject="self" hand="right" type="unarmed"/>
-      <Test id="Predicate11" kind="weaponDrawn" subject="self"/>
-      <Not id="Sheathed">
-        <Use node="Predicate11"/>
-      </Not>
-      <Test id="Choice1" kind="air" subject="self" fail="AirNormal"/>
-    </Flow>
-    <QTE id="GrappleFront_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
-    </QTE>
-    <QTE id="GrappleFront_Q02_A" at="event:Grapple_Stage_Start_02" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
-    </QTE>
-    <QTE id="GrappleFront_Q03_A" at="event:Grapple_Stage_Start_03" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
-    </QTE>
-    <QTE id="GrappleFront_Q04_A" at="event:Grapple_Stage_Start_04" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage02" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q05_A" at="event:Grapple_Stage_Start_05" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage02" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q06_A" at="event:Grapple_Stage_Start_06" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage02" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q07_A" at="event:Grapple_Stage_Start_07" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q08_A" at="event:Grapple_Stage_Start_08" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q09_A" at="event:Grapple_Stage_Start_09" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q10_A" at="event:Grapple_Stage_Start_10" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q01_T" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01_PlayerTarget" recipient="self"/>
-    </QTE>
-    <QTE id="GrappleFront_Q02_T" at="event:Grapple_Stage_Start_02" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01_PlayerTarget" recipient="self"/>
-    </QTE>
-    <QTE id="GrappleFront_Q03_T" at="event:Grapple_Stage_Start_03" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01_PlayerTarget" recipient="self"/>
-    </QTE>
-    <QTE id="GrappleFront_Q04_T" at="event:Grapple_Stage_Start_04" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage02_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q05_T" at="event:Grapple_Stage_Start_05" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage02_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q06_T" at="event:Grapple_Stage_Start_06" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage02_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q07_T" at="event:Grapple_Stage_Start_07" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q08_T" at="event:Grapple_Stage_Start_08" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q09_T" at="event:Grapple_Stage_Start_09" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleFront_Q10_T" at="event:Grapple_Stage_Start_10" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
-  </Pair>
-  <Pair id="GrappleBack" clip="Animations\Grapple\Grapple_Crimson_Back_01.hkx">
-    <Start event="Grapple_ContactBack" actor="both" onKeyUp="false" target="combatTarget"/>
-    <Require air="allow" cooldown="0"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="false" applyMotionFromRoot="false"/>
-    <Flow entry="AirNormal">
-      <Test id="AirNormal" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="82E" pass="Destination1" fail="AirBoss"/>
-      <Play id="Destination1" action="GrappleAirBack"/>
-      <Test id="AirBoss" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="82F" pass="Destination2" fail="ForHonor"/>
-      <Play id="Destination2" action="GrappleAirBack"/>
-      <Test id="ForHonor" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="831" pass="Destination3" fail="FailureMode"/>
-      <Play id="Destination3" action="GrappleForHonorBack"/>
-      <Test id="FailureMode" kind="global" subject="self" plugin="FH_Grapple.esp" form="804" equals="1" pass="AttackKind" fail="AttackKind"/>
-      <Test id="AttackKind" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="832" pass="AttackBackGroundSelf" fail="GroundNormal"/>
-      <Test id="GroundNormal" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="82C" pass="SuplexGroundSelf" fail="GroundBoss"/>
-      <Test id="GroundBoss" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="82D" pass="SuplexGroundSelf" fail="SprintKind"/>
-      <Test id="SprintKind" kind="magicEffect" subject="self" plugin="FH_Grapple.esp" form="830" pass="SuplexGroundSelf" fail="Destination4"/>
-      <Play id="Destination4" action="GrappleSuplex"/>
-      <Test id="AttackBackGroundSelf" kind="ground" subject="self" candidate="GrappleAttackBack" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="AttackBackGroundPartner"/>
-      <Test id="AttackBackGroundPartner" kind="ground" subject="partner" candidate="GrappleAttackBack" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="Destination5"/>
-      <Play id="Destination5" action="GrappleAttackBack"/>
-      <Test id="SuplexGroundSelf" kind="ground" subject="self" candidate="GrappleSuplex" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="SuplexGroundPartner"/>
-      <Test id="SuplexGroundPartner" kind="ground" subject="partner" candidate="GrappleSuplex" distance="0" direction="partnerForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20" pass="Destination6"/>
-      <Play id="Destination6" action="GrappleSuplex"/>
-    </Flow>
-    <QTE id="GrappleBack_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
-    </QTE>
-    <QTE id="GrappleBack_Q02_A" at="event:Grapple_Stage_Start_02" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
-    </QTE>
-    <QTE id="GrappleBack_Q03_A" at="event:Grapple_Stage_Start_03" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
-    </QTE>
-    <QTE id="GrappleBack_Q04_A" at="event:Grapple_Stage_Start_04" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage02" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q05_A" at="event:Grapple_Stage_Start_05" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage02" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q06_A" at="event:Grapple_Stage_Start_06" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage02" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q07_A" at="event:Grapple_Stage_Start_07" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q08_A" at="event:Grapple_Stage_Start_08" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q09_A" at="event:Grapple_Stage_Start_09" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q10_A" at="event:Grapple_Stage_Start_10" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q01_T" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01_PlayerTarget" recipient="self"/>
-    </QTE>
-    <QTE id="GrappleBack_Q02_T" at="event:Grapple_Stage_Start_02" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01_PlayerTarget" recipient="self"/>
-    </QTE>
-    <QTE id="GrappleBack_Q03_T" at="event:Grapple_Stage_Start_03" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01_PlayerTarget" recipient="self"/>
-    </QTE>
-    <QTE id="GrappleBack_Q04_T" at="event:Grapple_Stage_Start_04" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage02_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q05_T" at="event:Grapple_Stage_Start_05" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage02_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q06_T" at="event:Grapple_Stage_Start_06" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage02_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q07_T" at="event:Grapple_Stage_Start_07" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q08_T" at="event:Grapple_Stage_Start_08" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q09_T" at="event:Grapple_Stage_Start_09" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <QTE id="GrappleBack_Q10_T" at="event:Grapple_Stage_Start_10" key="LMB" inputOwner="partner" eventSource="partner" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
-      <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
-      <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
-    </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
-  </Pair>
-  <Action id="GrappleStage01Attacker" clip="Animations\Grapple\Stage01_Attacker.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Enter blend="0.1"/>
-    <Exit at="end-0.05" blend="0.2"/>
+  <Start id="GrappleFront" event="Grapple_ContactFront" target="combatTarget">
+    <Row><Check kind="air"/><Condition/></Row>
+    <Row to="GrappleAirFront"><Check kind="magicEffect" plugin="FH_Grapple.esp" form="82E"/></Row>
+    <Row to="GrappleAirFront"><Check kind="magicEffect" plugin="FH_Grapple.esp" form="82F"/></Row>
+    <Row to="GrappleForHonorFront"><Check kind="magicEffect" plugin="FH_Grapple.esp" form="831"/></Row>
+    <Row to="GrappleResistanceFront">
+      <Check kind="global" plugin="FH_Grapple.esp" form="804" equals="1"/>
+      <Or>
+        <Check kind="magicEffect" plugin="FH_Grapple.esp" form="82C"/>
+        <Check kind="magicEffect" plugin="FH_Grapple.esp" form="82D"/>
+      </Or>
+      <Or><Check kind="equippedType" hand="right" type="unarmed"/><Check kind="weaponDrawn" not="true"/></Or>
+    </Row>
+    <Row>
+      <Check kind="magicEffect" plugin="FH_Grapple.esp" form="830"/>
+      <Condition>
+        <Row condition="GrappleFront_AttackKind"><Check kind="magicEffect" plugin="FH_Grapple.esp" form="833"/></Row>
+        <Row to="GrapplePounding">
+          <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+          <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+          <Check kind="space" distance="250" direction="selfForward"/>
+          <Check kind="space" distance="250" direction="selfForward"/>
+        </Row>
+        <False condition="GrappleFront_AttackKind"/>
+      </Condition>
+    </Row>
+    <False condition="GrappleFront_AttackKind"/>
+  </Start>
+  <Condition id="GrappleFront_RKOGroundSelf">
+    <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+    <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+    <True to="GrappleRKO"/>
+  </Condition>
+  <Condition id="GrappleFront_GiantSwingGroundSelf">
+    <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+    <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+    <Check kind="space" distance="250" direction="selfForward"/>
+    <Check kind="space" distance="250" direction="selfForward"/>
+    <True to="GrappleGiantSwing"/>
+    <False condition="GrappleFront_RKOGroundSelf"/>
+  </Condition>
+  <Condition id="GrappleFront_AttackKind">
+    <Check kind="magicEffect" plugin="FH_Grapple.esp" form="832"/>
+    <True>
+      <Row to="GrappleAttackFront">
+        <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+        <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+        <Check kind="space" distance="250" direction="selfBack"/>
+        <Check kind="space" distance="250" direction="selfBack"/>
+      </Row>
+      <Row to="GrappleAttackRear">
+        <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+        <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+      </Row>
+    </True>
+    <False>
+      <Row condition="GrappleFront_GiantSwingGroundSelf">
+        <Check kind="magicEffect" plugin="FH_Grapple.esp" form="82C"/>
+      </Row>
+      <Row condition="GrappleFront_GiantSwingGroundSelf">
+        <Check kind="magicEffect" plugin="FH_Grapple.esp" form="82D"/>
+      </Row>
+      <Row condition="GrappleFront_RKOGroundSelf"><Check kind="magicEffect" plugin="FH_Grapple.esp" form="830"/></Row>
+      <False to="GrappleRKO"/>
+    </False>
+  </Condition>
+  <Start id="GrappleBack" event="Grapple_ContactBack" target="combatTarget">
+    <Row to="GrappleAirBack"><Check kind="magicEffect" plugin="FH_Grapple.esp" form="82E"/></Row>
+    <Row to="GrappleAirBack"><Check kind="magicEffect" plugin="FH_Grapple.esp" form="82F"/></Row>
+    <Row to="GrappleForHonorBack"><Check kind="magicEffect" plugin="FH_Grapple.esp" form="831"/></Row>
+    <Row condition="GrappleBack_AttackKind"><Check kind="global" plugin="FH_Grapple.esp" form="804" equals="1"/></Row>
+    <False condition="GrappleBack_AttackKind"/>
+  </Start>
+  <Condition id="GrappleBack_SuplexGroundSelf">
+    <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+    <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+    <True to="GrappleSuplex"/>
+  </Condition>
+  <Condition id="GrappleBack_AttackKind">
+    <Check kind="magicEffect" plugin="FH_Grapple.esp" form="832"/>
+    <True>
+      <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+      <Check kind="ground" distance="0" direction="selfForward" maxRise="20" maxDrop="40" maxSlope="45" radius="20"/>
+      <True to="GrappleAttackBack"/>
+    </True>
+    <False>
+      <Row condition="GrappleBack_SuplexGroundSelf"><Check kind="magicEffect" plugin="FH_Grapple.esp" form="82C"/></Row>
+      <Row condition="GrappleBack_SuplexGroundSelf"><Check kind="magicEffect" plugin="FH_Grapple.esp" form="82D"/></Row>
+      <Row condition="GrappleBack_SuplexGroundSelf"><Check kind="magicEffect" plugin="FH_Grapple.esp" form="830"/></Row>
+      <False to="GrappleSuplex"/>
+    </False>
+  </Condition>
+  <Action id="GrappleStage01Attacker" clip="Animations\Grapple\Stage01_Attacker.hkx" enter="0.1" safety="10">
+    <Exit blend="0.2"/>
     <Rotate locked="true"/>
-    <HyperArmor from="0" until="end"/>
-    <Advanced safety="10"/>
+    <HyperArmor/>
   </Action>
-  <Action id="GrappleStage01Target" clip="Animations\Grapple\Stage01_Target.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Enter blend="0.1"/>
-    <Exit at="end-0.05" blend="0.2"/>
+  <Action id="GrappleStage01Target" clip="Animations\Grapple\Stage01_Target.hkx" enter="0.1" safety="10">
+    <Exit blend="0.2"/>
     <Rotate locked="true"/>
-    <HyperArmor from="0" until="end"/>
-    <Advanced safety="10"/>
+    <HyperArmor/>
   </Action>
-  <Action id="GrappleStage02Attacker" clip="Animations\Grapple\Stage02_Attacker.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Enter blend="0.1"/>
-    <Exit at="end-0.05" blend="0.2"/>
+  <Action id="GrappleStage02Attacker" clip="Animations\Grapple\Stage02_Attacker.hkx" enter="0.1" safety="10">
+    <Exit blend="0.2"/>
     <Rotate locked="true"/>
-    <HyperArmor from="0" until="end"/>
-    <Advanced safety="10"/>
+    <HyperArmor/>
   </Action>
-  <Action id="GrappleStage02Target" clip="Animations\Grapple\Stage02_Target.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Enter blend="0.1"/>
-    <Exit at="end-0.05" blend="0.2"/>
+  <Action id="GrappleStage02Target" clip="Animations\Grapple\Stage02_Target.hkx" enter="0.1" safety="10">
+    <Exit blend="0.2"/>
     <Rotate locked="true"/>
-    <HyperArmor from="0" until="end"/>
-    <Advanced safety="10"/>
+    <HyperArmor/>
   </Action>
-  <Action id="GrappleStage10Attacker" clip="Animations\Grapple\Stage10_Attacker.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Enter blend="0.1"/>
-    <Exit at="end-0.05" blend="0.2"/>
+  <Action id="GrappleStage10Attacker" clip="Animations\Grapple\Stage10_Attacker.hkx" enter="0.1" safety="10">
+    <Exit blend="0.2"/>
     <Rotate locked="true"/>
-    <HyperArmor from="0" until="end"/>
-    <Advanced safety="10"/>
+    <HyperArmor/>
   </Action>
-  <Action id="GrappleStage10Target" clip="Animations\Grapple\Stage10_Target.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Enter blend="0.1"/>
-    <Exit at="end-0.05" blend="0.2"/>
+  <Action id="GrappleStage10Target" clip="Animations\Grapple\Stage10_Target.hkx" enter="0.1" safety="10">
+    <Exit blend="0.2"/>
     <Rotate locked="true"/>
-    <HyperArmor from="0" until="end"/>
-    <Advanced safety="10"/>
+    <HyperArmor/>
   </Action>
-  <Action id="GrappleStart" clip="Animations\Grapple\Grapple_Start.hkx">
-    <Start event="Grapple_Start" actor="both" onKeyUp="false"/>
-    <Require air="allow" cooldown="0"/>
-    <Enter blend="0.1"/>
-    <Exit at="end-0.05" blend="0.2"/>
-    <Advanced safety="10"/>
+  <Start to="GrappleStart" event="Grapple_Start"/>
+  <Action id="GrappleStart" clip="Animations\Grapple\Grapple_Start.hkx" air="both" enter="0.1" safety="10">
+    <Exit blend="0.2"/>
   </Action>
-  <Pair id="GrappleAttackFront" clip="Animations\Grapple\Grapple_Crimson_Attack_F_Front.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
+  <Pair id="GrappleAttackFront" clip="Animations\Grapple\Grapple_Crimson_Attack_F_Front.hkx" lostBlend="0.6">
     <QTE id="GrappleAttackFront_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
       <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
@@ -479,22 +275,16 @@
       <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
     </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
+    <FindPartner range="200" angle="180"/>
+    <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
+    <Transition to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
+    <Transition to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
+    <Transition to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
+    <Transition to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
+    <Transition to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
+    <Transition to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
-  <Pair id="GrappleAttackRear" clip="Animations\Grapple\Grapple_Crimson_Attack_F_Back.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
+  <Pair id="GrappleAttackRear" clip="Animations\Grapple\Grapple_Crimson_Attack_F_Back.hkx" lostBlend="0.6">
     <QTE id="GrappleAttackRear_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
       <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
@@ -575,22 +365,16 @@
       <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
     </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
+    <FindPartner range="200" angle="180"/>
+    <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
+    <Transition to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
+    <Transition to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
+    <Transition to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
+    <Transition to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
+    <Transition to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
+    <Transition to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
-  <Pair id="GrappleAttackBack" clip="Animations\Grapple\Grapple_Crimson_Attack_B_Back.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="false" applyMotionFromRoot="false"/>
+  <Pair id="GrappleAttackBack" clip="Animations\Grapple\Grapple_Crimson_Attack_B_Back.hkx" lostBlend="0.6" reorient="false">
     <QTE id="GrappleAttackBack_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
       <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
@@ -671,22 +455,16 @@
       <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
     </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
+    <FindPartner range="200" angle="180"/>
+    <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
+    <Transition to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
+    <Transition to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
+    <Transition to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
+    <Transition to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
+    <Transition to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
+    <Transition to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
-  <Pair id="GrappleGiantSwing" clip="Animations\Grapple\Grapple_Crimson_Giant_Swing.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
+  <Pair id="GrappleGiantSwing" clip="Animations\Grapple\Grapple_Crimson_Giant_Swing.hkx" lostBlend="0.6">
     <QTE id="GrappleGiantSwing_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
       <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
@@ -767,22 +545,16 @@
       <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
     </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
+    <FindPartner range="200" angle="180"/>
+    <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
+    <Transition to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
+    <Transition to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
+    <Transition to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
+    <Transition to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
+    <Transition to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
+    <Transition to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
-  <Pair id="GrapplePounding" clip="Animations\Grapple\Grapple_Crimson_Pounding.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
+  <Pair id="GrapplePounding" clip="Animations\Grapple\Grapple_Crimson_Pounding.hkx" lostBlend="0.6">
     <QTE id="GrapplePounding_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
       <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
@@ -863,22 +635,17 @@
       <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
     </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
+    <FindPartner range="200" angle="180"/>
+    <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
+    <Transition to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
+    <Transition to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
+    <Transition to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
+    <Transition to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
+    <Transition to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
+    <Transition to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
-  <Pair id="GrappleRKO" clip="Animations\Grapple\Grapple_Crimson_RKO.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Exit at="end-0.05" blend="0.2"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
+  <Pair id="GrappleRKO" clip="Animations\Grapple\Grapple_Crimson_RKO.hkx" lostBlend="0.6">
+    <Exit blend="0.2"/>
     <QTE id="GrappleRKO_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
       <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
@@ -959,22 +726,16 @@
       <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
     </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
+    <FindPartner range="200" angle="180"/>
+    <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
+    <Transition to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
+    <Transition to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
+    <Transition to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
+    <Transition to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
+    <Transition to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
+    <Transition to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
-  <Pair id="GrappleSuplex" clip="Animations\Grapple\Grapple_Crimson_Suplex.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="false" applyMotionFromRoot="false"/>
+  <Pair id="GrappleSuplex" clip="Animations\Grapple\Grapple_Crimson_Suplex.hkx" lostBlend="0.6" reorient="false">
     <QTE id="GrappleSuplex_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
       <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
@@ -1055,22 +816,16 @@
       <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
     </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
+    <FindPartner range="200" angle="180"/>
+    <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
+    <Transition to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
+    <Transition to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
+    <Transition to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
+    <Transition to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
+    <Transition to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
+    <Transition to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
-  <Pair id="GrappleAirFront" clip="Animations\Grapple\Grapple_Air_Front.hkx">
-    <Require air="only" cooldown="0.2"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
+  <Pair id="GrappleAirFront" clip="Animations\Grapple\Grapple_Air_Front.hkx" air="only" lostBlend="0.6">
     <QTE id="GrappleAirFront_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
       <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
@@ -1151,22 +906,16 @@
       <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
     </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
+    <FindPartner range="200" angle="180"/>
+    <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
+    <Transition to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
+    <Transition to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
+    <Transition to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
+    <Transition to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
+    <Transition to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
+    <Transition to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
-  <Pair id="GrappleForHonorFront" clip="Animations\Grapple\Grapple_ForHonor_Front.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
+  <Pair id="GrappleForHonorFront" clip="Animations\Grapple\Grapple_ForHonor_Front.hkx" lostBlend="0.6">
     <QTE id="GrappleForHonorFront_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
       <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
@@ -1247,22 +996,16 @@
       <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
     </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
+    <FindPartner range="200" angle="180"/>
+    <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
+    <Transition to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
+    <Transition to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
+    <Transition to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
+    <Transition to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
+    <Transition to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
+    <Transition to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
-  <Pair id="GrappleResistanceFront" clip="Animations\Grapple\Grapple_Crimson_Fail.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="true" applyMotionFromRoot="false"/>
+  <Pair id="GrappleResistanceFront" clip="Animations\Grapple\Grapple_Crimson_Fail.hkx" lostBlend="0.6">
     <QTE id="GrappleResistanceFront_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
       <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
@@ -1343,22 +1086,16 @@
       <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
     </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
+    <FindPartner range="200" angle="180"/>
+    <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
+    <Transition to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
+    <Transition to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
+    <Transition to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
+    <Transition to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
+    <Transition to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
+    <Transition to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
-  <Pair id="GrappleAirBack" clip="Animations\Grapple\Grapple_Air_Back.hkx">
-    <Require air="only" cooldown="0.2"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="false" applyMotionFromRoot="false"/>
+  <Pair id="GrappleAirBack" clip="Animations\Grapple\Grapple_Air_Back.hkx" air="only" lostBlend="0.6" reorient="false">
     <QTE id="GrappleAirBack_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
       <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
@@ -1439,22 +1176,16 @@
       <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
     </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
+    <FindPartner range="200" angle="180"/>
+    <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
+    <Transition to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
+    <Transition to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
+    <Transition to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
+    <Transition to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
+    <Transition to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
+    <Transition to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
-  <Pair id="GrappleForHonorBack" clip="Animations\Grapple\Grapple_ForHonor_Back.hkx">
-    <Require air="deny" cooldown="0.2"/>
-    <Exit at="end-0.05"/>
-    <Advanced safety="30" getToMarkTime="0" markErrorThreshold="0.1" reorientSupport="false" applyMotionFromRoot="false"/>
+  <Pair id="GrappleForHonorBack" clip="Animations\Grapple\Grapple_ForHonor_Back.hkx" lostBlend="0.6" reorient="false">
     <QTE id="GrappleForHonorBack_Q01_A" at="event:Grapple_Stage_Start_01" key="LMB" inputOwner="self" eventSource="self" speed="4" successWindow="0.085" perfectWindow="0.026" control="rightAttack" stopEvent="Grapple_Stage_Stop" replaceActive="true" feedback="0.3" group="Grapple QTE" scale="1" anchor="center" x="0" y="0" delay="0.3" reducedMotion="false" type="splitArc">
       <Success soundPlugin="FH_Grapple.esp" soundForm="822"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824" event="Grapple_QTE_Stage01" recipient="self"/>
@@ -1535,16 +1266,13 @@
       <Success soundPlugin="FH_Grapple.esp" soundForm="822" event="Grapple_QTE_Stage10_PlayerTarget" recipient="self"/>
       <Failure soundPlugin="FH_Grapple.esp" soundForm="824"/>
     </QTE>
-    <Target range="200" angle="180"/>
-    <OnPartnerLost blend="0.6"/>
-    <Effects interruptOnThirdPartyHit="false">
-      <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
-    </Effects>
-    <Connect to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
-    <Connect to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
-    <Connect to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
-    <Connect to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
-    <Connect to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
-    <Connect to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
+    <FindPartner range="200" angle="180"/>
+    <Camera reset="Grapple_CameraReset" restore="event" timeout="10"/>
+    <Transition to="GrappleStage01Attacker" partnerTo="GrappleStage01Target" event="Grapple_QTE_Stage01"/>
+    <Transition to="GrappleStage01Target" partnerTo="GrappleStage01Attacker" event="Grapple_QTE_Stage01_PlayerTarget"/>
+    <Transition to="GrappleStage02Attacker" partnerTo="GrappleStage02Target" event="Grapple_QTE_Stage02"/>
+    <Transition to="GrappleStage02Target" partnerTo="GrappleStage02Attacker" event="Grapple_QTE_Stage02_PlayerTarget"/>
+    <Transition to="GrappleStage10Attacker" partnerTo="GrappleStage10Target" event="Grapple_QTE_Stage10"/>
+    <Transition to="GrappleStage10Target" partnerTo="GrappleStage10Attacker" event="Grapple_QTE_Stage10_PlayerTarget"/>
   </Pair>
 </AnimationSet>

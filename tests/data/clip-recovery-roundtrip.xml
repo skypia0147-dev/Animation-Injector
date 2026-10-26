@@ -1,29 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Movement-key cancel (Recovery) as format 4 writes it: one per action (a combo's per-Step rule went with combos). -->
-<AnimationSet version="4" id="ClipRecovery">
-  <Action id="BowDodgeBack" clip="Animations\DynamicDodgeShot\BowDodgeBack.hkx">
-    <Start key="Mouse2"/>
-    <Require cooldown="0.2"/>
-    <Recovery at="0.3" blend="0.1"/>
+<AnimationSet version="6" id="ClipRecovery">
+  <Start id="BowDodgeBack_Start" to="BowDodgeBack" key="Mouse2" cooldown="0.2">
+    <Check kind="weaponDrawn"/>
+  </Start>
+  <Action id="BowDodgeBack" clip="Animations\DynamicDodgeShot\BowDodgeBack.hkx" safety="2.5">
+    <MoveCancel at="0.3" blend="0.1"/>
     <Exit blend="0.3"/>
-    <Advanced safety="2.5"/>
-    <Connect to="BowDodgeLeft" key="Mouse2"><Window from="0.2"/></Connect>
-    <Flow entry="RequireWeapon">
-      <Test id="RequireWeapon" kind="weaponDrawn" subject="self" pass="Self"/>
-      <Play id="Self" action="BowDodgeBack"/>
-    </Flow>
+    <Transition to="BowDodgeLeft" key="Mouse2" from="0.2"/>
   </Action>
-  <Action id="BowDodgeLeft" clip="Animations\DynamicDodgeShot\BowDodgeLeft.hkx">
-    <Require cooldown="0.2"/>
-    <Recovery at="event:MoveReady" blend="0.25"/>
+  <Action id="BowDodgeLeft" clip="Animations\DynamicDodgeShot\BowDodgeLeft.hkx" safety="2.5">
+    <MoveCancel at="event:MoveReady" blend="0.25"/>
     <Exit blend="0.3"/>
-    <Advanced safety="2.5"/>
-    <Connect to="BowDodgeRight" key="Mouse2"/>
+    <Transition to="BowDodgeRight" key="Mouse2"/>
   </Action>
-  <Action id="BowDodgeRight" clip="Animations\DynamicDodgeShot\BowDodgeRight.hkx">
-    <Require cooldown="0.2"/>
-    <Recovery at="1.1" blend="0.4"/>
+  <Action id="BowDodgeRight" clip="Animations\DynamicDodgeShot\BowDodgeRight.hkx" safety="2.5">
+    <MoveCancel at="1.1" blend="0.4"/>
     <Exit blend="0.3"/>
-    <Advanced safety="2.5"/>
   </Action>
 </AnimationSet>

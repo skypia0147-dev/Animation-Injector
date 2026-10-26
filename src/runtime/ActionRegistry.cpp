@@ -31,6 +31,7 @@
 #include "runtime/RunnerSet.h"
 #include "runtime/ViewGuard.h"
 #include "runtime/AnnotationCommands.h"
+#include "runtime/ActionHistory.h"
 #include <atomic>
 #include <future>
 #include <shared_mutex>
@@ -75,6 +76,10 @@ RE::ActorHandle CaptureTarget(RE::Actor* actor, int action, RE::ActorHandle part
         }
     }
     if (paired) return best;
+    // A start choosing among non-pair actions (0.12.299): the actor ahead unless it names the combat target. A
+    // transition going through a card keeps the combat target.
+    if (spec.trigger.frontTarget)
+        return ActionRunner::FrontTargetFor(actor, spec.trigger.targetRange, spec.trigger.targetAngle);
     return actor->GetActorRuntimeData().currentCombatTarget;
 }
 
@@ -130,12 +135,6 @@ int ResolveFlow(
                 answer = sex == RE::SEX::kFemale;
                 break;
             }
-            case Test::kUnarmedRight: {
-                auto* equipped = subject->GetEquippedObject(false);
-                auto* weapon = equipped ? equipped->As<RE::TESObjectWEAP>() : nullptr;
-                answer = !equipped || (weapon && weapon->GetWeaponType() == RE::WEAPON_TYPE::kHandToHandMelee);
-                break;
-            }
             case Test::kMagicEffect:
             case Test::kGlobal: {
                 auto* data = RE::TESDataHandler::GetSingleton();
@@ -174,20 +173,13 @@ int ResolveFlow(
             }
             case Test::kSpace:
             case Test::kGround: {
-                if (p.candidate < 0 || p.candidate >= static_cast<int>(spec.flowActions.size()))
-                    return Value::kUnavailable;
-                const int candidate = IndexOf(spec.flowActions[p.candidate]);
-                const int role = p.subject == ConditionFlowXml::Subject::kSelf ? 0 : 1;
-                const auto value = p.test == Test::kGround
-                                       ? SpaceProbe::EvaluateGround(actor->GetHandle(), partner, candidate, role,
-                                             p.distance, p.direction, p.basis, p.ground)
-                                       : SpaceProbe::Evaluate(actor->GetHandle(), partner, candidate, role, p.distance,
-                                             p.direction, p.basis);
-                logger::debug(
-                    "[SpaceCondition] actor={:08X} flow={} candidate={} subject={} basis={} distance={} verdict={}",
-                    actor->GetFormID(), spec.id, spec.flowActions[p.candidate],
-                    p.subject == ConditionFlowXml::Subject::kSelf ? "self" : "partner",
-                    p.basis == ConditionFlowXml::DirectionBasis::kSelf ? "self" : "partner", p.distance,
+                // From where the actor stands now (0.12.299); the start's target, if any, is no obstacle.
+                const auto value =
+                    p.test == Test::kGround
+                        ? SpaceProbe::EvaluateGround(actor->GetHandle(), partner, p.distance, p.direction, p.ground)
+                        : SpaceProbe::Evaluate(actor->GetHandle(), partner, p.distance, p.direction);
+                logger::debug("[SpaceCondition] actor={:08X} flow={} target={:08X} distance={} verdict={}",
+                    actor->GetFormID(), spec.id, partner.native_handle(), p.distance,
                     value == Value::kTrue    ? "clear"
                     : value == Value::kFalse ? "blocked"
                                              : "unavailable");
@@ -258,7 +250,9 @@ ClipIndex g_clipIndex;
 DeclarationCatalog g_catalog;
 std::unordered_map<std::string, int> g_idIndex;  // exact id -> action
 std::unordered_map<std::uint32_t, std::vector<int>> g_keyActions, g_padActions;
-std::vector<int> g_fireArrowActions;
+// Actions started by a game control (0.12.292), and whether any start or transition names one.
+std::array<std::vector<int>, kGameControlCount> g_controlActions;
+bool g_usesControls = false;
 std::vector<std::vector<std::pair<int, int>>> g_incomingLinks;  // action -> (source, link) naming it
 const std::vector<int> kNoActions;
 
@@ -273,7 +267,9 @@ struct Declared {
     DeclarationCatalog catalog;
     std::unordered_map<std::string, int> ids;
     std::unordered_map<std::uint32_t, std::vector<int>> keyActions, padActions;
-    std::vector<int> fireArrowActions;
+    std::array<std::vector<int>, kGameControlCount> controlActions;
+    bool usesControls = false;
+    bool usesHistory = false;  // a previousAction check is loaded (runtime/ActionHistory.h)
     std::vector<std::vector<std::pair<int, int>>> incomingLinks;
     double loadMs = 0, catalogMs = 0;
 };
@@ -284,15 +280,31 @@ Declared BuildDeclarations() {
     d.specs = Declarations::LoadAll(&d.events);
     ExpandFlowLinkRoutes(d.specs);
     d.clips.Build(d.specs);
-    // Lookups that used to walk every action: by id, by start key or button, fire-arrow actions and
-    // the links that name each action.
+    // Lookups that used to walk every action: by id, by start key, button or game control, and the links
+    // that name each action.
     for (int i = 0; i < static_cast<int>(d.specs.size()); ++i) {
         const auto& spec = d.specs[i];
         d.ids.try_emplace(spec.id, i);
         d.keyActions[spec.trigger.key].push_back(i);
         if (spec.trigger.gamepad) d.padActions[spec.trigger.gamepad].push_back(i);
-        if (spec.fireArrow.enabled) d.fireArrowActions.push_back(i);
+        if (spec.trigger.control != GameControl::kNone) {
+            d.controlActions[static_cast<int>(spec.trigger.control)].push_back(i);
+            d.usesControls = true;
+        }
+        for (const auto& link : spec.links) d.usesControls |= link.control != GameControl::kNone;
     }
+    // A previousAction check names actions by id, in any declaration file: their indices, now that all are in.
+    for (auto& spec : d.specs)
+        for (auto& p : spec.flow.predicates) {
+            if (p.test != ConditionFlowXml::Test::kPreviousAction) continue;
+            d.usesHistory = true;
+            p.actions.clear();
+            for (const auto& name : p.actionNames)
+                if (const auto found = d.ids.find(name); found != d.ids.end())
+                    p.actions.push_back(found->second);
+                else
+                    logger::warn("[Flow] '{}': previousAction names no action '{}'", spec.id, name);
+        }
     d.incomingLinks.assign(d.specs.size(), {});
     for (int from = 0; from < static_cast<int>(d.specs.size()); ++from)
         for (int j = 0; j < static_cast<int>(d.specs[from].links.size()); ++j)
@@ -323,7 +335,9 @@ void Publish() {
     g_idIndex = std::move(d.ids);
     g_keyActions = std::move(d.keyActions);
     g_padActions = std::move(d.padActions);
-    g_fireArrowActions = std::move(d.fireArrowActions);
+    g_controlActions = std::move(d.controlActions);
+    g_usesControls = d.usesControls;
+    ActionHistory::SetNeeded(d.usesHistory);
     g_incomingLinks = std::move(d.incomingLinks);
     EventSuppression::Load(g_specs);
     EventRegistry::Build(d.events, g_specs);
@@ -759,7 +773,7 @@ std::vector<CapturedTrigger> CaptureEventTrigger(RE::Actor* actor, const RE::BSF
         const auto& t = table.triggers[i];
         if (!(player ? t.player : t.npc)) continue;
         RE::ActorHandle target;
-        if (g_specs[t.action].trigger.eventCombatTarget) {
+        if (g_specs[t.action].trigger.combatTarget) {
             target = actor->GetActorRuntimeData().currentCombatTarget;
             if (!target) {
                 logger::warn("[EventTrigger] action='{}' has no combat target; request rejected", g_specs[t.action].id);
@@ -837,9 +851,13 @@ const std::vector<int>& ActionsForGamepad(std::uint32_t button) {
     const auto it = g_padActions.find(button);
     return it != g_padActions.end() ? it->second : kNoActions;
 }
-const std::vector<int>& FireArrowActions() {
+const std::vector<int>& ActionsForControl(GameControl control) {
     EnsureLoaded();
-    return g_fireArrowActions;
+    return control == GameControl::kNone ? kNoActions : g_controlActions[static_cast<int>(control)];
+}
+bool UsesGameControls() {
+    EnsureLoaded();
+    return g_usesControls;
 }
 const std::vector<std::pair<int, int>>& IncomingLinks(int action) {
     static const std::vector<std::pair<int, int>> none;

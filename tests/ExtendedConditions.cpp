@@ -9,12 +9,10 @@ void Check(bool v) {
 }
 bool Read(const std::string& attrs) {
     pugi::xml_document doc;
-    doc.load_string(("<Flow entry='Test'><Test id='Test' " + attrs +
-                     " pass='Yes' fail='No'/><Play id='Yes' action='A'/><Stop id='No'/></Flow>")
-            .c_str());
-    ConditionFlowXml::Program p;
+    doc.load_string(("<Check " + attrs + "/>").c_str());
+    ConditionFlowXml::Predicate p;
     std::string error;
-    return ConditionFlowXml::Read(doc.document_element(), {"A"}, p, error);
+    return ConditionFlowXml::ReadCheck(doc.document_element(), p, error);
 }
 int main() {
     for (const char* value : {"forward", "back", "left", "right", "none"})
@@ -96,5 +94,43 @@ int main() {
         hits += next.Chance(1, 2, 30);
     }
     Check(hits > 2700 && hits < 3300);
+
+    // 0.12.296: previous action, falling, slope, actor value, game hour, weather.
+    Check(Read("kind='previousAction' actions='A,B' within='0.8' ended='completed'"));
+    Check(Read("kind='previousAction' actions='A'"));
+    Check(!Read("kind='previousAction'"));
+    Check(!Read("kind='previousAction' actions='A' within='700'"));
+    Check(!Read("kind='previousAction' actions='A' ended='half'"));
+    Check(!Read("kind='slope' actions='A' option='any' compare='ge' value='10'"));
+    {
+        pugi::xml_document doc;
+        doc.load_string("<Check kind='previousAction' actions='A, ,B' within='1.5' ended='cancelled'/>");
+        ConditionFlowXml::Predicate pr;
+        std::string error;
+        Check(ConditionFlowXml::ReadCheck(doc.document_element(), pr, error));
+        Check(pr.test == ConditionFlowXml::Test::kPreviousAction && pr.actionNames.size() == 3 &&
+              pr.actionNames[0] == "A" && pr.within == 1.5f && pr.ended == "cancelled");
+    }
+    Check(Read("kind='falling' option='falling'"));
+    Check(Read("kind='falling' option='rising'"));
+    Check(Read("kind='falling' option='falling' compare='ge' value='200'"));
+    Check(!Read("kind='falling'"));
+    Check(!Read("kind='falling' option='down'"));
+    for (const char* option : {"downhill", "uphill", "any"})
+        Check(Read(std::string("kind='slope' option='") + option + "' compare='ge' value='25'"));
+    Check(!Read("kind='slope' option='any' compare='ge' value='91'"));
+    Check(!Read("kind='slope' option='any'"));
+    Check(Read("kind='actorValue' option='OneHanded' compare='ge' value='50'"));
+    Check(Read("kind='actorValue' option='level' compare='range' value='10' upper='30'"));
+    Check(Read("kind='actorValue' option='Health' measure='base' compare='gt' value='100'"));
+    Check(!Read("kind='actorValue' option='Luck' compare='ge' value='1'"));
+    Check(!Read("kind='actorValue' option='Health' measure='percent' compare='ge' value='1'"));
+    Check(Read("kind='gameHour' compare='range' value='20' upper='5'"));
+    Check(Read("kind='gameHour' compare='ge' value='18'"));
+    Check(!Read("kind='gameHour' compare='ge' value='25'"));
+    Check(!Read("kind='slope' option='any' compare='range' value='30' upper='10'"));
+    for (const char* option : {"pleasant", "cloudy", "rainy", "snow"})
+        Check(Read(std::string("kind='weather' option='") + option + "'"));
+    Check(!Read("kind='weather' option='storm'"));
     std::cout << "Extended condition parser, comparisons, request probability: passed\n";
 }

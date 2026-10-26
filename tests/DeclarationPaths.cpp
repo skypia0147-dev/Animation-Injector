@@ -16,9 +16,9 @@ void Check(bool b, const char* text) {
 void Write(const std::filesystem::path& file, const char* id) {
     std::filesystem::create_directories(file.parent_path());
     std::ofstream out(file, std::ios::binary);
-    out << "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<AnimationSet version=\"4\" id=\"" << id
-        << "\"><Inputs><Input id=\"Use\" key=\"G\"/></Inputs><Action id=\"" << id
-        << "\" clip=\"Animations\\Test\\A.hkx\"><Start input=\"Use\"/></Action></AnimationSet>\n";
+    out << "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<AnimationSet version=\"6\" id=\"" << id
+        << "\"><Inputs><Input id=\"Use\" key=\"G\"/></Inputs><Start input=\"Use\" to=\"" << id << "\"/><Action id=\""
+        << id << "\" clip=\"Animations\\Test\\A.hkx\"/></AnimationSet>\n";
 }
 }
 
@@ -45,7 +45,7 @@ int main() {
         // A broken file in such a folder is skipped with its log line, not thrown.
         {
             std::ofstream broken(root / L"กข Mod" / L"brokenก.xml", std::ios::binary);
-            broken << "<AnimationSet version=\"4\" id=\"Broken\"><Action";
+            broken << "<AnimationSet version=\"6\" id=\"Broken\"><Action";
         }
         Check(Declarations::LoadAllFrom(root).size() == 2, "a broken file is skipped");
     } catch (const std::exception& e) {

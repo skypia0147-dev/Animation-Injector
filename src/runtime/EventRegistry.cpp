@@ -1,4 +1,5 @@
 #include "runtime/EventRegistry.h"
+#include "runtime/ActionHistory.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/EventEffects.h"
@@ -202,6 +203,7 @@ void Update(float delta) {
     std::erase_if(delayed, [](const Delayed& d) { return d.remaining <= 0.0f; });
     for (const auto& d : due) EventEffects::Run(d.function, d.context);
     EventEffects::Update(delta);
+    ActionHistory::Advance(delta);
 }
 
 void DropDelayed(RE::ActorHandle actor) {

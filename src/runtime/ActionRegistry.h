@@ -31,7 +31,10 @@ int IndexOf(std::string_view id);
 // one, in ascending order.
 const std::vector<int>& ActionsForKey(std::uint32_t code);
 const std::vector<int>& ActionsForGamepad(std::uint32_t button);
-const std::vector<int>& FireArrowActions();
+// Actions started by a game control (0.12.292), and whether any start or transition is on one: their input then
+// goes through the ordered dispatch hook, which keeps a press from the game when it starts one of ours.
+const std::vector<int>& ActionsForControl(GameControl control);
+bool UsesGameControls();
 // (source action, index into its links) for every link whose destination is this action, in source
 // and link order.
 const std::vector<std::pair<int, int>>& IncomingLinks(int action);

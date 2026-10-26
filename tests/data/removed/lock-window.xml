@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<AnimationSet version="4" id="RemovedLockWindow">
-  <Action id="A" clip="Animations\Test\A.hkx">
-    <Start key="G"/>
-    <Lock from="0.1" until="end-0.2" look="true"/>
-  </Action>
-</AnimationSet>

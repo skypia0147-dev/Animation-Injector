@@ -4,6 +4,7 @@
 #include "runtime/Qte.h"
 #include "runtime/Carry.h"
 #include "runtime/EventSuppression.h"
+#include "runtime/ActionRegistry.h"
 
 namespace AnimationInjector::InputDispatchHook {
 namespace {
@@ -41,14 +42,23 @@ struct Dispatch {
                 for (auto [event, next] : links) event->next = next;
             }
         } restore{saved};
-        InputSink::Get()->ProcessEvent(&head, source);
+        auto* sink = InputSink::Get();
+        sink->ProcessEvent(&head, source);
+        // A game control's press that started one of ours (and its release) is kept from the game (0.12.292).
+        if (sink->AnyTaken())
+            for (RE::InputEvent** link = &head; *link;)
+                if (sink->Taken(*link))
+                    *link = (*link)->next;
+                else
+                    link = &(*link)->next;
         return original(self, &head, source);
     }
     static inline REL::Relocation<decltype(Thunk)> original;
 };
 }
 bool InstallIfNeeded() {
-    if (!EventSuppression::Enabled() && !Qte::Enabled() && !Carry::Enabled()) return false;
+    if (!EventSuppression::Enabled() && !Qte::Enabled() && !Carry::Enabled() && !Actions::UsesGameControls())
+        return false;
     static bool installed = false;
     if (!installed) {
         // PlayerControls inherits BSTEventSink<InputEvent*> as its first base.

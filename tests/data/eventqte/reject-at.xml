@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- An event's QTE is asked when the event arrives: no start time. -->
-<AnimationSet version="4" id="EventQteAt">
+<AnimationSet version="6" id="EventQteAt">
   <EventRegistry>
-    <Event name="Ragdoll"><QTE id="Ask" at="0.5"/></Event>
+    <Event name="Ragdoll">
+      <QTE id="Ask" at="0.5"/>
+    </Event>
   </EventRegistry>
 </AnimationSet>

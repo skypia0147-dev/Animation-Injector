@@ -1,3 +1,4 @@
+#include "declarations/Cards.h"
 #include "declarations/ConditionFlowXml.h"
 #include <array>
 #include <iostream>
@@ -12,15 +13,27 @@ int main(int argc, char** argv) {
         if (!doc.load_file(argv[1])) throw std::runtime_error("cannot read XML");
         const auto root = doc.document_element();
         std::vector<std::string> names;
-        for (auto n : root.children()) names.emplace_back(n.attribute("id").value());
+        std::vector<bool> pairs;
+        Cards::Shared shared;
+        for (auto n : root.children()) {
+            const std::string_view kind = n.name();
+            if (kind == "Action" || kind == "Pair") {
+                names.emplace_back(n.attribute("id").value());
+                pairs.push_back(kind == "Pair");
+            } else if (kind == "Condition")
+                shared.emplace(n.attribute("id").value(), n);
+        }
         constexpr std::array<unsigned, 8> forms{0x82C, 0x82D, 0x82E, 0x82F, 0x830, 0x831, 0x832, 0x833};
         unsigned cases = 0;
         for (bool back : {false, true}) {
             const std::string host = back ? "GrappleBack" : "GrappleFront";
-            const auto node = root.find_child_by_attribute("id", host.c_str());
-            ConditionFlowXml::Program program;
+            // Format 6: the grab's conditions are the condition card of its start.
+            const auto start = root.find_child_by_attribute("Start", "id", host.c_str());
+            if (!start) throw std::runtime_error("no start " + host);
+            Cards::Compiled compiled;
             std::string error;
-            if (!ConditionFlowXml::Read(node.child("Flow"), names, program, error)) throw std::runtime_error(error);
+            if (!Cards::Compile(start, names, pairs, shared, compiled, error)) throw std::runtime_error(error);
+            const auto& program = compiled.program;
             for (unsigned mask = 0; mask < 256; ++mask)
                 for (bool failure : {false, true})
                     for (bool unarmed : {false, true})
@@ -105,7 +118,7 @@ int main(int argc, char** argv) {
         for (auto n : root.children("Pair"))
             if (!n.child("Start")) {
                 unsigned count = 0;
-                for (auto link : n.children("Connect")) {
+                for (auto link : n.children("Transition")) {
                     if (!link.attribute("partnerTo") || !link.attribute("event"))
                         throw std::runtime_error("lost role transition");
                     ++count;

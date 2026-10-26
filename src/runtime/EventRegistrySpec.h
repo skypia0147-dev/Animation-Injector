@@ -2,6 +2,7 @@
 #include "runtime/QteSpec.h"
 #include "runtime/FireArrowShot.h"
 #include "runtime/RagdollPush.h"
+#include "runtime/StrikeSpec.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -38,6 +39,10 @@ enum class EventOp : std::uint8_t {
     kCancel,     // ends the sender's pair
     kFireArrow,  // automatic shot of the bow (drawn, or direct at full power), player only
     kRagdoll,    // push into the engine's ragdoll once; a pair's role first leaves the pair's physics hold
+    kStrike,     // hit chosen actors with the engine's damage, the changed actor as attacker (StrikeSpec.h)
+    kSound,      // play a sound file or a registered sound at one of the actor's bones (0.12.296)
+    kGlobalSet,  // set a global's value; restore="end" gives the old one back when the run ends (0.12.296)
+    kModEvent,   // send an SKSE mod event (name, text, number, the actor) to Papyrus (0.12.296)
 };
 // The actors a function changes. A registered event's function changes its sender (kSender, 0.12.273). A pair's
 // clip-time effect names a role (0.12.275): kInitiator started the pair, kReceiver is the actor it was started on
@@ -61,6 +66,17 @@ struct EventFunctionSpec {
     float strength = 1.0f, duration = 0.5f;  // kShake (an annotation's own numbers: AI.CamShake)
     float factor = 1.0f;                     // kTimeOn
     FireArrowShot arrow;                     // kFireArrow: drawn or direct, the direct shot's damage
+    StrikeSpec strike;                       // kStrike
+    // kSound: `file` (a path under Data, a .wav or .xwm) or `plugin`·`form` (a sound descriptor), at `bone`
+    // (spine, head, rightHand, leftHand, root), `volume` 0~1.
+    std::string file, bone;
+    float volume = 1.0f;
+    // kGlobalSet: `plugin`·`form` (a global) set to `value`; `restore` = back to the value before when the run ends.
+    float value = 0.0f;
+    bool restore = false;
+    // kModEvent: an SKSE mod event `name` with `text` and `number`, sent as the actor's.
+    std::string name, text;
+    float number = 0.0f;
     bool operator==(const EventFunctionSpec&) const = default;
 };
 
@@ -75,6 +91,23 @@ inline EventFunctionSpec WithValues(const EventFunctionSpec& registry, const Eve
     out.plugin = registry.plugin;
     out.form = registry.form;
     out.direction = registry.direction;
+    // A strike's registry holds whom it hits and how (pick, hostility, hand, block); the values its numbers.
+    // A sound's file and bone, a global's restore, a mod event's name and text are the registry's (0.12.296).
+    out.file = registry.file;
+    out.bone = registry.bone;
+    out.restore = registry.restore;
+    out.name = registry.name;
+    out.text = registry.text;
+    out.strike.pick = registry.strike.pick;
+    out.strike.hostileOnly = registry.strike.hostileOnly;
+    out.strike.hand = registry.strike.hand;
+    out.strike.block = registry.strike.block;
+    out.strike.reaction = registry.strike.reaction;
+    out.strike.enchantment = registry.strike.enchantment;
+    out.strike.poison = registry.strike.poison;
+    out.strike.perks = registry.strike.perks;
+    out.strike.impact = registry.strike.impact;
+    out.strike.hitEvent = registry.strike.hitEvent;
     return out;
 }
 

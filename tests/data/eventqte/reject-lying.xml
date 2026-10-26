@@ -1,12 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The lying condition is back or front (0.12.253). -->
-<AnimationSet version="4" id="EventQteLying">
-  <Action id="GetUp">
-    <Start key="G"/>
-    <Flow entry="Side">
-      <Test id="Side" kind="lying" option="side" pass="Back" fail="Back"/>
-      <Play id="Back" action="GetUpBack"/>
-    </Flow>
-  </Action>
+<AnimationSet version="6" id="EventQteLying">
+  <Start id="GetUp" key="G">
+    <Check kind="lying" option="side"/>
+    <True to="GetUpBack"/>
+    <False to="GetUpBack"/>
+  </Start>
   <Action id="GetUpBack" clip="Animations\RagdollRecoveryQTE\GetUpBack.hkx"/>
 </AnimationSet>

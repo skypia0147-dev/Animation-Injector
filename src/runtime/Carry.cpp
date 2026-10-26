@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "runtime/Carry.h"
+#include "runtime/GameControlBindings.h"
 #include "runtime/ActorImmunity.h"
 #include "runtime/CarryOwnership.h"
 #include "runtime/CarryContinuity.h"
@@ -153,6 +154,7 @@ struct Entry {
     RE::BSFixedString part;
     float fixAt = -1.0f;
     CarryWeapon weapon = CarryWeapon::kSheathed;
+    GameControl control = GameControl::kNone;  // the put-down key as a game control (0.12.292)
 };
 std::vector<Entry> entries;
 std::atomic<int> activeEntry{-1};
@@ -745,6 +747,7 @@ class TransferEvents final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>,
 bool PutdownKey(const Entry& config, const RE::ButtonEvent& event) {
     const auto device = event.device.get();
     const auto code = event.GetIDCode();
+    if (config.control != GameControl::kNone) return GameControls::Of(event.QUserEvent()) == config.control;
     return (device == RE::INPUT_DEVICE::kKeyboard && code == config.key) ||
            (device == RE::INPUT_DEVICE::kMouse && code + 256 == config.key) ||
            (device == RE::INPUT_DEVICE::kGamepad && config.gamepad && code == config.gamepad);
@@ -849,7 +852,7 @@ void Register() {
                 !Actions::Spec(putdown).carryRelease.enabled || !Actions::Spec(putdown).flow.nodes.empty() ||
                 !ValidCarryBone(carry.bone) || !ValidCarryBone(carry.targetRoot) ||
                 (!std::isfinite(spec.enterBlend) || spec.enterBlend < 0 || spec.enterBlend > 5) ||
-                (carry.key > 265 && !carry.gamepad)) {
+                (carry.key > 265 && !carry.gamepad && carry.control == GameControl::kNone)) {
                 logger::error("[Carry] '{}' invalid carry configuration; carry start disabled", spec.id);
                 continue;
             }
@@ -858,12 +861,12 @@ void Register() {
                     {RE::BSFixedString(spec.clips[1].enterEvent.c_str()),
                         RE::BSFixedString(spec.clips[0].enterEvent.c_str())},
                     carry.key, carry.gamepad, carry.mode, RE::BSFixedString(carry.part.c_str()), carry.fixAt,
-                    carry.weapon});
+                    carry.weapon, carry.control});
             logger::info(
-                "[Carry] configured action={} bone='{}' targetRoot='{}' putdown={} key={} pad={} target={} part='{}' fixAt={:.3f} weapon={}",
+                "[Carry] configured action={} bone='{}' targetRoot='{}' putdown={} key={} pad={} control={} target={} part='{}' fixAt={:.3f} weapon={}",
                 spec.id, carry.bone, carry.targetRoot, carry.putdownAction, carry.key, carry.gamepad,
-                carry.mode == CarryTargetMode::kPhysics ? "physics" : "pose", carry.part, carry.fixAt,
-                CarryWeaponName(carry.weapon));
+                GameControlName(carry.control), carry.mode == CarryTargetMode::kPhysics ? "physics" : "pose",
+                carry.part, carry.fixAt, CarryWeaponName(carry.weapon));
         }
     if (entries.empty()) return;
     static TransferEvents transferEvents;

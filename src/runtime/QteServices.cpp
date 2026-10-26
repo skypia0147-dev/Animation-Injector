@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "runtime/QteServices.h"
+#include "runtime/GameControlBindings.h"
 #include "runtime/ActionLinks.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/GetUpHandoff.h"
@@ -7,25 +8,12 @@
 #include <charconv>
 #include <cmath>
 namespace AnimationInjector::QteServices {
-bool ResolveAttack(QteStyle& style) {
-    auto* map = RE::ControlMap::GetSingleton();
-    auto* events = RE::UserEvents::GetSingleton();
-    style.key = style.gamepad = style.alternateKey = 0;
-    if (!map || !events) {
-        style.key = 256;
-        return true;
-    }
-    const auto kb = map->GetMappedKey(events->rightAttack, RE::INPUT_DEVICE::kKeyboard);
-    const auto mouse = map->GetMappedKey(events->rightAttack, RE::INPUT_DEVICE::kMouse);
-    const auto pad = map->GetMappedKey(events->rightAttack, RE::INPUT_DEVICE::kGamepad);
-    if (kb != 0xFF && kb > 0 && kb < 256) style.key = kb;
-    if (mouse != 0xFF && mouse < 8) {
-        if (style.key)
-            style.alternateKey = 256 + mouse;
-        else
-            style.key = 256 + mouse;
-    }
-    if (pad != 0xFF && pad > 0 && pad <= 65535) style.gamepad = pad;
+bool ResolveControl(QteStyle& style, GameControl control) {
+    const auto bound = GameControls::BoundKeys(control);
+    style.key = bound.key ? bound.key : bound.mouse;
+    style.alternateKey = bound.key ? bound.mouse : 0;
+    style.gamepad = bound.gamepad;
+    // Nothing bound (or no control map yet): the attack button, as before for rightAttack.
     if (!style.key && !style.gamepad) style.key = 256;
     return true;
 }

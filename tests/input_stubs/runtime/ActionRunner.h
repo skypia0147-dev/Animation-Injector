@@ -14,10 +14,11 @@ public:
     bool ValidPairedTarget(int) const { return true; }
     void RequestPaired(int) { ++requests; }
     int lastOrigin = -1;
+    bool accept = true;  // whether a request starts it (a condition can say no)
     bool Request(int origin = -1) {
         ++requests;
         lastOrigin = origin;
-        return true;
+        return accept;
     }
 };
 }

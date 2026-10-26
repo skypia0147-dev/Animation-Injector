@@ -19,7 +19,7 @@ struct Parsed {
     std::vector<EventRuleSpec> events;
     std::string error;
 };
-Parsed Parse(const std::string& body, const char* version = "4") {
+Parsed Parse(const std::string& body, const char* version = "6") {
     const std::string xml =
         std::string("<AnimationSet version='") + version + "' id='Test'>" + body + "</AnimationSet>";
     pugi::xml_document doc;
@@ -30,7 +30,7 @@ Parsed Parse(const std::string& body, const char* version = "4") {
     return p;
 }
 const char* kAction = "<Action id='A' clip='a.hkx'/>";
-bool Rejected(const std::string& body, const char* version = "4") { return !Parse(body, version).ok; }
+bool Rejected(const std::string& body, const char* version = "6") { return !Parse(body, version).ok; }
 }
 
 int main() {
@@ -66,10 +66,9 @@ int main() {
         Check(Parse("<EventRegistry><Event name='OnlyRegistered'/></EventRegistry>").ok,
             "a file may hold only registrations");
         Check(Rejected("<EventRegistry/>") && Rejected(""), "a file needs an action or an event");
-        for (const char* old : {"2", "3"}) {
+        for (const char* old : {"2", "3", "5"}) {
             const auto p = Parse(kAction, old);
-            Check(!p.ok && p.error.find("tools/convert_v4.py") != std::string::npos,
-                "formats 2 and 3 are refused with the converter named");
+            Check(!p.ok && p.error.find("형식 6") != std::string::npos, "only format 6 is read");
         }
         Check(Rejected("<EventRegistry><Event name='Same'/><Event name='same'/></EventRegistry>"),
             "one name twice in a file, ignoring case");
@@ -78,22 +77,22 @@ int main() {
         Check(
             Rejected("<EventRegistry><Event name='X'><Do op='hide' plugin='a.esp' form='1'/></Event></EventRegistry>"),
             "plugin and form only where a spell is used");
-        // 0.12.273: an event function changes its sender; target and from are gone.
+        // An event function changes its sender (0.12.273): it has no target or sender filter.
         for (const char* attr : {"target='player'", "target='sender'", "from='player'", "from='any'"}) {
             const auto p = Parse(
                 std::string("<EventRegistry><Event name='X'><Do op='hide' ") + attr + "/></Event></EventRegistry>");
-            Check(!p.ok && p.error.find("0.12.273") != std::string::npos, "target/from refused with the version");
+            Check(!p.ok, "no target or sender filter");
         }
-        Check(Rejected("<Pair id='P' clip='p.hkx'><Effects><Do at='0.1' op='hide' target='lead'/></Effects></Pair>"),
+        Check(Rejected("<Pair id='P' clip='p.hkx'><Do at='0.1' op='hide' target='lead'/></Pair>"),
             "lead/support are not role names (the engine's lead is the receiver)");
         Check(Rejected("<EventRegistry><Event name='X'><Do op='hide' at='1'/></Event></EventRegistry>"),
             "an event function has no clip time");
         Check(Rejected("<EventRegistry><Event name='a|b'/></EventRegistry>"), "event names are checked");
 
         // Removed forms: event effects, extra registrations and event moments of clip functions.
-        Check(Rejected("<Pair id='P' clip='p.hkx'><Effects><Effect name='X' op='hide'/></Effects></Pair>"),
-            "pair Effect elements are gone");
-        Check(Rejected("<Pair id='P' clip='p.hkx'><Effects><Effect at='1' op='hide'/></Effects></Pair>"),
+        Check(
+            Rejected("<Pair id='P' clip='p.hkx'><Effect name='X' op='hide'/></Pair>"), "pair Effect elements are gone");
+        Check(Rejected("<Pair id='P' clip='p.hkx'><Effect at='1' op='hide'/></Pair>"),
             "including clip-time Effect elements");
         Check(Rejected("<Action id='A' clip='a.hkx'><Events extra='X'/></Action>"), "Events extra is gone");
         Check(Rejected("<Action id='A' clip='a.hkx'><FireArrow at='event:Fire'/></Action>"),
@@ -102,17 +101,16 @@ int main() {
             "windows open at clip times");
         Check(Rejected("<Action id='A' clip='a.hkx'><HyperArmor from='0.1' until='0.5' untilFallback='end'/></Action>"),
             "windows have no event fallbacks");
-        // 0.12.278: an event moment waits for its event only.
-        for (const char* gone : {"<Action id='A' clip='a.hkx'><Recovery at='event:Move' fallback='0.5'/></Action>",
+        // An event moment waits for its event only (0.12.278): there is no fallback.
+        for (const char* gone : {"<Action id='A' clip='a.hkx'><MoveCancel at='event:Move' fallback='0.5'/></Action>",
                  "<Action id='A' clip='a.hkx'><Exit at='event:Out' fallback='end-0.1'/></Action>",
-                 "<Action id='A' clip='a.hkx'><Cancel to='vanilla:Attack'><Window from='event:Open' "
-                 "fromFallback='0.3'/></Cancel></Action>"}) {
+                 "<Action id='A' clip='a.hkx'><Vanilla to='Attack' from='event:Open' fromFallback='0.3'/></Action>"}) {
             const auto p = Parse(gone);
-            Check(!p.ok && p.error.find("0.12.278") != std::string::npos, "fallbacks are refused with the version");
+            Check(!p.ok, "no fallback");
         }
         {
-            const auto p = Parse("<Action id='A' clip='a.hkx'><Recovery at='0.4'/></Action>"
-                                 "<Action id='B' clip='b.hkx'><Recovery at='event:Move'/></Action>");
+            const auto p = Parse("<Action id='A' clip='a.hkx'><MoveCancel at='0.4'/></Action>"
+                                 "<Action id='B' clip='b.hkx'><MoveCancel at='event:Move'/></Action>");
             Check(p.ok && std::fabs(p.actions[0].recovery.at - 0.4f) < 1e-6f && p.actions[1].recovery.at < 0 &&
                       p.actions[1].recovery.event == "Move",
                 "recovery at a clip time or at its event");
@@ -131,14 +129,14 @@ int main() {
             const auto& side = p.events[1].functions[0];
             Check(
                 side.direction == RagdollPush::Direction::kLeft && side.force < 0, "the registry holds the direction");
-            const auto timed = Parse("<Pair id='P' clip='p.hkx'><Effects><Do at='0.67' op='ragdoll' "
-                                     "direction='forward' target='receiver'/></Effects></Pair>");
+            const auto timed = Parse("<Pair id='P' clip='p.hkx'><Do at='0.67' op='ragdoll' "
+                                     "direction='forward' target='receiver'/></Pair>");
             Check(timed.ok && timed.actions[0].pairFeatures.timed[0].function.op == EventOp::kRagdoll &&
                       timed.actions[0].pairFeatures.timed[0].function.target == EventTarget::kReceiver &&
                       timed.actions[0].pairFeatures.timed[0].function.direction == RagdollPush::Direction::kForward,
                 "a pair's clip-time ragdoll names its role");
-            const auto own = Parse("<Action id='A' clip='a.hkx'><Effects><Do at='0.5' op='ragdoll' "
-                                   "direction='backward' force='8'/></Effects></Action>");
+            const auto own = Parse("<Action id='A' clip='a.hkx'><Do at='0.5' op='ragdoll' "
+                                   "direction='backward' force='8'/></Action>");
             Check(own.ok && own.actions[0].pairFeatures.timed[0].function.op == EventOp::kRagdoll &&
                       own.actions[0].pairFeatures.timed[0].function.force == 8.0f,
                 "an ordinary action's clip-time ragdoll pushes the actor playing it");
@@ -146,8 +144,156 @@ int main() {
         {
             const auto p = Parse("<EventRegistry><Event name='X'><Do op='spell' plugin='a.esp' form='1' "
                                  "releasePhysics='true'/></Event></EventRegistry>");
-            Check(!p.ok && p.error.find("ragdoll") != std::string::npos, "releasePhysics is refused, naming ragdoll");
+            Check(!p.ok, "a spell has no releasePhysics");
         }
+        // 0.12.293: the strike. The registry holds whom it hits and how, the values and a clip time its numbers.
+        {
+            const auto p = Parse(std::string(kAction) + R"(<EventRegistry>
+                <Event name='Hit'><Do op='strike'/></Event>
+                <Event name='Sweep'><Do op='strike' pick='area' hit='all' hand='both' block='ignore'/></Event>
+            </EventRegistry>)");
+            Check(p.ok, "strike functions parse");
+            const auto& plain = p.events[0].functions[0].strike;
+            Check(p.events[0].functions[0].op == EventOp::kStrike && plain.pick == StrikeSpec::Pick::kCombatTarget &&
+                      plain.base == StrikeSpec::Base::kWeapon && plain.ratio == 1.0f && plain.duration == 0.0f &&
+                      plain.hostileOnly && plain.block == StrikeSpec::Block::kVanilla,
+                "a strike hits the combat target with the weapon's damage by default");
+            const auto& sweep = p.events[1].functions[0].strike;
+            Check(sweep.pick == StrikeSpec::Pick::kArea && !sweep.hostileOnly &&
+                      sweep.hand == StrikeSpec::Hand::kBoth && sweep.block == StrikeSpec::Block::kIgnore,
+                "the registry holds whom a strike hits and how");
+            const auto values = Parse(std::string(kAction) +
+                                      R"(<Action id='B' clip='b.hkx'><EventValues><Event name='Sweep'>
+                <Do op='strike' radius='250' angle='360' up='100' down='40' edge='0.4' amount='25' duration='0.4'/>
+                </Event></EventValues></Action>
+                <EventRegistry><Event name='Sweep'><Do op='strike' pick='area'/></Event></EventRegistry>)");
+            Check(values.ok, "a strike's numbers parse in EventValues");
+            if (values.ok) {
+                const auto run =
+                    WithValues(values.events[0].functions[0], values.actions[1].eventValues[0].functions[0]);
+                Check(run.op == EventOp::kStrike && run.strike.pick == StrikeSpec::Pick::kArea &&
+                          run.strike.radius == 250.0f && run.strike.angle == 360.0f && run.strike.up == 100.0f &&
+                          run.strike.down == 40.0f && std::fabs(run.strike.edge - 0.4f) < 1e-6f &&
+                          run.strike.base == StrikeSpec::Base::kFixed && run.strike.amount == 25.0f &&
+                          std::fabs(run.strike.duration - 0.4f) < 1e-6f,
+                    "a registered strike runs with the registry's pick and the action's numbers");
+            }
+            const auto timed = Parse("<Pair id='P' clip='p.hkx'><Do at='0.42' op='strike' pick='partner' "
+                                     "ratio='1.5' block='ignore' target='initiator'/></Pair>");
+            Check(timed.ok && timed.actions[0].pairFeatures.timed[0].function.op == EventOp::kStrike &&
+                      timed.actions[0].pairFeatures.timed[0].function.strike.pick == StrikeSpec::Pick::kPartner &&
+                      timed.actions[0].pairFeatures.timed[0].function.strike.ratio == 1.5f,
+                "a pair's clip-time strike names its attacker and target");
+            const auto own = Parse("<Action id='A' clip='a.hkx'><Do at='0.3' op='strike' pick='area' angle='360' "
+                                   "radius='250' duration='0.4'/></Action>");
+            Check(own.ok && own.actions[0].pairFeatures.timed[0].function.strike.angle == 360.0f,
+                "an ordinary action's clip-time strike is its own actor's");
+        }
+        // 0.12.294: after the damage, a reaction and what a real hit brings along.
+        {
+            const auto p = Parse(std::string(kAction) + R"(<EventRegistry>
+                <Event name='Bash'><Do op='strike' reaction='stagger' without='poison,hitEvent'/></Event>
+            </EventRegistry>
+            <Action id='B' clip='b.hkx'><EventValues><Event name='Bash'><Do op='strike' strength='0.8'/></Event>
+            </EventValues></Action>)");
+            Check(p.ok, "a strike's reaction parses");
+            if (p.ok) {
+                const auto& reg = p.events[0].functions[0].strike;
+                Check(reg.reaction == StrikeSpec::Reaction::kStagger && reg.enchantment && !reg.poison && reg.perks &&
+                          reg.impact && !reg.hitEvent,
+                    "the registry holds the reaction and what is left out");
+                const auto run = WithValues(p.events[0].functions[0], p.actions[1].eventValues[0].functions[0]);
+                Check(run.strike.reaction == StrikeSpec::Reaction::kStagger && !run.strike.poison &&
+                          std::fabs(run.strike.stagger - 0.8f) < 1e-6f,
+                    "a registered strike runs with the registry's reaction and the action's strength");
+            }
+            const auto plain = Parse("<Action id='A' clip='a.hkx'><Do at='0.3' op='strike'/></Action>");
+            Check(plain.ok &&
+                      plain.actions[0].pairFeatures.timed[0].function.strike.reaction == StrikeSpec::Reaction::kNone &&
+                      plain.actions[0].pairFeatures.timed[0].function.strike.hitEvent,
+                "a strike has no reaction and brings everything along by default");
+            const auto push = Parse("<Action id='A' clip='a.hkx'><Do at='0.3' op='strike' reaction='push' "
+                                    "force='8'/></Action>");
+            Check(push.ok && push.actions[0].pairFeatures.timed[0].function.strike.force == 8.0f,
+                "a push takes its force");
+        }
+        // 0.12.296: a sound, a global and a mod event.
+        {
+            const auto p = Parse(std::string(kAction) + R"(<EventRegistry>
+                <Event name='Snd'><Do op='sound' file='sound\fx\mymod\whoosh.wav' bone='rightHand'/></Event>
+                <Event name='Reg'><Do op='sound' plugin='Skyrim.esm' form='3C7BA'/></Event>
+                <Event name='Glob'><Do op='globalSet' plugin='MyMod.esp' form='801' restore='end'/></Event>
+                <Event name='Mod'><Do op='modEvent' name='MyMod_Hit' text='heavy'/></Event>
+            </EventRegistry>
+            <Action id='B' clip='b.hkx'><EventValues>
+                <Event name='Snd'><Do op='sound' volume='0.5'/></Event>
+                <Event name='Glob'><Do op='globalSet' value='2'/></Event>
+                <Event name='Mod'><Do op='modEvent' number='3'/></Event>
+            </EventValues></Action>)");
+            Check(p.ok, "sound, global and mod event functions parse");
+            if (p.ok) {
+                const auto& snd = p.events[0].functions[0];
+                Check(
+                    snd.op == EventOp::kSound && snd.file == "sound\\fx\\mymod\\whoosh.wav" && snd.bone == "rightHand",
+                    "a sound holds its file and bone");
+                Check(p.events[1].functions[0].plugin == "Skyrim.esm" && p.events[1].functions[0].bone == "spine",
+                    "a registered sound plays at the spine by default");
+                const auto& glob = p.events[2].functions[0];
+                Check(glob.op == EventOp::kGlobalSet && glob.restore, "a global set keeps its restore");
+                const auto run = WithValues(glob, p.actions[1].eventValues[1].functions[0]);
+                Check(run.restore && run.value == 2.0f && run.plugin == "MyMod.esp",
+                    "a global runs with the action's value");
+                const auto mod = WithValues(p.events[3].functions[0], p.actions[1].eventValues[2].functions[0]);
+                Check(mod.name == "MyMod_Hit" && mod.text == "heavy" && mod.number == 3.0f,
+                    "a mod event runs with the registry's name and the action's number");
+                const auto sound = WithValues(snd, p.actions[1].eventValues[0].functions[0]);
+                Check(sound.volume == 0.5f && sound.file == snd.file, "a sound runs with the action's volume");
+            }
+            const auto own = Parse("<Action id='A' clip='a.hkx'><Do at='0.2' op='sound' file='sound\\fx\\a.wav'/>"
+                                   "<Do at='0.4' op='modEvent' name='X'/><Do at='0.5' op='globalSet' plugin='a.esp' "
+                                   "form='1' value='1'/></Action>");
+            Check(own.ok && own.actions[0].pairFeatures.timed.size() == 3, "an ordinary action's clip time takes them");
+        }
+        Check(Rejected("<EventRegistry><Event name='X'><Do op='sound'/></Event></EventRegistry>"),
+            "a sound needs a file or a registered sound");
+        Check(Rejected("<EventRegistry><Event name='X'><Do op='sound' file='a.wav' plugin='a.esp' form='1'/></Event>"
+                       "</EventRegistry>"),
+            "a sound takes a file or a registered sound, not both");
+        Check(Rejected("<EventRegistry><Event name='X'><Do op='sound' file='C:\\a.wav'/></Event></EventRegistry>"),
+            "a sound's file is under Data");
+        Check(Rejected(
+                  "<EventRegistry><Event name='X'><Do op='sound' file='a.wav' volume='0.5'/></Event></EventRegistry>"),
+            "a sound's volume is the action's");
+        Check(Rejected("<EventRegistry><Event name='X'><Do op='modEvent'/></Event></EventRegistry>"),
+            "a mod event needs a name");
+        Check(Rejected("<Action id='A' clip='a.hkx'><EventValues><Event name='X'><Do op='modEvent' name='Y'/></Event>"
+                       "</EventValues></Action>"),
+            "a mod event's name is the registry's");
+        Check(Rejected("<Action id='A' clip='a.hkx'><Do at='0.2' op='hide' value='1'/></Action>"),
+            "value belongs to globalSet");
+        Check(Rejected("<Action id='A' clip='a.hkx'><Do at='0.3' op='strike' strength='0.5'/></Action>"),
+            "a strike's strength is a stagger's");
+        Check(
+            Rejected("<Action id='A' clip='a.hkx'><Do at='0.3' op='strike' reaction='stagger' strength='2'/></Action>"),
+            "a stagger's strength is at most 1");
+        Check(Rejected("<Action id='A' clip='a.hkx'><Do at='0.3' op='strike' reaction='stagger' force='3'/></Action>"),
+            "a strike's force is a push's");
+        Check(Rejected("<Action id='A' clip='a.hkx'><Do at='0.3' op='strike' without='blood'/></Action>"),
+            "without names what a hit brings along");
+        Check(Rejected("<Action id='A' clip='a.hkx'><EventValues><Event name='X'><Do op='strike' "
+                       "reaction='push'/></Event></EventValues></Action>"),
+            "the reaction is the registry's");
+        Check(Rejected("<EventRegistry><Event name='X'><Do op='strike' radius='200'/></Event></EventRegistry>"),
+            "a strike's numbers are the action's, not the registry's");
+        Check(Rejected("<Action id='A' clip='a.hkx'><EventValues><Event name='X'><Do op='strike' pick='area'/></Event>"
+                       "</EventValues></Action>"),
+            "whom a strike hits is the registry's");
+        Check(Rejected("<Action id='A' clip='a.hkx'><Do at='0.3' op='strike' ratio='1' amount='5'/></Action>"),
+            "a strike takes a ratio or an amount, not both");
+        Check(Rejected("<Action id='A' clip='a.hkx'><Do at='0.3' op='strike' pick='partner' radius='200'/></Action>"),
+            "area numbers belong to pick='area'");
+        Check(Rejected("<Action id='A' clip='a.hkx'><Do at='0.3' op='ragdoll' pick='area'/></Action>"),
+            "strike settings belong to strike");
         Check(Rejected("<EventRegistry><Event name='X'><Do op='ragdoll' direction='north'/></Event></EventRegistry>"),
             "a ragdoll's direction is one of six");
         Check(Rejected("<Action id='A' clip='a.hkx'><EventValues><Event name='X'><Do op='ragdoll' force='21'/></Event>"
@@ -224,10 +370,10 @@ int main() {
             "one event's values once");
         Check(Rejected("<Action id='A' clip='a.hkx'><EventValues><Event name='X'/></EventValues></Action>"),
             "an event's values hold at least one function");
-        Check(Rejected("<Action id='S'><Start key='E'/><Flow entry='t'><Play id='t' action='A'/></Flow>"
-                       "<EventValues><Event name='X'><Do op='hide'/></Event></EventValues></Action>" +
+        Check(Rejected("<Start id='S' key='E' to='A'><EventValues><Event name='X'><Do op='hide'/></Event>"
+                       "</EventValues></Start>" +
                        std::string(kAction)),
-            "a selecting action plays no clip: no values");
+            "a start plays no clip: no values");
         // MatchValues: by op, in order among that op; extras are reported.
         {
             auto fn = [](EventOp op, float delay = 0) {
@@ -267,11 +413,11 @@ int main() {
 
         // A pair's clip-time effects.
         {
-            const auto p = Parse(R"(<Pair id='P' clip='p.hkx'><Effects>
+            const auto p = Parse(R"(<Pair id='P' clip='p.hkx'>
                 <Camera reset='Reset' restore='event' timeout='5'/>
                 <Do at='0.15' op='hide' target='both'/>
                 <Do at='0.2' op='cost' target='player' stamina='10'/>
-            </Effects></Pair>)");
+            </Pair>)");
             Check(p.ok, "timed pair effects parse");
             const auto& f = p.actions[0].pairFeatures;
             Check(f.enabled && f.cameraReset == "Reset" && !f.cameraRestoreOnEnd &&
@@ -282,50 +428,47 @@ int main() {
                 "clip-time hide for both");
             Check(f.timed[1].function.op == EventOp::kCost && std::fabs(f.timed[1].function.stamina - 10) < 1e-6f,
                 "clip-time cost");
-            Check(Rejected("<Pair id='P' clip='p.hkx'><Effects><Do op='hide'/></Effects></Pair>"),
-                "a pair's Do needs its clip time");
-            Check(Rejected("<Pair id='P' clip='p.hkx'><Effects><Do at='1' op='fireArrow'/></Effects></Pair>"),
+            Check(Rejected("<Pair id='P' clip='p.hkx'><Do op='hide'/></Pair>"), "a pair's Do needs its clip time");
+            Check(Rejected("<Pair id='P' clip='p.hkx'><Do at='1' op='fireArrow'/></Pair>"),
                 "a clip-time shot is the action's FireArrow");
             // 0.12.275: a clip-time effect names the role it changes; without one, both. No sender filter.
-            const auto plain = Parse("<Pair id='P' clip='p.hkx'><Effects><Do at='0.1' op='hide'/></Effects></Pair>");
+            const auto plain = Parse("<Pair id='P' clip='p.hkx'><Do at='0.1' op='hide'/></Pair>");
             Check(plain.ok && plain.actions[0].pairFeatures.timed[0].function.target == EventTarget::kBoth,
                 "a clip-time effect without a target changes both");
             for (const char* attr : {"from='any'", "from='initiator'", "target='sender'", "target='partner'"}) {
-                const auto r = Parse(std::string("<Pair id='P' clip='p.hkx'><Effects><Do at='0.1' op='hide' ") + attr +
-                                     "/></Effects></Pair>");
-                Check(!r.ok && r.error.find("0.12.275") != std::string::npos, "no sender on a clip time");
+                const auto r =
+                    Parse(std::string("<Pair id='P' clip='p.hkx'><Do at='0.1' op='hide' ") + attr + "/></Pair>");
+                Check(!r.ok, "no sender on a clip time");
             }
             for (const char* attr : {"space='back'", "minSpace='1'", "maxSpace='100'"}) {
                 const auto r = Parse(
                     std::string("<EventRegistry><Event name='X'><Do op='hide' ") + attr + "/></Event></EventRegistry>");
-                Check(!r.ok && r.error.find("0.12.275") != std::string::npos, "the space condition is gone");
+                Check(!r.ok, "a function has no space condition");
             }
         }
         // An ordinary action's camera restore (0.12.260): Camera alone; the other effects stay a pair's.
         {
-            const auto p = Parse(
-                "<Action id='A' clip='a.hkx'><Effects><Camera reset='Back' restore='event' timeout='3'/></Effects></Action>");
+            const auto p =
+                Parse("<Action id='A' clip='a.hkx'><Camera reset='Back' restore='event' timeout='3'/></Action>");
             Check(p.ok, "an ordinary action takes a camera restore");
             const auto& f = p.actions[0].pairFeatures;
             Check(f.cameraReset == "Back" && !f.cameraRestoreOnEnd && std::fabs(f.cameraTimeout - 3) < 1e-6f,
                 "its camera settings");
-            Check(Parse("<Action id='A' clip='a.hkx'><Effects><Camera/></Effects></Action>").ok,
-                "restored at its end by default");
+            Check(Parse("<Action id='A' clip='a.hkx'><Camera/></Action>").ok, "restored at its end by default");
             // 0.12.274: clip-time effects on the actor playing it, the ones its own slots do not cover.
-            const auto timed = Parse("<Action id='A' clip='a.hkx'><Effects><Do at='0.1' op='hide'/>"
-                                     "<Do at='0.5' op='shake' strength='2' duration='1'/></Effects></Action>");
+            const auto timed = Parse("<Action id='A' clip='a.hkx'><Do at='0.1' op='hide'/>"
+                                     "<Do at='0.5' op='shake' strength='2' duration='1'/></Action>");
             Check(timed.ok && timed.actions[0].pairFeatures.timed.size() == 2 &&
                       timed.actions[0].pairFeatures.timed[1].function.op == EventOp::kShake &&
                       std::fabs(timed.actions[0].pairFeatures.timed[1].at - 0.5f) < 1e-6f,
                 "an ordinary action's clip-time effects");
             for (const char* op : {"iframeOn", "armorOn", "rotateOn", "cost", "cancel", "fireArrow"})
-                Check(Rejected(std::string("<Action id='A' clip='a.hkx'><Effects><Do at='0.1' op='") + op +
-                               "'/></Effects></Action>"),
+                Check(Rejected(std::string("<Action id='A' clip='a.hkx'><Do at='0.1' op='") + op + "'/></Action>"),
                     (std::string("not an ordinary action's clip-time effect: ") + op).c_str());
-            Check(Rejected("<Action id='A' clip='a.hkx'><Effects><Do at='0.1' op='hide' target='player'/></Effects>"
+            Check(Rejected("<Action id='A' clip='a.hkx'><Do at='0.1' op='hide' target='player'/>"
                            "</Action>"),
                 "no target: the actor playing it");
-            Check(Rejected("<Action id='A' clip='a.hkx'><Effects interruptOnThirdPartyHit='true'/></Action>"),
+            Check(Rejected("<Action id='A' clip='a.hkx' interruptOnHit='true'/>"),
                 "third-party interruption stays a pair's");
         }
 
@@ -371,7 +514,7 @@ int main() {
         {
             const auto refused = [](const std::string& body) {
                 const auto p = Parse(body);
-                return !p.ok && p.error.find("0.12.274") != std::string::npos;
+                return !p.ok;
             };
             Check(refused("<EventRegistry><Event name='X' values='1.5|0.5'/></EventRegistry>"), "values refused");
             Check(refused("<EventRegistry><Event name='X'><Do op='shake' parameters='true'/></Event></EventRegistry>"),

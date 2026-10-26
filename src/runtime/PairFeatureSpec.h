@@ -1,5 +1,6 @@
 #pragma once
 #include "runtime/EventRegistrySpec.h"
+#include "runtime/GameControls.h"
 #include <string>
 #include <vector>
 
@@ -13,6 +14,7 @@ struct ActionLinkSpec {
     int flowParent = -1;
     float blend = -1.0f;
     unsigned key = 0, gamepad = 0;
+    GameControl control = GameControl::kNone;  // a game control instead of a key (0.12.292)
     float openAt = 0, closeAt = -1;
     bool buffered = true;
     bool closeRelativeToEnd = false;

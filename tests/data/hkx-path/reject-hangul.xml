@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- A Korean folder name: the game opens files through code-page paths and would never find it. -->
-<AnimationSet version="4" id="HkxPathHangul">
-  <Inputs><Input id="Use" key="G"/></Inputs>
-  <Action id="Hangul" clip="Animations\잡기\Grapple.hkx">
-    <Start input="Use"/>
-    <Require cooldown="0.2"/>
-    <Advanced safety="0.7"/>
-  </Action>
+<AnimationSet version="6" id="HkxPathHangul">
+  <Inputs>
+    <Input id="Use" key="G"/>
+  </Inputs>
+  <Start to="Hangul" input="Use" cooldown="0.2"/>
+  <Action id="Hangul" clip="Animations\잡기\Grapple.hkx" safety="0.7"/>
 </AnimationSet>

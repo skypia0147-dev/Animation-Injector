@@ -1,14 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- No clip, and a route plays the action itself: it would have nothing to play. -->
-<AnimationSet version="4" id="SelectingSelf">
-  <Inputs><Input id="Use" key="G"/></Inputs>
-  <Action id="SelfPick">
-    <Start input="Use"/>
-    <Flow entry="Held">
-      <Test id="Held" kind="global" subject="self" plugin="Skyrim.esm" form="38" equals="1" pass="ToA" fail="ToSelf"/>
-      <Play id="ToA" action="A"/>
-      <Play id="ToSelf" action="SelfPick"/>
-    </Flow>
-  </Action>
+<!-- A card plays actions: a start's own id is not one. -->
+<AnimationSet version="6" id="SelectingSelf">
+  <Inputs>
+    <Input id="Use" key="G"/>
+  </Inputs>
+  <Start id="SelfPick" input="Use">
+    <Check kind="global" plugin="Skyrim.esm" form="38" equals="1"/>
+    <True to="A"/>
+    <False to="SelfPick"/>
+  </Start>
   <Action id="A" clip="Animations\Selecting\A.hkx"/>
 </AnimationSet>

@@ -3,6 +3,7 @@
 #include "runtime/PairedRig.h"
 #include "runtime/CarrySpec.h"
 #include "ConditionFlowXml.h"
+#include "Cards.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -17,9 +18,9 @@
 #include <string_view>
 #include <vector>
 
-// One pass from the AnimationSet document (format 4) to runtime
-// declarations: every element is
-// validated and then read into its ActionSpec fields. Times keep their textual forms ("@seconds",
+// One pass from the AnimationSet document (format 6, docs/설계-형식6-조건카드.md) to runtime declarations: every
+// element is validated and then read into its ActionSpec fields; starts and condition cards become the actions'
+// triggers and selecting programs (Cards.h). Times keep their textual forms ("@seconds",
 // "@end-seconds", "event") between the two steps so that numbers convert exactly as the
 // declaration loader always has (strtof and pugixml's as_float on the author's text).
 namespace AnimationInjector::XmlV2 {
@@ -32,15 +33,12 @@ std::string lower(std::string value) {
     for (char& c : value) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return value;
 }
-[[noreturn]] void fail(Node n, const std::string& reason) {
-    throw std::runtime_error(n.path() + (n.attribute("id") ? " [" + get(n, "id") + "]" : "") + ": " + reason);
-}
+// The element as the author wrote it: its path and id.
+std::string where(Node n) { return n.path() + (n.attribute("id") ? " [" + get(n, "id") + "]" : ""); }
+[[noreturn]] void fail(Node n, const std::string& reason) { throw std::runtime_error(where(n) + ": " + reason); }
+// What a condition card holds (a start's, a transition's or a QTE result's).
+const Names kCardParts = {"Check", "And", "Or", "Row", "True", "False"};
 void shape(Node n, Names attrs, Names children = {}) {
-    // 0.12.278: an event moment waits for its event only; "if it does not come by" is gone.
-    for (auto gone : {"fallback", "fromFallback", "untilFallback"})
-        if (n.attribute(gone))
-            fail(n, std::string(gone) +
-                        "(이벤트가 안 오면)는 없어졌습니다(0.12.278): 이벤트로 두면 그 이벤트가 올 때만 동작합니다");
     for (auto a : n.attributes())
         if (!has(attrs, a.name())) fail(n, "알 수 없는 속성 '" + std::string(a.name()) + "'");
     for (auto c : n.children()) {
@@ -213,20 +211,6 @@ void ReadSlot(SlotWindow& w, const std::string& on, const std::string& off) {
     } else
         w.offEvent = off;
 }
-// A clip moves only by its HKX's AMR annotations ("animmotion"/"animrotation", 0.12.231): a declaration no
-// longer moves the actor, holds it in place, or picks a clip by the movement input.
-void noMotion(Node n) {
-    if (auto m = n.child("Motion"))
-        fail(m, "Motion은 없어졌습니다(0.12.231): 이동은 HKX의 AMR 주석(animmotion)으로만 합니다. 움직이지 않게 하려면 "
-                "주석을 지우세요");
-    if (auto c = n.child("Clips"))
-        fail(c,
-            "Clips(방향별 클립)는 없어졌습니다(0.12.231): 방향마다 Action을 두고 이동 입력 방향 조건(Flow)으로 고르세요");
-    for (auto key : {"direction", "defaultDirection", "strict"})
-        if (auto st = n.child("Start"); st && st.attribute(key))
-            fail(st, std::string("Start ") + key +
-                         "는 없어졌습니다(0.12.231): 방향은 이동 입력 방향 조건(Flow)으로 고르세요");
-}
 enum class Basis { Seconds, End, Either };
 std::string clock(Node n, const std::string& s, Basis basis) {
     const bool end = s == "end" || s.starts_with("end-");
@@ -270,7 +254,8 @@ const std::pair<std::string_view, EventOp> kOps[] = {{"hide", EventOp::kHide}, {
     {"timeOn", EventOp::kTimeOn}, {"timeOff", EventOp::kTimeOff}, {"iframeOn", EventOp::kIFrameOn},
     {"iframeOff", EventOp::kIFrameOff}, {"armorOn", EventOp::kArmorOn}, {"armorOff", EventOp::kArmorOff},
     {"rotateOn", EventOp::kRotateOn}, {"rotateOff", EventOp::kRotateOff}, {"cancel", EventOp::kCancel},
-    {"fireArrow", EventOp::kFireArrow}, {"ragdoll", EventOp::kRagdoll}};
+    {"fireArrow", EventOp::kFireArrow}, {"ragdoll", EventOp::kRagdoll}, {"strike", EventOp::kStrike},
+    {"sound", EventOp::kSound}, {"globalSet", EventOp::kGlobalSet}, {"modEvent", EventOp::kModEvent}};
 const std::pair<std::string_view, EventTarget> kTargets[] = {{"both", EventTarget::kBoth},
     {"player", EventTarget::kPlayer}, {"initiator", EventTarget::kInitiator}, {"receiver", EventTarget::kReceiver}};
 // How a shot leaves the bow (0.12.268): mode "drawn" (default) releases the drawn bow as the player would;
@@ -289,8 +274,87 @@ FireArrowShot fireArrowShot(Node e) {
 // Where a <Do> stands (0.12.281): a registered event's function holds what it acts with (op, a spell, a ragdoll's
 // direction); an action's <EventValues> the numbers it runs with there; a clip-time effect both.
 enum class DoUse { kRegistry, kValues, kTimed };
-constexpr std::initializer_list<const char*> kNumbers = {
-    "delay", "stamina", "magicka", "strength", "duration", "factor", "mode", "damage", "force"};
+constexpr std::initializer_list<const char*> kNumbers = {"delay", "stamina", "magicka", "strength", "duration",
+    "factor", "mode", "damage", "force", "ratio", "amount", "radius", "angle", "up", "down", "edge", "volume", "value",
+    "number"};
+// What a sound, a global and a mod event act with (0.12.296): a registered event's function holds them.
+constexpr std::initializer_list<const char*> kOpKinds = {"file", "bone", "restore", "name", "text"};
+// A strike's settings that say whom it hits and how (StrikeSpec.h): a registered event's function holds them.
+constexpr std::initializer_list<const char*> kStrikeKinds = {"pick", "hit", "hand", "block", "reaction", "without"};
+// What a real hit brings along, each named in a strike's `without` to leave it out (0.12.294).
+constexpr Names kStrikeExtras = {"enchantment", "poison", "perks", "impact", "hitEvent"};
+// A strike (0.12.293): whom it hits and how from `pick`·`hit`·`hand`·`block`, its numbers from the rest.
+void strikeSpec(Node e, DoUse use, StrikeSpec& s) {
+    choice(e, "pick", {"partner", "combatTarget", "crosshair", "area"});
+    choice(e, "hit", {"hostile", "all"});
+    choice(e, "hand", {"right", "left", "both"});
+    choice(e, "block", {"vanilla", "ignore"});
+    choice(e, "reaction", {"none", "stagger", "push"});
+    num(e, "ratio", 100);
+    num(e, "amount", 100000);
+    num(e, "radius", 5000);
+    num(e, "angle", 360, 1);
+    num(e, "up", 5000);
+    num(e, "down", 5000);
+    num(e, "edge", 1);
+    if (e.attribute("ratio") && e.attribute("amount"))
+        fail(e, "strike에는 ratio(무기 데미지 비율)와 amount(고정 피해) 중 하나만 씁니다");
+    const auto pick = get(e, "pick", "combatTarget");
+    if (use != DoUse::kValues && pick != "area")
+        for (const char* n : {"radius", "angle", "up", "down", "edge", "hit"})
+            if (e.attribute(n)) fail(e, std::string(n) + "는 pick=\"area\"(범위)에서만 씁니다");
+    // After the damage (0.12.294): a stagger's strength (0~1) or a push's force (0~20).
+    const auto reaction = get(e, "reaction", "none");
+    if (use != DoUse::kValues) {
+        if (e.attribute("strength") && reaction != "stagger")
+            fail(e, "strike의 strength는 reaction=\"stagger\"(경직)의 세기입니다");
+        if (e.attribute("force") && reaction != "push")
+            fail(e, "strike의 force는 reaction=\"push\"(밀쳐내기)의 힘입니다");
+    }
+    if (e.attribute("strength") && e.attribute("strength").as_float(0) > 1.0f)
+        fail(e, "strike의 strength(경직 세기)는 0~1입니다");
+    const std::string without = get(e, "without");
+    for (std::size_t at = 0; at <= without.size();) {
+        const auto end = std::min(without.find(',', at), without.size());
+        const auto name = without.substr(at, end - at);
+        if (!name.empty() && !has(kStrikeExtras, name))
+            fail(e, "without에 쓸 수 있는 것은 enchantment·poison·perks·impact·hitEvent입니다: " + name);
+        if (name == "enchantment") s.enchantment = false;
+        if (name == "poison") s.poison = false;
+        if (name == "perks") s.perks = false;
+        if (name == "impact") s.impact = false;
+        if (name == "hitEvent") s.hitEvent = false;
+        at = end + 1;
+    }
+    s.reaction = reaction == "stagger" ? StrikeSpec::Reaction::kStagger
+                 : reaction == "push"  ? StrikeSpec::Reaction::kPush
+                                       : StrikeSpec::Reaction::kNone;
+    auto value = [&](const char* n, float fallback) {
+        const float v = e.attribute(n).as_float(fallback);
+        return std::isfinite(v) ? v : fallback;
+    };
+    s.pick = pick == "partner"     ? StrikeSpec::Pick::kPartner
+             : pick == "crosshair" ? StrikeSpec::Pick::kCrosshair
+             : pick == "area"      ? StrikeSpec::Pick::kArea
+                                   : StrikeSpec::Pick::kCombatTarget;
+    s.hostileOnly = get(e, "hit", "hostile") != "all";
+    const auto hand = get(e, "hand", "right");
+    s.hand = hand == "left"   ? StrikeSpec::Hand::kLeft
+             : hand == "both" ? StrikeSpec::Hand::kBoth
+                              : StrikeSpec::Hand::kRight;
+    s.block = get(e, "block", "vanilla") == "ignore" ? StrikeSpec::Block::kIgnore : StrikeSpec::Block::kVanilla;
+    s.base = e.attribute("amount") ? StrikeSpec::Base::kFixed : StrikeSpec::Base::kWeapon;
+    s.ratio = std::clamp(value("ratio", 1.0f), 0.0f, 100.0f);
+    s.amount = std::clamp(value("amount", 10.0f), 0.0f, 100000.0f);
+    s.radius = std::clamp(value("radius", 150.0f), 0.0f, 5000.0f);
+    s.angle = std::clamp(value("angle", 60.0f), 1.0f, 360.0f);
+    s.up = std::clamp(value("up", 150.0f), 0.0f, 5000.0f);
+    s.down = std::clamp(value("down", 60.0f), 0.0f, 5000.0f);
+    s.edge = std::clamp(value("edge", 1.0f), 0.0f, 1.0f);
+    s.duration = std::clamp(value("duration", 0.0f), 0.0f, 30.0f);
+    s.stagger = std::clamp(value("strength", 0.5f), 0.0f, 1.0f);
+    s.force = std::clamp(value("force", 5.0f), 0.0f, static_cast<float>(RagdollPush::kMaxForce));
+}
 EventFunctionSpec eventFunction(Node e, DoUse use) {
     const bool timed = use == DoUse::kTimed;
     if (use == DoUse::kRegistry)
@@ -305,41 +369,35 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
             if (e.attribute(n))
                 fail(e, std::string(n) +
                             ": <EventValues>에는 수치만 씁니다(0.12.281). 마법·래그돌 방향은 이벤트 등록에서 정합니다");
-        shape(e, {"op", "delay", "stamina", "magicka", "strength", "duration", "factor", "mode", "damage", "force"});
+        for (const char* n : kStrikeKinds)
+            if (e.attribute(n))
+                fail(e, std::string(n) + ": 타격의 대상·방식(pick·hit·hand·block)은 이벤트 등록에서 정합니다");
+        for (const char* n : kOpKinds)
+            if (e.attribute(n))
+                fail(e, std::string(n) +
+                            ": 소리 파일·뼈, 전역 값 되돌리기, 모드 이벤트 이름·글은 이벤트 등록에서 정합니다");
+        shape(e, {"op", "delay", "stamina", "magicka", "strength", "duration", "factor", "mode", "damage", "force",
+                     "ratio", "amount", "radius", "angle", "up", "down", "edge", "volume", "value", "number"});
     }
-    if (has({"lock", "unlock"}, get(e, "op"))) fail(e, "op=\"lock\"·\"unlock\"(조작 잠금)은 없어졌습니다(0.12.238)");
-    // An event's function changes the actor that sent the event (0.12.273): no file used another target or a
-    // sender filter, and a player-only function already does nothing for anyone else. A pair's clip-time
-    // effect has no sender, so it keeps its target.
-    if (!timed && (e.attribute("target") || e.attribute("from")))
-        fail(e, "이벤트 기능의 target·from은 없어졌습니다(0.12.273): 기능은 이벤트를 보낸 액터에게 적용됩니다");
-    if (e.attribute("parameters"))
-        fail(e, "parameters는 없어졌습니다(0.12.274): 주석 숫자로 흔들려면 HKX 주석 AI.CamShake|세기|시간을 씁니다");
-    // 0.12.275: a function's own space condition is gone (a space split is a condition branch), and a pair's
-    // clip-time effect names the role it changes: both actors play the clip, so no role sends it.
-    for (const char* gone : {"space", "minSpace", "maxSpace"})
-        if (e.attribute(gone))
-            fail(e,
-                "space·minSpace·maxSpace는 없어졌습니다(0.12.275): 공간으로 나누려면 조건 분기(Flow의 space)를 씁니다");
-    if (timed && e.attribute("from"))
-        fail(e,
-            "시각 기능의 from은 없어졌습니다(0.12.275): 적용할 쪽은 target(initiator·receiver·both·player)으로 정합니다");
-    if (timed && has({"sender", "partner"}, get(e, "target")))
-        fail(e,
-            "시각 기능의 target은 initiator·receiver·both·player입니다(0.12.275): 클립 시각에는 보낸 액터가 없습니다");
-    // 0.12.278: the ragdoll is its own function; a spell no longer frees a pair's physics hold.
-    if (e.attribute("releasePhysics"))
-        fail(e, "releasePhysics는 없어졌습니다(0.12.278): 래그돌은 op=\"ragdoll\"(direction·force)을 씁니다");
+    // A registered event's function changes the actor that sent the event (0.12.273); a pair's clip-time effect
+    // names the role it changes (both actors play the clip, so no role sends it).
     if (timed)
         shape(e, {"at", "op", "target", "plugin", "form", "delay", "stamina", "magicka", "strength", "duration",
-                     "factor", "mode", "damage", "direction", "force"});
+                     "factor", "mode", "damage", "direction", "force", "pick", "hit", "hand", "block", "ratio",
+                     "amount", "radius", "angle", "up", "down", "edge", "reaction", "without", "file", "bone", "volume",
+                     "value", "restore", "name", "text", "number"});
     else if (use == DoUse::kRegistry)
-        shape(e, {"op", "plugin", "form", "direction"});
+        shape(e, {"op", "plugin", "form", "direction", "pick", "hit", "hand", "block", "reaction", "without", "file",
+                     "bone", "restore", "name", "text"});
     const auto op = required(e, "op");
     choice(e, "op",
         {"hide", "show", "spell", "stateOn", "stateOff", "cost", "shake", "stopVelocity", "timeOn", "timeOff",
-            "iframeOn", "iframeOff", "armorOn", "armorOff", "rotateOn", "rotateOff", "cancel", "fireArrow", "ragdoll"});
+            "iframeOn", "iframeOff", "armorOn", "armorOff", "rotateOn", "rotateOff", "cancel", "fireArrow", "ragdoll",
+            "strike", "sound", "globalSet", "modEvent"});
     choice(e, "target", {"both", "player", "initiator", "receiver"});
+    choice(e, "bone", {"spine", "head", "rightHand", "leftHand", "root"});
+    choice(e, "restore", {"end"});
+    num(e, "volume", 1);
     num(e, "delay", 60);
     num(e, "stamina", 100000);
     num(e, "magicka", 100000);
@@ -355,7 +413,8 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
     if (use == DoUse::kValues && op == "timeOn" && !e.attribute("factor")) fail(e, "timeOn에는 factor가 필요합니다");
     if (use == DoUse::kValues) {
         // The registry's spell and ragdoll direction are its own: nothing to read here.
-    } else if (op == "spell" || op == "stateOn" || op == "stateOff") {
+    } else if (op == "spell" || op == "stateOn" || op == "stateOff" || op == "globalSet" ||
+               (op == "sound" && !e.attribute("file"))) {
         const auto plugin = required(e, "plugin");
         required(e, "form");
         if (plugin.find_first_of("/\\:") != std::string::npos) fail(e, "plugin에는 파일 이름만 지정합니다");
@@ -364,13 +423,35 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
             !std::all_of(form.begin(), form.end(), [](unsigned char c) { return std::isxdigit(c) != 0; }))
             fail(e, "form은 16진수 ID여야 합니다");
     } else if (e.attribute("plugin") || e.attribute("form"))
-        fail(e, "plugin·form은 spell·stateOn·stateOff에서만 씁니다");
+        fail(e, "plugin·form은 spell·stateOn·stateOff·sound·globalSet에서만 씁니다");
     if (op == "fireArrow") {
         if (timed) fail(e, "시간 기준 활 발사는 동작의 FireArrow at으로 지정합니다");
     } else if (e.attribute("mode") || e.attribute("damage"))
         fail(e, "mode·damage는 fireArrow에서만 씁니다");
-    if (op != "ragdoll" && (e.attribute("direction") || e.attribute("force")))
-        fail(e, "direction·force는 ragdoll에서만 씁니다");
+    if (op != "ragdoll" && e.attribute("direction")) fail(e, "direction은 ragdoll에서만 씁니다");
+    if (op != "ragdoll" && op != "strike" && e.attribute("force")) fail(e, "force는 ragdoll·strike에서만 씁니다");
+    // A sound, a global and a mod event (0.12.296).
+    if (op == "sound") {
+        if (use != DoUse::kValues && e.attribute("file") && (e.attribute("plugin") || e.attribute("form")))
+            fail(e, "sound에는 file(소리 파일) 또는 plugin·form(등록 사운드) 중 하나만 씁니다");
+        if (use != DoUse::kValues && !e.attribute("file") && !e.attribute("plugin"))
+            fail(e, "sound에는 file(소리 파일) 또는 plugin·form(등록 사운드)이 필요합니다");
+        const std::string path = get(e, "file");
+        if (path.find(':') != std::string::npos || path.starts_with("\\") || path.starts_with("/") ||
+            path.find("..") != std::string::npos)
+            fail(e, "sound의 file은 Data 아래 상대 경로입니다(sound\\fx\\…\\a.wav)");
+    } else if (e.attribute("file") || e.attribute("bone") || e.attribute("volume"))
+        fail(e, "file·bone·volume은 sound에서만 씁니다");
+    if (op != "globalSet" && (e.attribute("value") || e.attribute("restore")))
+        fail(e, "value·restore는 globalSet에서만 씁니다");
+    if (op == "modEvent") {
+        if (use != DoUse::kValues && get(e, "name").empty()) fail(e, "modEvent에는 name이 필요합니다");
+    } else if (e.attribute("name") || e.attribute("text") || e.attribute("number"))
+        fail(e, "name·text·number는 modEvent에서만 씁니다");
+    if (op != "strike")
+        for (const char* n : {"pick", "hit", "hand", "block", "ratio", "amount", "radius", "angle", "up", "down",
+                 "edge", "reaction", "without"})
+            if (e.attribute(n)) fail(e, std::string(n) + "는 strike(타격)에서만 씁니다");
     auto number = [](pugi::xml_attribute attr, float fallback, float maximum) {
         const float value = attr.as_float(fallback);
         return std::isfinite(value) ? std::clamp(value, 0.0f, maximum) : fallback;
@@ -389,6 +470,23 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
         if (e.attribute("force")) f.force = number(e.attribute("force"), 1, RagdollPush::kMaxForce);
     }
     if (op == "fireArrow") f.arrow = fireArrowShot(e);
+    if (op == "strike") strikeSpec(e, use, f.strike);
+    if (op == "sound") {
+        f.file = get(e, "file");
+        f.bone = get(e, "bone", "spine");
+        f.volume = number(e.attribute("volume"), 1.0f, 1.0f);
+    }
+    if (op == "globalSet") {
+        const float value = e.attribute("value").as_float(0.0f);
+        f.value = std::isfinite(value) ? value : 0.0f;
+        f.restore = get(e, "restore") == "end";
+    }
+    if (op == "modEvent") {
+        f.name = get(e, "name");
+        f.text = get(e, "text");
+        const float n = e.attribute("number").as_float(0.0f);
+        f.number = std::isfinite(n) ? n : 0.0f;
+    }
     f.stamina = number(e.attribute("stamina"), 0, 100000);
     f.magicka = number(e.attribute("magicka"), 0, 100000);
     f.strength = number(e.attribute("strength"), 1, 10);
@@ -411,28 +509,31 @@ RecoverySpec recoveryDeclaration(Node r) {
 // A connection read once the pair's own settings are known (partnerTo needs a pair).
 struct LinkDeclaration {
     std::string to, partnerTo, event;
-    std::uint32_t key = 0, gamepad = 0;  // the key transition's key (an <Inputs> name resolved, or written here)
+    std::uint32_t key = 0, gamepad = 0;        // the key transition's key (an <Inputs> name resolved, or written here)
+    GameControl control = GameControl::kNone;  // or a game control (0.12.292)
     bool partner = false;
     pugi::xml_attribute blend;
     std::string mode, open, close;
     bool timed = false;
 };
-// The window of a Cancel or Connect: buffered/window/always and its open and close times. No <Window> = always
-// (the whole clip).
+// The window of a vanilla transition or a Transition: buffered/window/always and its open and close times. No
+// from, until or buffer = always (the whole clip).
 struct WindowTimes {
     std::string mode, open, close;
     bool timed = false;
 };
 struct InputInfo {
     Node node;
-    std::uint32_t key = 0;      // DX scan code (+256 mouse)
-    std::uint32_t gamepad = 0;  // the engine's gamepad button code
+    std::uint32_t key = 0;                     // DX scan code (+256 mouse)
+    std::uint32_t gamepad = 0;                 // the engine's gamepad button code
+    GameControl control = GameControl::kNone;  // a game control instead of a key and button (0.12.292)
     bool hasKey = false;
 };
-// Where a key is given: an <Inputs> name (input="…") or the key itself (key="G" gamepad="A"), format 4.
+// Where a key is given: an <Inputs> name (input="…") or the key itself (key="G" gamepad="A").
 struct KeyRef {
     std::string input;  // the <Inputs> name, if one was used
     std::uint32_t key = 0, gamepad = 0;
+    GameControl control = GameControl::kNone;
     bool given = false;
 };
 // Gamepad buttons by name: the engine's codes for the device (the d-pad and buttons are XInput masks, the
@@ -449,6 +550,17 @@ struct Compiler {
     std::map<std::string, InputInfo> inputs;
     std::set<std::string> actionIds, inputIds;
     std::vector<std::string> declared;  // every Action/Pair id in document order
+    std::vector<bool> pairs;            // declared[i] is a Pair
+    Cards::Shared shared;               // the root's <Condition id> cards
+    std::set<std::string> taken;        // action and start ids (lower case), for the selecting actions' names
+    // Selecting actions a transition or a QTE result goes through (T5), after the document's actions.
+    struct Trailing {
+        std::string id;
+        Cards::Compiled compiled;
+    };
+    std::vector<Trailing> trailing;
+    std::map<std::string, std::string> made;         // their ids -> "pair" or "action"
+    std::map<std::string, std::string> byCondition;  // a shared card -> the selecting action holding it alone
     // An event QTE result's action (0.12.249): the registry is read before the actions, so it is checked after them.
     std::vector<std::pair<Node, std::string>> eventQteTargets;
     // A key the runtime will use: a table name or code:<1..265>. The resolver reports
@@ -486,23 +598,37 @@ struct Compiler {
         fail(n, "알 수 없는 패드 버튼: " + value +
                     " (A B X Y LB RB LT RT LS RS Start Back Up Down Left Right 또는 code:숫자)");
     }
-    // input="<Inputs name>" or key=/gamepad= written here; never both.
+    // A game control by its RE::UserEvents name (0.12.292): every device's binding at once.
+    GameControl gameControl(Node n) {
+        const auto value = get(n, "control");
+        const auto control = ParseGameControl(value);
+        if (control == GameControl::kNone) {
+            std::string names;
+            for (int i = 1; i < kGameControlCount; ++i) (names += ' ') += kGameControlNames[i];
+            fail(n, "알 수 없는 게임 동작: " + value + " (" + names.substr(1) + ")");
+        }
+        return control;
+    }
+    // input="<Inputs name>", key=/gamepad= or control= (a game control) written here; only one of them.
     KeyRef keyRef(Node n) {
         KeyRef r;
-        const bool named = n.attribute("input"), direct = n.attribute("key") || n.attribute("gamepad");
-        if (named && direct) fail(n, "input과 key·gamepad 중 하나만 씁니다");
+        const bool named = n.attribute("input"), direct = n.attribute("key") || n.attribute("gamepad"),
+                   control = n.attribute("control");
+        if (named + direct + control > 1) fail(n, "input, key·gamepad, control 중 하나만 씁니다");
         if (named) {
             inputRef(n);
             r.input = get(n, "input");
             const auto& in = inputs.at(r.input);
             r.key = in.hasKey ? in.key : 0;
             r.gamepad = in.gamepad;
+            r.control = in.control;
         } else if (direct) {
             r.key = optionalKeyCode(n, get(n, "key"));
             r.gamepad = gamepadCode(n);
             if (!r.key && !r.gamepad) fail(n, "키 또는 패드 버튼이 필요합니다");
-        }
-        r.given = named || direct;
+        } else if (control)
+            r.control = gameControl(n);
+        r.given = named || direct || control;
         return r;
     }
     void inputRef(Node n, const char* attr = "input") {
@@ -512,23 +638,28 @@ struct Compiler {
         if (!actions.contains(required(n, attr))) fail(n, "정의되지 않은 액션: " + get(n, attr));
     }
     void input(Node n) {
-        shape(n, {"id", "key", "gamepad"});
+        shape(n, {"id", "key", "gamepad", "control"});
         auto id = required(n, "id");
         identifier(n, id);
         if (!inputIds.insert(lower(id)).second) fail(n, "입력 ID 중복");
         InputInfo info{n};
+        if (n.attribute("control")) {
+            if (n.attribute("key") || n.attribute("gamepad")) fail(n, "control은 key·gamepad와 함께 쓰지 않습니다");
+            info.control = gameControl(n);
+            inputs.emplace(id, info);
+            return;
+        }
         if (auto key = n.attribute("key")) {
             info.key = keyCode(n, key.value());
             info.hasKey = true;
         }
         info.gamepad = gamepadCode(n);
-        if (!n.attribute("key") && !info.gamepad) fail(n, "키 또는 패드 버튼이 필요합니다");
+        if (!n.attribute("key") && !info.gamepad) fail(n, "키, 패드 버튼 또는 control이 필요합니다");
         inputs.emplace(id, info);
     }
     // One <QTE>: an action's (links: its transitions are collected there) or an event's (no links: started by
     // its event, 0.12.248).
     QteSpec qte(Node q, Node owner, bool pair, std::set<std::string>& qteIds, std::vector<LinkDeclaration>* links) {
-        if (q.attribute("step")) fail(q, "QTE step은 콤보와 함께 없어졌습니다(형식 4)");
         if (!links) {
             // Started by its event (0.12.248): at once, for the player, with no action to go to.
             shape(q,
@@ -547,7 +678,7 @@ struct Compiler {
         num(q, "channel", 3);
         if (q.attribute("channel") && q.attribute("channel").as_double() != q.attribute("channel").as_uint())
             fail(q, "channel must be an integer");
-        choice(q, "control", {"rightAttack"});
+        if (q.attribute("control")) gameControl(q);
         boolean(q, "replaceActive");
         num(q, "feedback", 10, .05);
         if (q.attribute("stopEvent")) {
@@ -629,9 +760,10 @@ struct Compiler {
             outcome.event = r.attribute("event").as_string();
             if (!r) continue;
             if (links)
-                shape(r, {"event", "recipient", "to", "partnerTo", "soundPlugin", "soundForm"});
+                shape(
+                    r, {"event", "recipient", "to", "partnerTo", "condition", "soundPlugin", "soundForm"}, kCardParts);
             else
-                shape(r, {"event", "to", "partnerTo", "soundPlugin", "soundForm"});
+                shape(r, {"event", "to", "partnerTo", "condition", "soundPlugin", "soundForm"}, kCardParts);
             if (r.attribute("soundPlugin") || r.attribute("soundForm")) {
                 required(r, "soundPlugin");
                 const auto form = required(r, "soundForm");
@@ -642,6 +774,27 @@ struct Compiler {
                     fail(r, "invalid soundForm");
             }
             choice(r, "recipient", {"self", "partner", "both"});
+            if (!links && Cards::HasCard(r)) {
+                // An event QTE's result through a condition card (T5): the action it picks starts at once.
+                if (r.attribute("event")) fail(r, "choose event OR to");
+                if (r.attribute("partnerTo")) fail(r, "partnerTo는 to(동작)와 함께만 씁니다");
+                outcome.to = through(r, "QTE_" + id + "_" + name);
+                eventQteTargets.emplace_back(r, outcome.to);
+                continue;
+            }
+            if (links && Cards::HasCard(r)) {
+                // Through a condition card (T5): the result's event starts the selecting action that holds it.
+                if (r.attribute("event")) fail(r, "choose event OR to");
+                if (r.attribute("recipient")) fail(r, "transition recipient is fixed to the initiator");
+                if (r.attribute("partnerTo")) fail(r, "partnerTo는 to(동작)와 함께만 씁니다");
+                const auto event = "AI_" + get(owner, "id") + "_QTE_" + id + "_" + name;
+                LinkDeclaration link;
+                link.event = event;
+                link.to = through(r, get(owner, "id") + "_" + id + "_" + name);
+                links->push_back(std::move(link));
+                outcome.event = event;
+                continue;
+            }
             if (r.attribute("to") && r.attribute("event")) fail(r, "choose event OR to");
             if (!pair && get(r, "recipient") != "" && get(r, "recipient") != "self")
                 fail(r, "partner result requires Pair");
@@ -711,9 +864,6 @@ struct Compiler {
         shape(r, {}, {"Event"});
         std::set<std::string> names;
         for (auto e : r.children("Event")) {
-            if (e.attribute("values"))
-                fail(
-                    e, "values는 없어졌습니다(0.12.274): 흔들림 세기·시간은 HKX 주석 AI.CamShake|세기|시간으로 씁니다");
             shape(e, {"name"}, {"Do", "QTE"});
             const auto name = required(e, "name");
             eventName(e, name);
@@ -750,10 +900,8 @@ struct Compiler {
         }
         return out;
     }
+    // from, until and buffer on a <Transition> or <Vanilla> (its shape is checked by the caller).
     WindowTimes window(Node n, bool link) {
-        if (n.attribute("always"))
-            fail(n, "always는 없어졌습니다(형식 4): <Window>를 쓰지 않으면 클립 전체에서 받습니다");
-        shape(n, {"from", "until", "buffer"});
         boolean(n, "buffer");
         // from: the clip start unless written; until: the clip end unless written.
         WindowTimes out;
@@ -767,13 +915,14 @@ struct Compiler {
             fail(n, "열림은 닫힘보다 빨라야 합니다");
         return out;
     }
-    void effects(Node n, PairFeatureSpec& out) {
-        if (auto old = n.child("Effect"))
-            fail(old, "Effect는 없어졌습니다: 이벤트 기능은 EventRegistry, 시간 효과는 <Do at=\"초\">로 씁니다");
-        shape(n, {"interruptOnThirdPartyHit"}, {"Camera", "Do"});
-        boolean(n, "interruptOnThirdPartyHit");
+    // Clip-time functions (<Do at>) and the camera restore (<Camera>), written directly in the action; a pair's
+    // interruptOnHit.
+    void features(Node n, PairFeatureSpec& out, bool pair) {
+        boolean(n, "interruptOnHit");
+        const auto c = one(n, "Camera");
+        if (!c && !n.child("Do") && !n.attribute("interruptOnHit")) return;
         out.enabled = true;
-        if (auto c = one(n, "Camera")) {
+        if (c) {
             shape(c, {"reset", "restore", "timeout"});
             choice(c, "restore", {"end", "event"});
             num(c, "timeout", 60, 0.1);
@@ -783,8 +932,21 @@ struct Compiler {
             const float timeout = c.attribute("timeout").as_float(10.0f);
             out.cameraTimeout = std::isfinite(timeout) ? std::clamp(timeout, 0.1f, 60.0f) : 10.0f;
         }
-        out.interruptOnThirdPartyHit = n.attribute("interruptOnThirdPartyHit").as_bool(false);
+        out.interruptOnThirdPartyHit = n.attribute("interruptOnHit").as_bool(false);
         for (auto d : n.children("Do")) {
+            if (!pair) {
+                // An ordinary action's clip-time function acts on the actor playing it (0.12.274).
+                if (d.attribute("target") || d.attribute("from"))
+                    fail(d,
+                        "일반 동작의 시각 기능은 그 동작을 재생하는 액터에게 적용됩니다: target·from을 쓰지 않습니다");
+                const auto op = get(d, "op");
+                if (!op.empty() && !has({"hide", "show", "spell", "stateOn", "stateOff", "shake", "stopVelocity",
+                                            "timeOn", "timeOff", "ragdoll", "strike", "sound", "globalSet", "modEvent"},
+                                       op))
+                    fail(d, "일반 동작의 시각 기능이 아닙니다: " + op +
+                                " (무적·슈퍼아머·회전·비용은 IFrame·HyperArmor·Rotate·Cost, 활 발사는 FireArrow, "
+                                "cancel은 페어 전용)");
+            }
             TimedEffectSpec timed;
             timed.at = static_cast<float>(numeric(d, required(d, "at"), 600));
             timed.function = eventFunction(d, DoUse::kTimed);
@@ -792,32 +954,26 @@ struct Compiler {
             out.timed.push_back(std::move(timed));
         }
     }
+    // One <Action>/<Pair> (format 6): its clip and features. The start that is its own (T1) is applied by the
+    // caller, which then Finalizes it.
     ActionSpec action(Node n, const std::string& sourceName) {
-        if (auto old = n.child("Events"))
-            fail(old, "Events extra는 없어졌습니다: 그래프에 등록할 이벤트는 EventRegistry의 Event로 씁니다");
         const bool pair = std::string_view(n.name()) == "Pair";
-        noMotion(n);
-        for (const char* old : {"Step", "Transition"})
-            if (auto c = n.child(old))
-                fail(c,
-                    std::string(old) +
-                        "는 콤보와 함께 없어졌습니다(형식 4): HKX마다 <Action>을 두고 <Connect to=\"다음\" key=\"…\">로 이으세요");
-        if (auto old = n.child("Lock")) fail(old, "Lock(조작 잠금 구간)은 없어졌습니다(0.12.238)");
-        if (auto old = n.child("EndPosition"))
-            fail(old, "EndPosition은 없어졌습니다(0.12.255): 페어 종료 위치 보정은 모든 페어에 자동으로 걸리며 "
-                      "INI [Compatibility] iPairEndPosition으로 끄거나 범위를 정합니다");
-        shape(n, {"id", "clip", "view", "firstPerson"},
-            {"Start", "Require", "Attack", "Enter", "Exit", "Rotate", "IFrame", "HyperArmor", "Cost", "Recovery",
-                "Cancel", "Connect", "Advanced", "Target", "OnPartnerLost", "Effects", "Flow", "Carry", "Suppress",
-                "FireArrow", "QTE", "CarryRelease", "EventValues"});
-        if (!pair && (n.child("Target") || n.child("OnPartnerLost") || n.child("Carry")))
-            fail(n, "액션 종류에 맞지 않는 요소입니다");
+        shape(n,
+            {"id", "clip", "view", "firstPerson", "air", "attack", "enter", "block", "safety", "lostBlend", "reorient",
+                "interruptOnHit"},
+            {"Exit", "Rotate", "IFrame", "HyperArmor", "Cost", "MoveCancel", "Vanilla", "Transition", "FindPartner",
+                "Carry", "FireArrow", "QTE", "CarryRelease", "EventValues", "Do", "Camera"});
+        if (!pair) {
+            for (const char* only : {"lostBlend", "reorient", "interruptOnHit"})
+                if (n.attribute(only)) fail(n, std::string(only) + "는 페어 전용 속성입니다");
+            if (n.child("FindPartner") || n.child("Carry")) fail(n, "액션 종류에 맞지 않는 요소입니다");
+        }
         // Only the putdown Action a Carry names; the Carry checks that it has this slot.
         if (auto r = one(n, "CarryRelease"); r && !putdownActions.contains(get(n, "id")))
             fail(r, "CarryRelease는 운반(Carry)의 putdown이 가리키는 Action에만 씁니다");
         if (pair &&
-            (n.child("Cancel") || n.child("Rotate") || n.child("IFrame") || n.child("HyperArmor") || n.child("Cost")))
-            fail(n, "페어 역할 기능은 Effects로 선언해야 합니다");
+            (n.child("Vanilla") || n.child("Rotate") || n.child("IFrame") || n.child("HyperArmor") || n.child("Cost")))
+            fail(n, "페어 역할 기능은 <Do at>으로 선언해야 합니다");
         ActionSpec s;
         s.id = get(n, "id");
         s.source = sourceName;
@@ -838,122 +994,33 @@ struct Compiler {
             if (s.view.view != View::kThird) fail(n, "firstPerson은 3인칭 액션(view=\"third\")에만 씁니다");
             s.view.firstPerson = *start;
         }
-        if (auto flow = one(n, "Flow")) {
-            std::vector<std::string> names;
-            for (auto a : n.parent().children())
-                if (has({"Action", "Pair"}, a.name())) names.push_back(required(a, "id"));
-            ConditionFlowXml::Program program;
-            std::string error;
-            if (!ConditionFlowXml::Read(flow, names, program, error)) fail(flow, error);
-            for (const auto& predicate : program.predicates)
-                if (predicate.test == ConditionFlowXml::Test::kSpace ||
-                    predicate.test == ConditionFlowXml::Test::kGround) {
-                    if (!pair) fail(flow, "공간 검사는 상대 검색 기준을 가진 Pair에 선언하세요");
-                    bool pairedCandidate = false;
-                    for (auto a : n.parent().children())
-                        if (get(a, "id") == names[predicate.candidate])
-                            pairedCandidate = std::string_view(a.name()) == "Pair";
-                    if (!pairedCandidate) fail(flow, "공간 검사 candidate는 Pair여야 합니다");
-                }
-            for (const auto& node : program.nodes)
-                if (node.kind == ConditionFlow::Kind::kAction && names[node.action] != get(n, "id")) {
-                    for (auto a : n.parent().children())
-                        if (get(a, "id") == names[node.action]) {
-                            if (a.child("Flow")) fail(flow, "Flow 목적지에 또 다른 Flow를 연결할 수 없습니다");
-                            if (!pair && std::string_view(a.name()) == "Pair")
-                                fail(flow, "페어 목적지를 선택하는 Flow는 상대 검색 기준을 가진 Pair에 선언하세요");
-                        }
-                }
-            // The runtime program names every action of the set; destinations resolve by name.
-            s.flowActions = declared;
-            if (!ConditionFlowXml::Read(flow, s.flowActions, s.flow, error)) fail(flow, error);
-        }
-        if (n.attribute("clip")) {
+        {
             auto f = required(n, "clip");
             clip(n, f);
             ClipVariant v;
             v.file = f;
             s.clips.push_back(std::move(v));
-        } else {
-            // A selecting action (0.12.244): its Flow sends every route to another action, so it never plays
-            // a clip of its own and needs none. It is never injected or preloaded; only its start gates
-            // (Start, Require, Suppress) and its Flow mean anything.
-            const auto flow = n.child("Flow");
-            if (!flow)
-                fail(n, "clip이 필요합니다. clip을 생략할 수 있는 것은 Flow가 모든 경로를 다른 동작으로 보내는 고르기 "
-                        "전용 동작뿐입니다(0.12.244)");
-            for (const auto& node : s.flow.nodes)
-                if (node.kind == ConditionFlow::Kind::kAction && s.flowActions[node.action] == s.id)
-                    fail(flow, "clip이 없는 동작 '" + s.id +
-                                   "'의 Flow가 자기 자신을 재생합니다. 자기 HKX를 재생하려면 clip을 씁니다");
-            for (auto c : n.children())
-                if (c.type() == pugi::node_element && !has({"Start", "Require", "Suppress", "Flow"}, c.name()))
-                    fail(c, std::string("clip이 없는 고르기 전용 동작에는 Start·Require·Suppress·Flow만 씁니다: ") +
-                                c.name());
         }
         // Every root input is declared on every action, without changing its ID.
-        for (const auto& [id, info] : inputs) s.inputs.push_back({id, info.hasKey ? info.key : 0, info.gamepad});
-        std::string startActor, startTarget;
-        auto& trigger = s.trigger;
-        trigger.key = 0;  // no key of its own: an <Inputs> reference, a key written here or an event
-        if (auto st = one(n, "Start")) {
-            shape(st, {"input", "key", "gamepad", "event", "actor", "target", "onKeyUp"});
-            const auto key = keyRef(st);
-            if (key.given == static_cast<bool>(st.attribute("event")))
-                fail(st, "키(input 또는 key·gamepad)와 event 중 하나만 지정합니다");
-            trigger.inputId = key.input;
-            trigger.key = key.key;
-            trigger.gamepad = key.gamepad;
-            if (st.attribute("event")) {
-                eventName(st, required(st, "event"));
-                trigger.onEvent = get(st, "event");
-            } else if (st.attribute("actor") || st.attribute("target"))
-                fail(st, "actor/target은 이벤트 시작에서만 사용합니다");
-            choice(st, "actor", {"both", "player", "npc"});
-            choice(st, "target", {"nearest", "combatTarget"});
-            if (get(st, "target") == "combatTarget" && (!pair || !st.attribute("event")))
-                fail(st, "combatTarget은 페어 이벤트 시작에만 사용할 수 있습니다");
-            boolean(st, "onKeyUp");
-            startActor = get(st, "actor");
-            startTarget = get(st, "target");
-            trigger.onKeyUp = st.attribute("onKeyUp").as_bool(false);
+        for (const auto& [id, info] : inputs)
+            s.inputs.push_back({id, info.hasKey ? info.key : 0, info.gamepad, info.control});
+        s.trigger.key = 0;  // no key of its own: a start gives it one (T1)
+        // The HKX's own nature, on every way in: whether it plays in the air.
+        choice(n, "air", {"both", "only"});
+        s.condition.inAir = get(n, "air") == "both" ? 1 : get(n, "air") == "only" ? 2 : 0;
+        // While it plays, these vanilla events are blocked; a start's block while it can start is the start's.
+        if (n.attribute("block")) {
+            s.suppress.events = eventList(n, "block");
+            s.suppress.when = SuppressSpec::When::kActive;
         }
-        if (auto r = one(n, "Require")) {
-            // 0.12.276: the action's own nature only; a state check is a condition branch's test
-            // (tools/require_to_flow.py moves an older file's).
-            for (const char* gone : {"weapon", "blockWhileAttacking", "stamina"})
-                if (r.attribute(gone))
-                    fail(r, std::string(gone) +
-                                "는 없어졌습니다(0.12.276): 조건 분기의 검사(무기 뽑음·공격 상태·스태미나)를 씁니다");
-            shape(r, {"air", "cooldown"});
-            choice(r, "air", {"deny", "allow", "only"});
-            num(r, "cooldown");
-            auto& c = s.condition;
-            const std::string air = get(r, "air", "deny");
-            c.inAir = _stricmp(air.c_str(), "allow") == 0 ? 1 : _stricmp(air.c_str(), "only") == 0 ? 2 : 0;
-            c.cooldown = r.attribute("cooldown").as_float(0.0f);
-        }
-        if (auto e = one(n, "Suppress")) {
-            shape(e, {"events", "when"});
-            choice(e, "when", {"startable", "active", "both"});
-            const auto when = get(e, "when", "startable");
-            s.suppress.when = when == "active" ? SuppressSpec::When::kActive
-                              : when == "both" ? SuppressSpec::When::kBoth
-                                               : SuppressSpec::When::kStartable;
-            s.suppress.events = eventList(e, "events");
-        }
-        if (auto a = one(n, "Attack")) {
-            shape(a, {"data"});
-            auto data = required(a, "data");
-            eventName(a, data);
+        if (n.attribute("attack")) {
+            auto data = required(n, "attack");
+            eventName(n, data);
             s.attack.enabled = true;
             s.attack.data = data;
         }
-        if (auto e = one(n, "Enter")) {
-            shape(e, {"blend"});
-            num(e, "blend", 5);
-            s.enterBlend = e.attribute("blend").as_float(-1.0f);
-        }
+        num(n, "enter", 5);
+        s.enterBlend = n.attribute("enter").as_float(-1.0f);
         {
             // The Exit trigger: seconds before the clip's end, or an annotation event.
             std::string at = "@end-0.05", event;
@@ -985,7 +1052,6 @@ struct Compiler {
                 if (std::string_view(name) == "Rotate" && slot.attribute("locked")) {
                     shape(slot, {"locked"});
                     boolean(slot, "locked");
-                    if (pair) fail(slot, "Rotate locked는 일반 액션 전용입니다");
                     s.rotationLocked = slot.attribute("locked").as_bool(false);
                     // locked="false" still makes rotation a slot for the whole clip
                     if (!s.rotationLocked) ReadSlot(window, "@0", "@end");
@@ -996,11 +1062,10 @@ struct Compiler {
                 const auto off = seconds(slot, "until", Basis::Either, "end");
                 ReadSlot(window, on, off);
             }
-        std::vector<LinkDeclaration> links;  // QTE results first, then Connects, in document order
+        std::vector<LinkDeclaration> links;  // QTE results first, then transitions, in document order
         std::set<std::string> qteIds;
         for (auto q : n.children("QTE")) s.qtes.push_back(qte(q, n, pair, qteIds, &links));
         if (auto f = one(n, "FireArrow")) {
-            if (pair) fail(f, "FireArrow is player-only and requires an Action");
             shape(f, {"at", "onRelease", "mode", "damage"});
             boolean(f, "onRelease");
             s.fireArrow.enabled = true;
@@ -1020,6 +1085,7 @@ struct Compiler {
                 fail(f,
                     "FireArrow에는 at 또는 onRelease=\"true\"가 필요합니다(이벤트 발사는 EventRegistry의 fireArrow)");
         }
+        if (pair && n.child("FireArrow")) fail(n.child("FireArrow"), "FireArrow is player-only and requires an Action");
         if (auto c = one(n, "Cost")) {
             shape(c, {"at", "stamina", "magicka"});
             num(c, "stamina", 100000);
@@ -1034,33 +1100,20 @@ struct Compiler {
             s.carryRelease.enabled = true;
             ReadMoment(time(r, "at", Basis::Seconds), s.carryRelease.event, s.carryRelease.at);
         }
-        if (auto r = one(n, "Recovery")) s.recovery = recoveryDeclaration(r);
+        if (auto r = one(n, "MoveCancel")) s.recovery = recoveryDeclaration(r);
         if (auto v = one(n, "EventValues")) s.eventValues = eventValues(v);
-        if (pair) s.safetyDuration = 30.0f;  // a pair's clip is long; written values replace it (Advanced)
-        // An ordinary action restores the player's camera too (0.12.260) and has clip-time effects on the actor
-        // playing it (0.12.274): the ones its own slots do not cover. Third-party interruption stays a pair's.
-        if (!pair)
-            if (auto e = one(n, "Effects")) {
-                if (e.attribute("interruptOnThirdPartyHit"))
-                    fail(e, "제3자 피격 중단(interruptOnThirdPartyHit)은 페어 전용입니다");
-                for (auto d : e.children("Do")) {
-                    if (d.attribute("target") || d.attribute("from"))
-                        fail(d,
-                            "일반 동작의 시각 기능은 그 동작을 재생하는 액터에게 적용됩니다: target·from을 쓰지 않습니다");
-                    const auto op = get(d, "op");
-                    if (!op.empty() && !has({"hide", "show", "spell", "stateOn", "stateOff", "shake", "stopVelocity",
-                                                "timeOn", "timeOff", "ragdoll"},
-                                           op))
-                        fail(d, "일반 동작의 시각 기능이 아닙니다: " + op +
-                                    " (무적·슈퍼아머·회전·비용은 IFrame·HyperArmor·Rotate·Cost, 활 발사는 FireArrow, "
-                                    "cancel은 페어 전용)");
-                }
-                effects(e, s.pairFeatures);
-            }
+        if (pair) s.safetyDuration = 30.0f;  // a pair's clip is long; a written value replaces it
+        if (n.attribute("safety")) {
+            num(n, "safety", 600, 0.001);
+            s.safetyDuration = n.attribute("safety").as_float(s.safetyDuration);
+        }
+        // Clip-time functions and the camera restore (0.12.260 any action, 0.12.274 an ordinary action's on the
+        // actor playing it); third-party interruption stays a pair's.
+        features(n, s.pairFeatures, pair);
         if (pair) {
             auto& paired = s.paired;
             paired.enabled = true;
-            if (auto t = one(n, "Target")) {
+            if (auto t = one(n, "FindPartner")) {
                 shape(t, {"range", "angle", "rig"});
                 num(t, "range", 10000, 0.001);
                 num(t, "angle", 360, 0.001);
@@ -1070,168 +1123,83 @@ struct Compiler {
                 paired.range = t.attribute("range").as_float(150.0f);
                 paired.angle = t.attribute("angle").as_float(60.0f);
             }
-            if (auto l = one(n, "OnPartnerLost")) {
-                shape(l, {"blend"});
-                numeric(l, required(l, "blend"), 5, 0.01);
-                const float lossBlend = l.attribute("blend").as_float(-1.0f);
+            if (n.attribute("lostBlend")) {
+                numeric(n, get(n, "lostBlend"), 5, 0.01);
+                const float lossBlend = n.attribute("lostBlend").as_float(-1.0f);
                 paired.lossBlend =
                     std::isfinite(lossBlend) && lossBlend > 0.0f ? std::clamp(lossBlend, 0.01f, 5.0f) : -1.0f;
             }
-            if (auto e = one(n, "Effects")) effects(e, s.pairFeatures);
-            if (auto c = one(n, "Carry")) {
-                if (c.attribute("release"))
-                    fail(c, "내려놓기는 이제 putdown(한 사람 Action)과 그 안의 CarryRelease 시점으로 지정합니다");
-                if (c.attribute("alignStart")) fail(c, "alignStart는 없어졌습니다(형식 4): 쓰이지 않던 값입니다");
-                if (get(c, "weapon") == "keep" || c.attribute("weaponShow"))
-                    fail(c, "weapon=\"keep\"과 weaponShow는 없어졌습니다(0.12.238): 무기를 든 채 들려면 "
-                            "weapon=\"sheathe\"(들기 시작 때 넣기)를 쓰세요");
-                shape(c, {"bone", "targetRoot", "putdown", "input", "key", "gamepad", "target", "part", "weapon"},
-                    {"Hold", "Fix"});
-                // A drawn weapon: sheathed (default) or sheathe (put away with no animation as the lift starts).
-                choice(c, "weapon", {"sheathed", "sheathe"});
-                for (auto key : {"bone", "targetRoot"})
-                    if (!ValidCarryBone(required(c, key)))
-                        fail(c, "본 이름은 앞뒤 공백·제어 문자 없이 1~256바이트여야 합니다");
-                // Carry stage 3: how the target is held after the lift.
-                choice(c, "target", {"pose", "physics"});
-                if (c.attribute("part")) {
-                    if (get(c, "target", "pose") != "physics") fail(c, "part는 target=\"physics\"에서만 씁니다");
-                    if (!ValidCarryBone(get(c, "part")))
-                        fail(c, "본 이름은 앞뒤 공백·제어 문자 없이 1~256바이트여야 합니다");
-                }
-                // The carrier alone puts the target down: a plain one-actor Action that only the carry starts,
-                // with one CarryRelease moment (docs/설계-운반-래그돌-내려놓기.md).
-                const auto putdown = required(c, "putdown");
-                actionRef(c, "putdown");
-                auto destination = n.parent().find_child_by_attribute("Action", "id", putdown.c_str());
-                if (!destination || !singleActions.contains(putdown) || destination.child("Start") ||
-                    destination.child("Flow"))
-                    fail(c, "putdown은 시작 입력·조건 분기·방향 클립이 없는 한 사람 Action이어야 합니다");
-                if (!destination.child("CarryRelease"))
-                    fail(c, "putdown Action에 대상 놓기 시점 <CarryRelease at=\"...\"/>가 필요합니다");
-                const auto key = keyRef(c);
-                if (!key.given) fail(c, "운반에는 내려놓기 키(input 또는 key·gamepad)가 필요합니다");
-                auto& carry = s.carry;
-                carry.enabled = true;
-                carry.bone = get(c, "bone");
-                carry.targetRoot = get(c, "targetRoot");
-                carry.putdownAction = putdown;
-                carry.key = key.key ? key.key : 0xFFFFFFFF;
-                carry.gamepad = key.gamepad;
-                carry.mode = get(c, "target", "pose") == "physics" ? CarryTargetMode::kPhysics : CarryTargetMode::kPose;
-                carry.part = get(c, "part");
-                const auto weapon = get(c, "weapon", "sheathed");
-                carry.weapon = weapon == "sheathe" ? CarryWeapon::kSheathe : CarryWeapon::kSheathed;
-                // The moment the target is fixed to the carrier bone during the lift (seconds only).
-                if (auto f = one(c, "Fix")) {
-                    shape(f, {"at"});
-                    numeric(f, required(f, "at"));
-                    carry.fixAt = f.attribute("at").as_float(-1.0f);
-                }
-                // Carrier upper-body hold pose (carry stage 2).
-                if (auto h = one(c, "Hold")) {
-                    if (h.attribute("pose")) fail(h, "Hold pose는 없어졌습니다(형식 4): 들기의 마지막 자세만 씁니다");
-                    shape(h, {"blendIn", "blendOut"}, {"Bone"});
-                    num(h, "blendIn", 5);
-                    num(h, "blendOut", 5);
-                    auto& hold = carry.hold;
-                    hold.pose = "lift-end";
-                    hold.blendIn = h.attribute("blendIn").as_float(0.2f);
-                    hold.blendOut = h.attribute("blendOut").as_float(0.2f);
-                    std::set<std::string> names;
-                    bool positive = false;
-                    for (auto b : h.children("Bone")) {
-                        shape(b, {"name", "weight"});
-                        const auto name = required(b, "name");
-                        if (!ValidCarryBone(name)) fail(b, "본 이름은 앞뒤 공백·제어 문자 없이 1~256바이트여야 합니다");
-                        if (!names.insert(lower(name)).second) fail(b, "같은 뼈가 두 번 지정되었습니다: " + name);
-                        num(b, "weight", 1);
-                        positive |= !b.attribute("weight") || b.attribute("weight").as_double() > 0;
-                        hold.bones.push_back({name, b.attribute("weight").as_float(1.0f)});
-                    }
-                    if (!positive) fail(h, "무게가 0보다 큰 Bone이 하나 이상 필요합니다");
-                }
-            }
-        }
-        if (auto a = one(n, "Advanced")) {
-            if (a.attribute("graph"))
-                fail(a, "graph는 없어졌습니다(형식 4): 일반 동작은 FullBody, 페어는 RootBehaviorGraph에 들어갑니다");
-            shape(a, {"safety", "getToMarkTime", "markErrorThreshold", "reorientSupport", "applyMotionFromRoot"});
-            if (a.attribute("safety")) {
-                num(a, "safety", 600, 0.001);
-                s.safetyDuration = a.attribute("safety").as_float(s.safetyDuration);
-            }
-            for (auto key : {"getToMarkTime", "markErrorThreshold", "reorientSupport", "applyMotionFromRoot"})
-                if (a.attribute(key) && !pair) fail(a, "페어 전용 고급 속성입니다");
-            boolean(a, "reorientSupport");
-            // 0.12.259: getToMarkTime, markErrorThreshold and applyMotionFromRoot are read and ignored (older files
-            // still carry them). The start alignment times itself by the enter blend, the vanilla tolerance never
-            // needs changing, and motion from the root turned the start alignment off; the values stay the vanilla
-            // pair's (ActionSpec defaults). reorientSupport stays: a pair played from behind needs it off, and the
-            // editor sets it from the HKX's start pose.
-            if (pair) s.paired.reorientSupport = a.attribute("reorientSupport").as_bool(true);
+            // A pair played from behind turns neither actor to face the other (the editor sets it from the HKX).
+            boolean(n, "reorient");
+            s.paired.reorientSupport = n.attribute("reorient").as_bool(true);
+            if (auto c = one(n, "Carry")) carry(c, n, s);
         }
         std::set<std::string> windows, bindings;
         unsigned index = 0;
         for (auto t : n.children()) {
             const std::string kind = t.name();
-            if (kind != "Cancel" && kind != "Connect") continue;
-            const bool link = kind == "Connect";
+            if (kind != "Vanilla" && kind != "Transition") continue;
+            const bool link = kind == "Transition";
             shape(t,
-                link ? Names{"to", "partnerTo", "input", "key", "gamepad", "event", "blend"}
-                     : Names{"id", "to", "blend"},
-                {"Window"});
+                link ? Names{"to", "condition", "partnerTo", "input", "key", "gamepad", "control", "event", "blend",
+                           "from", "until", "buffer"}
+                     : Names{"id", "to", "blend", "from", "until", "buffer"},
+                link ? kCardParts : Names{});
             LinkDeclaration connect;
             CancelSpec ws;
             std::string targets;
             KeyRef key;
             if (link) {
-                actionRef(t, "to");
-                connect.to = get(t, "to");
-                num(t, "blend", 5);
-                connect.blend = t.attribute("blend");
-                if (t.attribute("blend"))
-                    for (auto a : n.parent().children())
-                        if (get(a, "id") == get(t, "to") && a.child("Flow"))
-                            fail(t, "Flow 목적지의 명시적 Connect blend는 아직 지원하지 않습니다");
-                if (t.attribute("blend") &&
-                    (pair || get(n, "id") == get(t, "to") || !singleActions.contains(get(t, "to"))))
-                    fail(t, "Connect blend는 일반 단일 HKX 대상에만 지원합니다");
-                if (t.attribute("partnerTo")) {
-                    actionRef(t, "partnerTo");
-                    if (!pair || actions.at(get(t, "to")) == "pair" || actions.at(get(t, "partnerTo")) == "pair")
-                        fail(t, "partnerTo에는 페어에서 양쪽 일반 액션으로 가는 연결만 지정합니다");
-                    connect.partner = true;
-                    connect.partnerTo = get(t, "partnerTo");
+                if (Cards::HasCard(t)) {
+                    // Through a condition card (T5): to the selecting action that holds it.
+                    if (t.attribute("blend"))
+                        fail(t, "조건 카드를 거치는 전환에는 blend를 쓸 수 없습니다(런타임 미지원)");
+                    if (t.attribute("partnerTo")) fail(t, "partnerTo는 to(동작)와 함께만 씁니다");
+                    connect.to = through(t, get(n, "id") + "_Transition");
+                } else {
+                    actionRef(t, "to");
+                    connect.to = get(t, "to");
+                    num(t, "blend", 5);
+                    if (t.attribute("blend") &&
+                        (pair || get(n, "id") == get(t, "to") || !singleActions.contains(get(t, "to"))))
+                        fail(t, "Transition blend는 일반 단일 HKX 대상에만 지원합니다");
+                    if (t.attribute("partnerTo")) {
+                        actionRef(t, "partnerTo");
+                        if (!pair || actions.at(get(t, "to")) == "pair" || actions.at(get(t, "partnerTo")) == "pair")
+                            fail(t, "partnerTo에는 페어에서 양쪽 일반 액션으로 가는 연결만 지정합니다");
+                        connect.partner = true;
+                        connect.partnerTo = get(t, "partnerTo");
+                    }
                 }
+                connect.blend = t.attribute("blend");
                 key = keyRef(t);
                 if (key.given == static_cast<bool>(t.attribute("event")))
-                    fail(t, "Connect에는 키(input 또는 key·gamepad)와 event 중 하나가 필요합니다");
+                    fail(t, "Transition에는 키(input, key·gamepad 또는 control)와 event 중 하나가 필요합니다");
                 if (t.attribute("event")) {
                     eventName(t, required(t, "event"));
                     connect.event = get(t, "event");
                 }
             } else {
-                // A vanilla cancel's id names its window events; cancel1, cancel2, … unless written.
+                // A vanilla transition's id names its window events; cancel1, cancel2, … unless written.
                 auto id = get(t, "id", ("cancel" + std::to_string(++index)).c_str());
                 identifier(t, id);
                 if (!windows.insert(lower(id)).second) fail(t, "바닐라 전환 ID 중복");
                 ws.id = id;
                 num(t, "blend", 5);
                 ws.blend = t.attribute("blend").as_float(-1.0f);
-                auto to = required(t, "to");
-                for (auto& name : list(to))
-                    if (!has({"vanilla:Attack", "vanilla:PowerAttack", "vanilla:Block", "vanilla:Bash",
-                                 "vanilla:Sprint", "vanilla:Jump", "vanilla:Sneak"},
-                            name) &&
+                for (auto& name : list(required(t, "to"))) {
+                    if (!has({"Attack", "PowerAttack", "Block", "Bash", "Sprint", "Jump", "Sneak"}, name) &&
                         !name.starts_with("event:"))
-                        fail(t, "지원하지 않는 취소 대상: " + name);
-                targets = to;
+                        fail(t, "지원하지 않는 바닐라 동작: " + name +
+                                    " (Attack PowerAttack Block Bash Sprint Jump Sneak 또는 event:검색어)");
+                    if (!targets.empty()) targets += ",";
+                    targets += name.starts_with("event:") ? name : "vanilla:" + name;
+                }
             }
-            // No <Window>: the whole clip (a key transition or a vanilla cancel).
+            // No from, until or buffer: the whole clip (a key transition or a vanilla transition).
             WindowTimes times;
-            if (auto w = one(t, "Window"))
-                times = window(w, link);
+            if (t.attribute("from") || t.attribute("until") || t.attribute("buffer"))
+                times = window(t, link);
             else if (!link)
                 times.mode = "always";
             if (t.attribute("event")) {
@@ -1241,12 +1209,15 @@ struct Compiler {
                 std::vector<std::string> channels;
                 if (key.key) channels.push_back("key:" + std::to_string(key.key));
                 if (key.gamepad) channels.push_back("pad:" + std::to_string(key.gamepad));
+                if (key.control != GameControl::kNone)
+                    channels.push_back("control:" + std::string(GameControlName(key.control)));
                 for (auto& channel : channels)
                     if (!bindings.insert(channel).second) fail(t, "같은 키의 연결이 중복되어 모호합니다");
             }
             if (link) {
                 connect.key = key.key;
                 connect.gamepad = key.gamepad;
+                connect.control = key.control;
                 connect.mode = times.mode;
                 connect.open = times.open;
                 connect.close = times.close;
@@ -1254,7 +1225,7 @@ struct Compiler {
                 links.push_back(std::move(connect));
                 continue;
             }
-            // A Cancel (to vanilla actions) window.
+            // A vanilla transition's window.
             for (const auto& to : Split(targets))
                 if (const auto match = VanillaMatch(to); !match.empty()) ws.vanillaMatches.push_back(match);
             const std::string mode = times.mode.empty() ? "buffered" : times.mode;
@@ -1276,12 +1247,6 @@ struct Compiler {
             }
             s.cancels.push_back(std::move(ws));
         }
-        trigger.eventCombatTarget = startTarget == "combatTarget";
-        if (!trigger.onEvent.empty()) {
-            const std::string who = startActor.empty() ? "both" : startActor;
-            trigger.onEventPlayer = _stricmp(who.c_str(), "player") == 0 || _stricmp(who.c_str(), "both") == 0;
-            trigger.onEventNpc = _stricmp(who.c_str(), "npc") == 0 || _stricmp(who.c_str(), "both") == 0;
-        }
         for (const auto& l : links) {
             ActionLinkSpec next;
             next.blend = l.blend.as_float(-1.0f);
@@ -1291,6 +1256,7 @@ struct Compiler {
             next.event = l.event;
             next.key = l.key;
             next.gamepad = l.gamepad;
+            next.control = l.control;
             next.buffered = (l.mode.empty() ? std::string("buffered") : l.mode) == "buffered";
             auto timing = [&](const std::string& text, bool close, std::string& event, float& at) {
                 float value;
@@ -1308,16 +1274,215 @@ struct Compiler {
                 timing(l.open, false, next.openEvent, next.openAt);
                 timing(l.close, true, next.closeEvent, next.closeAt);
             }
-            if (next.action.empty() || (next.event.empty() && !next.key && !next.gamepad)) continue;
+            if (next.action.empty() ||
+                (next.event.empty() && !next.key && !next.gamepad && next.control == GameControl::kNone))
+                continue;
             s.links.push_back(std::move(next));
         }
-        s.Finalize();
-        if (s.paired.enabled && s.enterBlend < 0) s.enterBlend = 0.2f;
         return s;
     }
+    // A pair's <Carry> (the carrier lifts its partner, puts it down by a key through a one-actor putdown Action).
+    void carry(Node c, Node n, ActionSpec& s) {
+        shape(c, {"bone", "targetRoot", "putdown", "input", "key", "gamepad", "control", "target", "part", "weapon"},
+            {"Hold", "Fix"});
+        // A drawn weapon: sheathed (default) or sheathe (put away with no animation as the lift starts).
+        choice(c, "weapon", {"sheathed", "sheathe"});
+        for (auto key : {"bone", "targetRoot"})
+            if (!ValidCarryBone(required(c, key))) fail(c, "본 이름은 앞뒤 공백·제어 문자 없이 1~256바이트여야 합니다");
+        // Carry stage 3: how the target is held after the lift.
+        choice(c, "target", {"pose", "physics"});
+        if (c.attribute("part")) {
+            if (get(c, "target", "pose") != "physics") fail(c, "part는 target=\"physics\"에서만 씁니다");
+            if (!ValidCarryBone(get(c, "part"))) fail(c, "본 이름은 앞뒤 공백·제어 문자 없이 1~256바이트여야 합니다");
+        }
+        // The carrier alone puts the target down: a plain one-actor Action that only the carry starts (no start
+        // names it, T1), with one CarryRelease moment (docs/설계-운반-래그돌-내려놓기.md).
+        const auto putdown = required(c, "putdown");
+        actionRef(c, "putdown");
+        auto destination = n.parent().find_child_by_attribute("Action", "id", putdown.c_str());
+        if (!destination || !singleActions.contains(putdown))
+            fail(c, "putdown은 시작 입력·조건 카드가 없는 한 사람 Action이어야 합니다");
+        if (!destination.child("CarryRelease"))
+            fail(c, "putdown Action에 대상 놓기 시점 <CarryRelease at=\"...\"/>가 필요합니다");
+        const auto key = keyRef(c);
+        if (!key.given) fail(c, "운반에는 내려놓기 키(input, key·gamepad 또는 control)가 필요합니다");
+        auto& carry = s.carry;
+        carry.enabled = true;
+        carry.bone = get(c, "bone");
+        carry.targetRoot = get(c, "targetRoot");
+        carry.putdownAction = putdown;
+        carry.key = key.key ? key.key : 0xFFFFFFFF;
+        carry.gamepad = key.gamepad;
+        carry.control = key.control;
+        carry.mode = get(c, "target", "pose") == "physics" ? CarryTargetMode::kPhysics : CarryTargetMode::kPose;
+        carry.part = get(c, "part");
+        const auto weapon = get(c, "weapon", "sheathed");
+        carry.weapon = weapon == "sheathe" ? CarryWeapon::kSheathe : CarryWeapon::kSheathed;
+        // The moment the target is fixed to the carrier bone during the lift (seconds only).
+        if (auto f = one(c, "Fix")) {
+            shape(f, {"at"});
+            numeric(f, required(f, "at"));
+            carry.fixAt = f.attribute("at").as_float(-1.0f);
+        }
+        // Carrier upper-body hold pose (carry stage 2).
+        if (auto h = one(c, "Hold")) {
+            shape(h, {"blendIn", "blendOut"}, {"Bone"});
+            num(h, "blendIn", 5);
+            num(h, "blendOut", 5);
+            auto& hold = carry.hold;
+            hold.pose = "lift-end";
+            hold.blendIn = h.attribute("blendIn").as_float(0.2f);
+            hold.blendOut = h.attribute("blendOut").as_float(0.2f);
+            std::set<std::string> names;
+            bool positive = false;
+            for (auto b : h.children("Bone")) {
+                shape(b, {"name", "weight"});
+                const auto name = required(b, "name");
+                if (!ValidCarryBone(name)) fail(b, "본 이름은 앞뒤 공백·제어 문자 없이 1~256바이트여야 합니다");
+                if (!names.insert(lower(name)).second) fail(b, "같은 뼈가 두 번 지정되었습니다: " + name);
+                num(b, "weight", 1);
+                positive |= !b.attribute("weight") || b.attribute("weight").as_double() > 0;
+                hold.bones.push_back({name, b.attribute("weight").as_float(1.0f)});
+            }
+            if (!positive) fail(h, "무게가 0보다 큰 Bone이 하나 이상 필요합니다");
+        }
+    }
+
+    // ---- Starts (docs/설계-형식6-조건카드.md 2.3, T1-T7) ----
+    void startShape(Node st) {
+        shape(st,
+            {"id", "to", "condition", "input", "key", "gamepad", "control", "event", "actor", "target", "range",
+                "angle", "onKeyUp", "cooldown", "block", "blockWhen"},
+            kCardParts);
+        num(st, "cooldown");
+        choice(st, "blockWhen", {"startable", "active", "both"});
+        if (st.attribute("blockWhen") && !st.attribute("block")) fail(st, "blockWhen은 block과 함께 씁니다");
+        if (!Cards::HasCard(st) && !st.attribute("to"))
+            fail(st, "시작에는 to(동작), condition(함께 쓰는 조건 카드) 또는 조건 카드가 필요합니다");
+    }
+    // A start's trigger, cooldown and block on the action it holds: the HKX's own (T1) or a selecting one (T3, T4).
+    // `pair`: what it starts is a Pair (a combat target is a pair's).
+    void applyStart(ActionSpec& s, Node st, bool pair) {
+        auto& trigger = s.trigger;
+        const auto key = keyRef(st);
+        if (key.given == static_cast<bool>(st.attribute("event")))
+            fail(st, "키(input, key·gamepad 또는 control)와 event 중 하나만 지정합니다");
+        trigger.inputId = key.input;
+        trigger.key = key.key;
+        trigger.gamepad = key.gamepad;
+        trigger.control = key.control;
+        // A start choosing among non-pair actions (0.12.299: a selecting one whose card plays no Pair) reads its
+        // conditions on a target too: the nearest actor ahead (range, angle) or the combat target, key or event.
+        const bool choosing = !pair && !s.flow.nodes.empty();
+        if (st.attribute("event")) {
+            eventName(st, required(st, "event"));
+            trigger.onEvent = get(st, "event");
+        } else if (st.attribute("actor"))
+            fail(st, "actor는 이벤트 시작에서만 사용합니다");
+        else if (st.attribute("target") && !choosing)
+            fail(st, "target은 이벤트 시작이나 일반 동작을 고르는 조건 카드 시작에서만 사용합니다");
+        choice(st, "actor", {"both", "player", "npc"});
+        choice(st, "target", {"nearest", "combatTarget"});
+        const bool combat = get(st, "target") == "combatTarget";
+        if (combat && !choosing && (!pair || !st.attribute("event")))
+            fail(st, "combatTarget은 페어 이벤트 시작이나 일반 동작을 고르는 조건 카드 시작에만 사용할 수 있습니다");
+        if ((st.attribute("range") || st.attribute("angle")) && (!choosing || combat))
+            fail(st, "range·angle은 일반 동작을 고르는 조건 카드 시작의 전방 대상에만 씁니다");
+        num(st, "range", 2000);
+        num(st, "angle", 360);
+        trigger.combatTarget = combat;
+        trigger.frontTarget = choosing && !combat;
+        trigger.targetRange = st.attribute("range").as_float(trigger.targetRange);
+        trigger.targetAngle = st.attribute("angle").as_float(trigger.targetAngle);
+        if (trigger.targetRange <= 0.0f || trigger.targetAngle <= 0.0f) fail(st, "range·angle은 0보다 커야 합니다");
+        boolean(st, "onKeyUp");
+        trigger.onKeyUp = st.attribute("onKeyUp").as_bool(false);
+        if (!trigger.onEvent.empty()) {
+            const std::string who = get(st, "actor", "both");
+            trigger.onEventPlayer = who == "player" || who == "both";
+            trigger.onEventNpc = who == "npc" || who == "both";
+        }
+        if (st.attribute("cooldown")) s.condition.cooldown = st.attribute("cooldown").as_float(0.0f);
+        if (st.attribute("block")) {
+            const auto events = eventList(st, "block");
+            const auto when = get(st, "blockWhen", "startable");
+            const auto parsed = when == "active" ? SuppressSpec::When::kActive
+                                : when == "both" ? SuppressSpec::When::kBoth
+                                                 : SuppressSpec::When::kStartable;
+            if (!s.suppress.events.empty()) {
+                // The HKX's while-playing block and its own start's block of the same events: both at once.
+                if (events != s.suppress.events || parsed != SuppressSpec::When::kStartable)
+                    fail(st, "그 HKX의 재생 중 차단(block)과 시작의 차단을 함께 쓰려면 같은 이벤트여야 합니다");
+                s.suppress.when = SuppressSpec::When::kBoth;
+            } else {
+                s.suppress.events = events;
+                s.suppress.when = parsed;
+            }
+        }
+    }
+    // A selecting action (T3-T6): no clip, it picks by its card; its start's settings if a start holds it.
+    ActionSpec selecting(
+        const std::string& id, const Cards::Compiled& compiled, Node start, const std::string& sourceName) {
+        const bool pair = compiled.playsPair;
+        ActionSpec s;
+        s.id = id;
+        s.source = sourceName;
+        s.view.view = pair ? View::kThird : fileView;
+        for (const auto& [name, info] : inputs)
+            s.inputs.push_back({name, info.hasKey ? info.key : 0, info.gamepad, info.control});
+        s.trigger.key = 0;
+        s.condition.inAir = 1;           // the picked HKX's air rule decides (T6)
+        s.exitTriggerBeforeEnd = 0.05f;  // as every action's default Exit
+        s.flowActions = declared;
+        s.flow = compiled.program;
+        if (pair) {
+            s.paired.enabled = true;
+            s.safetyDuration = 30.0f;
+        }
+        if (start) applyStart(s, start, pair);
+        return s;
+    }
+    std::string fresh(const std::string& base) {
+        std::string id = base.substr(0, 64);
+        for (int i = 2; taken.contains(lower(id)); ++i) {
+            const auto suffix = std::to_string(i);
+            id = base.substr(0, 64 - suffix.size()) + suffix;
+        }
+        taken.insert(lower(id));
+        return id;
+    }
+    Cards::Compiled card(Node owner) {
+        Cards::Compiled out;
+        std::string error;
+        if (!Cards::Compile(owner, declared, pairs, shared, out, error)) throw std::runtime_error(error);
+        return out;
+    }
+    // T5: the selecting action a transition or a QTE result going through a card reaches (one per shared card).
+    std::string through(Node owner, const std::string& base) {
+        const bool sharedOnly = owner.attribute("condition") && !owner.first_child();
+        const auto name = get(owner, "condition");
+        if (sharedOnly)
+            if (auto it = byCondition.find(name); it != byCondition.end()) return it->second;
+        const auto id = fresh(sharedOnly ? name + "_Flow" : base);
+        auto compiled = card(owner);
+        made.emplace(id, compiled.playsPair ? "pair" : "action");
+        trailing.push_back({id, std::move(compiled)});
+        if (sharedOnly) byCondition[name] = id;
+        return id;
+    }
 };
+// A name made from a start's trigger for its selecting action: letters, digits and _ only (it names graph events).
+std::string triggerName(Node st) {
+    std::string raw = get(st, "event");
+    if (raw.empty()) raw = get(st, "key");
+    if (raw.empty()) raw = get(st, "gamepad");
+    if (raw.empty()) raw = get(st, "control");
+    if (raw.empty()) raw = get(st, "input");
+    std::string out = "Start_";
+    for (const unsigned char c : raw) out += std::isalnum(c) ? static_cast<char>(c) : '_';
+    return out;
 }
-bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
+bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
     std::vector<EventRuleSpec>& events, std::string& mod, std::string& error, KeyResolver resolveKey) {
     error.clear();
     try {
@@ -1327,22 +1492,10 @@ bool Compile(const pugi::xml_document& source, const std::string& sourceName, st
             if (n.type() == pugi::node_element) ++roots;
         if (roots != 1) fail(root, "루트 요소는 하나여야 합니다");
         if (std::string_view(root.name()) != "AnimationSet") fail(root, "AnimationSet 루트가 필요합니다");
-        const auto version = get(root, "version");
-        if (version == "2" || version == "3")
-            fail(root,
-                "형식 " + version +
-                    "은 더 읽지 않습니다: version=\"4\"로 바꾸세요(tools/convert_v4.py가 바꿉니다, docs/계획-문법개편-v4.md)");
-        if (version != "4") fail(root, "지원하지 않는 XML 버전");
-        if (auto old = root.child("Combo"))
-            fail(old,
-                "Combo는 없어졌습니다(형식 4): HKX마다 <Action>을 두고 <Connect to=\"다음\" key=\"…\">로 이으세요");
-        if (auto old = root.child("External"))
-            fail(old, "External은 없어졌습니다(0.12.238): 연결(Connect)·조건 분기는 같은 파일의 동작만 가리킵니다");
-        shape(root, {"version", "id", "view"}, {"Inputs", "Action", "Pair", "EventRegistry"});
+        if (get(root, "version") != "6") fail(root, "형식 6(version=\"6\")만 읽습니다");
+        shape(root, {"version", "id", "view"}, {"Inputs", "EventRegistry", "Start", "Condition", "Action", "Pair"});
         identifier(root, required(root, "id"));
         Compiler c{resolveKey};
-        std::vector<EventRuleSpec> registry;
-        if (auto r = one(root, "EventRegistry")) c.registry(r, sourceName, registry);
         if (root.attribute("view")) {
             const auto view = ParseView(get(root, "view"));
             if (!view) fail(root, "view는 third, first, both 중 하나입니다");
@@ -1352,29 +1505,113 @@ bool Compile(const pugi::xml_document& source, const std::string& sourceName, st
             shape(inputs, {}, {"Input"});
             for (auto i : inputs.children("Input")) c.input(i);
         }
-        std::size_t count = 0;
+        // Names first: actions, starts and shared cards, so that cards and starts can name any of them.
+        std::set<std::string> conditionIds;
         for (auto a : root.children()) {
             const std::string kind = a.name();
-            if (kind == "Inputs" || kind == "EventRegistry" || a.type() != pugi::node_element) continue;
-            auto id = required(a, "id");
-            identifier(a, id);
-            if (!c.actionIds.insert(lower(id)).second) fail(a, "액션 ID 중복");
-            if (kind == "Action") c.singleActions.insert(id);
-            if (auto carry = a.child("Carry"); kind == "Pair" && carry.attribute("putdown"))
-                c.putdownActions.insert(get(carry, "putdown"));
-            c.actions.emplace(id, kind == "Pair" ? "pair" : "action");
-            c.declared.push_back(id);
-            ++count;
+            if (a.type() != pugi::node_element) continue;
+            if (kind == "Action" || kind == "Pair") {
+                auto id = required(a, "id");
+                identifier(a, id);
+                if (!c.taken.insert(lower(id)).second) fail(a, "ID 중복: " + id);
+                if (kind == "Action") c.singleActions.insert(id);
+                if (auto carry = a.child("Carry"); kind == "Pair" && carry.attribute("putdown"))
+                    c.putdownActions.insert(get(carry, "putdown"));
+                c.actions.emplace(id, kind == "Pair" ? "pair" : "action");
+                c.declared.push_back(id);
+                c.pairs.push_back(kind == "Pair");
+            } else if (kind == "Start" && a.attribute("id")) {
+                const auto id = get(a, "id");
+                identifier(a, id);
+                if (!c.taken.insert(lower(id)).second) fail(a, "ID 중복: " + id);
+            } else if (kind == "Condition") {
+                shape(a, {"id"}, kCardParts);
+                const auto id = required(a, "id");
+                identifier(a, id);
+                if (!conditionIds.insert(lower(id)).second) fail(a, "조건 카드 ID 중복: " + id);
+                c.shared.emplace(id, a);
+            }
         }
+        std::vector<EventRuleSpec> registry;
+        if (auto r = one(root, "EventRegistry")) c.registry(r, sourceName, registry);
+        // Ways into each action (T2): starts, transitions, QTE results, card rows and carry putdowns that name it.
+        std::map<std::string, int> ways;
+        auto count = [&](Node n, const char* attr) {
+            if (const auto v = get(n, attr); !v.empty()) ++ways[lower(v)];
+        };
+        auto walk = [&](auto&& self, Node at) -> void {
+            for (auto x : at.children()) {
+                if (x.type() != pugi::node_element) continue;
+                if (has({"Start", "Transition", "Success", "Failure", "Perfect", "Row", "True", "False"}, x.name())) {
+                    count(x, "to");
+                    count(x, "partnerTo");
+                } else if (std::string_view(x.name()) == "Carry")
+                    count(x, "putdown");
+                self(self, x);
+            }
+        };
+        walk(walk, root);
+        // Where each start goes (T1-T4).
+        struct Plan {
+            Node start;
+            std::string id;  // a selecting action's (T3, T4); empty: the start is the HKX's own (T1)
+            Cards::Compiled compiled;
+        };
+        std::vector<Plan> plans;
+        std::map<std::string, Node> attached;  // action id (lower) -> its own start
+        for (auto st : root.children("Start")) {
+            c.startShape(st);
+            Plan p{st};
+            const bool card = Cards::HasCard(st);
+            const auto to = get(st, "to");
+            if (!card) {
+                c.actionRef(st, "to");
+                if (c.putdownActions.contains(to))
+                    fail(st, "운반의 내려놓기 동작(putdown)은 시작으로 시작하지 않습니다: " + to);
+                const bool held = st.attribute("cooldown").as_float(0.0f) > 0.0f;
+                const bool onlyWay = ways[lower(to)] == 1;
+                if (!attached.contains(lower(to)) && (!held || onlyWay)) {
+                    attached[lower(to)] = st;
+                    plans.push_back(std::move(p));
+                    continue;
+                }
+            } else if (!to.empty() && c.putdownActions.contains(to))
+                fail(st, "운반의 내려놓기 동작(putdown)은 시작으로 시작하지 않습니다: " + to);
+            p.id = st.attribute("id") ? get(st, "id") : c.fresh(card ? triggerName(st) : to + "_Start");
+            p.compiled = c.card(st);
+            plans.push_back(std::move(p));
+        }
+        // The actions in document order (T7): each HKX with the start that is its own, each selecting action at
+        // its start's place, then the ones transitions and QTE results go through.
+        std::vector<ActionSpec> actions;
+        auto finish = [&](ActionSpec&& s) {
+            s.Finalize();
+            if (s.paired.enabled && s.enterBlend < 0) s.enterBlend = 0.2f;
+            actions.push_back(std::move(s));
+        };
+        std::size_t plan = 0;
+        for (auto n : root.children()) {
+            const std::string_view kind = n.name();
+            if (kind == "Action" || kind == "Pair") {
+                auto s = c.action(n, sourceName);
+                if (auto it = attached.find(lower(get(n, "id"))); it != attached.end())
+                    c.applyStart(s, it->second, kind == "Pair");
+                finish(std::move(s));
+            } else if (kind == "Start") {
+                auto& p = plans[plan++];
+                if (!p.id.empty()) finish(c.selecting(p.id, p.compiled, p.start, sourceName));
+            }
+        }
+        for (auto& t : c.trailing) finish(c.selecting(t.id, t.compiled, {}, sourceName));
         for (const auto& [node, to] : c.eventQteTargets) {
             const auto it = c.actions.find(to);
-            if (it == c.actions.end()) fail(node, "정의되지 않은 액션: " + to);
-            if (it->second != "action") fail(node, "이벤트 QTE의 to는 일반 동작만 가리킵니다: " + to);
+            const auto made = c.made.find(to);
+            const auto kind = it != c.actions.end() ? it->second : made != c.made.end() ? made->second : "";
+            if (kind.empty()) fail(node, "정의되지 않은 액션: " + to);
+            if (kind != "action") fail(node, "이벤트 QTE의 to는 일반 동작만 가리킵니다: " + to);
         }
-        if ((!count && registry.empty()) || count > 256) fail(root, "1~256개 액션 또는 이벤트 등록이 필요합니다");
-        std::vector<ActionSpec> actions;
-        for (auto n : root.children())
-            if (has({"Action", "Pair"}, n.name())) actions.push_back(c.action(n, sourceName));
+        if ((c.declared.empty() && registry.empty()) || actions.size() > 256)
+            fail(root, "1~256개 액션 또는 이벤트 등록이 필요합니다(조건으로 고르는 시작·전환도 하나씩 셉니다)");
         mod = get(root, "id");
         output.insert(output.end(), std::make_move_iterator(actions.begin()), std::make_move_iterator(actions.end()));
         events.insert(events.end(), std::make_move_iterator(registry.begin()), std::make_move_iterator(registry.end()));
@@ -1385,7 +1622,10 @@ bool Compile(const pugi::xml_document& source, const std::string& sourceName, st
     }
 }
 }
-namespace AnimationInjector::XmlV2 {
+bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
+    std::vector<EventRuleSpec>& events, std::string& mod, std::string& error, KeyResolver resolveKey) {
+    return CompileFormat6(source, sourceName, output, events, mod, error, resolveKey);
+}
 bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
     std::string& mod, std::string& error, KeyResolver resolveKey) {
     std::vector<EventRuleSpec> events;
