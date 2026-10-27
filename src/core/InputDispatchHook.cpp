@@ -19,7 +19,12 @@ struct Dispatch {
         auto* ui = RE::UI::GetSingleton();
         const bool allow = ui && !ui->GameIsPaused() && !ui->IsMenuOpen(RE::Console::MENU_NAME);
         RE::InputEvent* head = events ? *events : nullptr;
-        std::vector<std::pair<RE::InputEvent*, RE::InputEvent*>> saved;
+        // The links as they came, to put back after the sinks: one list per thread kept between dispatches, so an
+        // input frame does not allocate (2026-10-28 review R-26). A dispatch inside a dispatch takes its own.
+        using Links = std::vector<std::pair<RE::InputEvent*, RE::InputEvent*>>;
+        static thread_local Links spare;
+        Links saved = std::move(spare);
+        saved.clear();
         RE::InputEvent** tail = &head;
         for (auto* ev = head; ev;) {
             auto* next = ev->next;
@@ -37,9 +42,10 @@ struct Dispatch {
             ev = next;
         }
         struct Restore {
-            decltype(saved)& links;
+            Links& links;
             ~Restore() {
                 for (auto [event, next] : links) event->next = next;
+                spare = std::move(links);
             }
         } restore{saved};
         auto* sink = InputSink::Get();

@@ -1,7 +1,9 @@
 #pragma once
 #include "core/PairPlacementMath.h"
 #include <algorithm>
+#include <cmath>
 #include <numbers>
+#include <optional>
 
 namespace AnimationInjector::PairAlignmentMath {
 constexpr float pi = std::numbers::pi_v<float>;
@@ -112,6 +114,18 @@ inline std::optional<Plan> Pivoted(const std::array<Pose, 2>& start, const PairP
 // The start blend's heading hold (0.12.279): a snapped role whose heading something else turned more than about
 // a degree away from its goal is put back (TDM facing the crosshair while blocking turned a player attacker 26°).
 inline constexpr float kHeadingSlack = .02f;
+// The heading the pivot (the victim) takes at `weight` of the start blend on its turn from `before` to `goal`, or
+// none when it is already that far along: a turn the engine made further is kept (2026-10-28: the engine's activation
+// turned the lead 8.7 of 18.9 degrees and held it there).
+inline std::optional<float> PivotYaw(float before, float goal, float current, float weight) {
+    const float total = Wrap(goal - before);
+    if (!std::isfinite(total) || !std::isfinite(current) || std::abs(total) < 1e-4f) return std::nullopt;
+    const float sign = total > 0 ? 1.0f : -1.0f;
+    const float done = Wrap(current - before) * sign;
+    const float want = std::abs(total) * std::clamp(weight, 0.0f, 1.0f);
+    if (done >= want - 1e-4f) return std::nullopt;
+    return Wrap(before + want * sign);
+}
 inline bool HeadingDrifted(float yawError) { return std::isfinite(yawError) && std::abs(yawError) > kHeadingSlack; }
 // Wait for independent native frames, including orientation, before handoff.
 struct Gate {

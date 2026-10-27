@@ -10,14 +10,6 @@ namespace AnimationInjector {
 namespace {
 struct Ini {
     std::wstring path;
-    std::string Str(const wchar_t* sec, const wchar_t* key, std::string def) const {
-        wchar_t buf[512] = {};
-        ::GetPrivateProfileStringW(sec, key, L"", buf, 512, path.c_str());
-        if (!buf[0]) return def;
-        std::string out;
-        for (wchar_t* c = buf; *c; ++c) out.push_back(static_cast<char>(*c));
-        return out;
-    }
     float Float(const wchar_t* sec, const wchar_t* key, float def) const {
         wchar_t buf[64] = {};
         ::GetPrivateProfileStringW(sec, key, L"", buf, 64, path.c_str());

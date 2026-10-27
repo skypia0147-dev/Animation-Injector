@@ -1,6 +1,7 @@
 #pragma once
 #include "PCH.h"
 #include <memory>
+#include <optional>
 
 namespace AnimationInjector::NativePairAlignment {
 // Borrow the scene only across the native Start call. Persistent state contains
@@ -33,6 +34,9 @@ void Observe(const RE::BSSynchronizedClipGenerator& node, const RE::hkbContext& 
 void BeforeUpdate();
 void Update(float delta);
 void Reset(bool restore);
+// The heading a start being aligned gives this actor (its goal), while its start blend runs: what its pair motion is
+// turned by, not a heading it is still turning through (2026-10-28).
+std::optional<float> GoalYaw(RE::Actor* actor);
 // The native activation barrier consumes cached start transforms again.
 void InstallActivationHook();
 }

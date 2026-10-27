@@ -130,7 +130,12 @@ int InjectEvent(RE::hkbBehaviorGraph* a_graph, const char* a_name) {
         return -1;
     }
     infos.push_back(HkbEventInfo{0});
-    if (!AppendName(names, a_name)) return -1;
+    if (!AppendName(names, a_name)) {
+        // Back to one info per name: left one longer, every later event of this graph was refused
+        // (2026-10-28 review R-25).
+        infos._size--;
+        return -1;
+    }
     return names._size - 1;
 }
 

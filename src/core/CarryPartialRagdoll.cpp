@@ -1141,6 +1141,11 @@ void Session::AfterPhysics(float delta) {
                 const auto rest = above * b.nodeInParent;
                 auto root = above * b.limbRootInParent;
                 root.rotate = desired.rotate * rest.rotate.Transpose() * root.rotate;
+                // Chosen with a parent (above); a body part detached since has none (2026-10-28 review R-28).
+                if (!b.limbRoot->parent) {
+                    pass.structural = true;
+                    return pass;
+                }
                 const auto rootLocal = b.limbRoot->parent->world.Invert() * root;
                 if (!Finite(rootLocal)) {
                     pass.structural = true;

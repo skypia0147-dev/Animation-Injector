@@ -16,6 +16,7 @@
 #include "runtime/GetUpRecovery.h"
 #include "runtime/WeaponCull.h"
 #include "runtime/ViewGuard.h"
+#include "core/NativePairAlignment.h"
 #include <mutex>
 #include <numbers>
 
@@ -306,7 +307,13 @@ void ApplyMotion(Role& role, RE::Actor* actor) {
     motion.previousTime = motion.time;
     if (std::fabs(x) + std::fabs(y) + std::fabs(z) > 0.0001f)
         if (auto* controller = actor->GetCharController()) {
-            motion.basis.Observe(std::fabs(x) + std::fabs(y) + std::fabs(z), actor->GetAngleZ(), appliedRotation);
+            // The basis is the heading the start aligns the actor to: a victim the start is still turning would
+            // otherwise keep the part-turned heading for the whole pair and drift sideways (2026-10-28: 4.45 degrees
+            // off, 13.5 degrees of bearing in half a second).
+            float heading = actor->GetAngleZ();
+            if (!motion.basis.captured)
+                if (const auto goal = NativePairAlignment::GoalYaw(actor)) heading = *goal;
+            motion.basis.Observe(std::fabs(x) + std::fabs(y) + std::fabs(z), heading, appliedRotation);
             if (!motion.basis.captured) return;
             const auto position = actor->GetPosition();
             const float s = std::sin(motion.basis.yaw), c = std::cos(motion.basis.yaw);

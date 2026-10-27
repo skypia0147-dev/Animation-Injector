@@ -79,7 +79,7 @@ void TracePlacement(std::uint64_t id, const char* phase, float time, RE::Actor* 
         auto* actor = role == 0 ? self : target;
         if (!actor || !actor->Is3DLoaded()) continue;
         const auto position = actor->GetPosition();
-        RE::hkVector4 physical;
+        RE::hkVector4 physical{};  // zero when there is no controller (2026-10-28 review R-27)
         auto* controller = actor->GetCharController();
         if (controller) controller->GetPositionImpl(physical, true);
         const auto& xyz = physical.quad.m128_f32;

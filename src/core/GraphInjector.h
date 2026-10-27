@@ -27,8 +27,7 @@ struct Result {
     bool airRoute = false;
     PairedRig::Kind pairedRig = PairedRig::Kind::kUnsupported;
     std::string reason;
-    RE::hkbBehaviorGraph* graphPtr = nullptr;  // 템플릿 그래프 (이벤트 id → 이름)
-    std::vector<std::int32_t> enterIds;        // 변형별 진입 이벤트 (그래프 로컬, 진입 불가 변형은 -1)
+    std::vector<std::int32_t> enterIds;  // 변형별 진입 이벤트 (그래프 로컬, 진입 불가 변형은 -1)
     std::int32_t exitId = -1;
     std::int32_t recoverId = -1;         // Recovery: 이동으로 나가는 전이 이벤트 (없으면 -1)
     std::vector<std::int32_t> stateIds;  // 삽입한 상태 id
@@ -63,6 +62,5 @@ bool HasFullBodyRoute(int action);
 // True only after an airborne master-graph entry was successfully injected.
 bool HasAirRoute(int a_actionIdx);
 bool IsOurStateId(const char* a_smName, std::int32_t a_stateId);  // 프로브용
-const char* EventName(const char* a_smName, std::int32_t a_id);   // 프로브용. 모르면 nullptr
 
 }  // namespace AnimationInjector::GraphInjector

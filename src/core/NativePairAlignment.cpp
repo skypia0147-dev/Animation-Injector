@@ -57,6 +57,9 @@ struct Blend {
     std::optional<Carry::NativeStartBridge> carryBridge;
     const char* placement = "shared";
     unsigned headingRestores = 0;
+    unsigned pivotTurns = 0;
+    unsigned pivotHolds = 0;
+    float pivotDrift = 0;
 };
 // Traced starts (docs/진단-페어시작-순간이동-0.12.161.md): each visible root equalled its actor
 // position in every frame, so the root layer written in Update does not reach the rendered frame and
@@ -79,6 +82,15 @@ bool KeepsHeading(const Blend& blend, unsigned pivot) {
 // only publish copied clock values, with try_lock to avoid graph-lock inversion.
 std::recursive_mutex mutex;
 std::vector<std::shared_ptr<Blend>> blends;
+// The player's camera lease, kept from the start blend's end to the end of the pair (2026-10-28: released at the
+// blend's end, a drawn weapon's camera turned the player back to its view, by the turn the start had given it, 16 to 30
+// degrees, while the pair still played, and the pair went on askew). A new start takes it over (PairStartCamera).
+struct CameraHold {
+    std::uint64_t token = 0;
+    RE::ActorHandle player;
+    float age = 0;
+};
+std::vector<CameraHold> cameraHolds;
 // Activation runs under the engine's graph lock. Publish immutable plans so
 // that callback never waits for our actor-update mutex (lock inversion).
 std::array<std::atomic<std::shared_ptr<ActivationPlan>>, 16> activations;
@@ -210,15 +222,37 @@ void Restore(Blend& blend) {
             role.layer.owned = false;
     }
 }
-void Close(Blend& blend, bool restore) {
+void Close(Blend& blend, bool restore, bool holdCamera = false) {
     if (blend.activation)
         for (auto& slot : activations) {
             auto expected = blend.activation;
             slot.compare_exchange_strong(expected, nullptr);
         }
     if (restore) Restore(blend);
-    PairStartCamera::Release(blend.camera);
+    RE::ActorHandle player;
+    for (const auto& role : blend.roles)
+        if (const auto actor = role.actor.get(); actor && actor->IsPlayerRef()) player = role.actor;
+    if (holdCamera && blend.camera && player) {
+        PairStartCamera::Hold(blend.camera);
+        cameraHolds.push_back({blend.camera, player});
+    } else
+        PairStartCamera::Release(blend.camera);
     blend.camera = 0;
+}
+// Held leases end with the player's pair: not synced any more (and no kill move), gone, or a minute at most.
+void UpdateCameraHolds(float delta) {
+    static const RE::BSFixedString syncedName("bIsSynced");
+    std::erase_if(cameraHolds, [&](CameraHold& hold) {
+        hold.age += delta;
+        const auto actor = hold.player.get();
+        bool synced = false;
+        const bool playing = actor && actor->Is3DLoaded() && !actor->IsDead() &&
+                             (actor->IsInKillMove() || (actor->GetGraphVariableBool(syncedName, synced) && synced));
+        if (playing && hold.age < 60.0f) return false;
+        logger::debug("[NativePairAlign] camera lease={} released with the pair age={:.3f}", hold.token, hold.age);
+        PairStartCamera::Release(hold.token);
+        return true;
+    });
 }
 bool ReadRole(const SynchronizedSceneView::ActorInfo& info, Role& role, float& duration, std::uintptr_t sceneId,
     unsigned roleIndex) {
@@ -341,6 +375,43 @@ bool HoldHeading(Role& role) {
     actor->SetAngle(angle);
     if (actor->IsPlayerRef()) KeepCameraYaw(-off);
     return true;
+}
+// The pivot (the victim) reaches its goal heading over the start blend. The engine's activation turns the lead
+// too, but only part of a large turn (2026-10-28: 18.9 degrees asked, 8.7 turned and held, the pair played 10 degrees
+// askew; a player victim "went halfway" the same way, 0.12.262). It follows the blend's weight and never undoes a
+// turn the engine has already made further. Returns whether it turned the actor.
+bool TurnPivot(Role& role, float weight) {
+    auto actor = role.actor.get();
+    if (!Same(role, actor.get()) || actor->GetCharController() != role.controller.get()) return false;
+    const auto yaw = PairAlignmentMath::PivotYaw(role.before.yaw, role.goal.yaw, actor->GetAngleZ(), weight);
+    if (!yaw) return false;
+    auto angle = actor->GetAngle();
+    angle.z = *yaw < 0 ? *yaw + 2 * PairAlignmentMath::pi : *yaw;
+    actor->SetAngle(angle);
+    return true;
+}
+// The pivot (the victim) stays where it stood until its clip moves it: the start keeps the victim's position
+// (0.12.256), but nothing held it in the moment before the clip's motion begins (2026-10-28: at a session's first
+// pair, the victim still moving from combat slid 12 to 15 units back in those 0.18 s, and the engine set it back when
+// the clip began). Its heading is TurnPivot's. Returns how far it had moved (0 when it had not).
+float HoldPivotPlace(Role& role) {
+    auto actor = role.actor.get();
+    if (!Same(role, actor.get()) || actor->GetCharController() != role.controller.get()) return 0;
+    const auto now = Current(actor.get());
+    const float drift = std::hypot(now.x - role.goal.x, now.y - role.goal.y);
+    const float scale = RE::bhkWorld::GetWorldScale();
+    // What is left of its own sideways movement goes too, or it pushes on in the next frame; a fall keeps falling
+    // (air pairs), and the height is never held.
+    RE::hkVector4 velocity;
+    role.controller->GetLinearVelocityImpl(velocity);
+    role.controller->SetLinearVelocityImpl(RE::hkVector4(0, 0, velocity.quad.m128_f32[2], 0));
+    if (!std::isfinite(drift) || drift < 0.5f) return 0;
+    actor->SetPosition({role.goal.x, role.goal.y, now.z}, true);
+    actor->Update3DPosition(true);
+    actor->UpdateActor3DPosition();
+    if (Same(role, actor.get()) && actor->GetCharController() == role.controller.get())
+        role.controller->SetPositionImpl({role.goal.x * scale, role.goal.y * scale, now.z * scale, 0}, true, true);
+    return drift;
 }
 void CaptureCarryBridge(Blend& pending) {
     Carry::NativeStartBridge bridge;
@@ -687,6 +758,7 @@ void BeforeUpdate() {
 void Update(float delta) {
     if (!std::isfinite(delta) || delta <= 0) return;
     std::lock_guard lock(mutex);
+    UpdateCameraHolds(delta);
     for (auto it = blends.begin(); it != blends.end();) {
         auto& blend = **it;
         blend.age += delta;
@@ -734,11 +806,12 @@ void Update(float delta) {
         const float weight = blend.clock.Weight(true, blend.roles[0].observation.time, blend.roles[1].observation.time);
         const auto finish = [&](const char* why) {
             logger::debug(
-                "[NativePairAlign] close scene={:X} reason={} age={:.3f} clip={:.3f}/{:.3f} weight={:.3f} activated={} realign={} headingRestores={}",
+                "[NativePairAlign] close scene={:X} reason={} age={:.3f} clip={:.3f}/{:.3f} weight={:.3f} activated={} realign={} headingRestores={} pivotTurns={} pivotHolds={} pivotDrift={:.3f}",
                 blend.activation->nativeScene, why, blend.age, blend.roles[0].observation.time,
                 blend.roles[1].observation.time, weight, blend.activation->applied.load(), blend.activation->realign,
-                blend.headingRestores);
-            Close(blend, true);
+                blend.headingRestores, blend.pivotTurns, blend.pivotHolds, blend.pivotDrift);
+            // A start that played on keeps the player's camera until its pair ends.
+            Close(blend, true, std::strcmp(why, "blend-complete") == 0);
             it = blends.erase(it);
         };
         if (blend.activation && blend.activation->applied.load() && blend.activation->realign &&
@@ -753,11 +826,37 @@ void Update(float delta) {
                         PairAlignmentMath::Wrap(actor->GetAngleZ() - blend.roles[i].goal.yaw));
             }
         }
+        const auto pivotRole = PivotRole(blend);
+        const bool activated = blend.activation && blend.activation->applied.load() && blend.activation->realign;
+        const auto turnPivot = [&](float w) {
+            if (!pivotRole || !activated) return;
+            auto& role = blend.roles[*pivotRole];
+            const auto actor = role.actor.get();
+            const float before = actor ? PairAlignmentMath::Wrap(actor->GetAngleZ() - role.goal.yaw) : 0.0f;
+            if (TurnPivot(role, w) && blend.pivotTurns++ == 0)
+                logger::info(
+                    "[NativePairAlign] pivot turned scene={:X} role={} actor={:08X} yawError={:.5f} weight={:.3f} age={:.3f}",
+                    blend.activation->nativeScene, *pivotRole, actor->GetFormID(), before, w, blend.age);
+        };
         if (!valid || weight >= 1) {
+            // Done: the victim stands at its goal heading, however far the engine turned it.
+            if (valid) turnPivot(1.0f);
             finish(valid ? "blend-complete" : reason);
             continue;
         }
-        // Only the snapped role (the attacker): the engine turns the pivot (the victim) smoothly itself.
+        turnPivot(weight);
+        // Until the victim's clip moves it, it keeps its place.
+        if (pivotRole && activated && blend.roles[*pivotRole].observation.time <= 0.001f) {
+            auto& role = blend.roles[*pivotRole];
+            if (const float drift = HoldPivotPlace(role); drift > 0) {
+                blend.pivotDrift = std::max(blend.pivotDrift, drift);
+                if (blend.pivotHolds++ == 0)
+                    logger::info(
+                        "[NativePairAlign] pivot held at its place scene={:X} role={} actor={:08X} drift={:.3f} age={:.3f}",
+                        blend.activation->nativeScene, *pivotRole, role.actor.get()->GetFormID(), drift, blend.age);
+            }
+        }
+        // The snapped role (the attacker) keeps its goal heading; the pivot (the victim) turned above.
         if (const auto pivot = PivotRole(blend);
             pivot && blend.activation && blend.activation->applied.load() && blend.activation->realign) {
             auto& role = blend.roles[1 - *pivot];
@@ -791,10 +890,22 @@ void Update(float delta) {
         ++it;
     }
 }
+std::optional<float> GoalYaw(RE::Actor* actor) {
+    if (!actor) return std::nullopt;
+    std::lock_guard lock(mutex);
+    for (const auto& blend : blends) {
+        if (!blend->activation || !blend->activation->realign) continue;
+        for (const auto& role : blend->roles)
+            if (role.actor.get().get() == actor) return role.goal.yaw;
+    }
+    return std::nullopt;
+}
 void Reset(bool restore) {
     std::lock_guard lock(mutex);
     for (auto& blend : blends) Close(*blend, restore);
     blends.clear();
+    for (const auto& hold : cameraHolds) PairStartCamera::Release(hold.token);
+    cameraHolds.clear();
 }
 void InstallActivationHook() {
     static bool installed = false;

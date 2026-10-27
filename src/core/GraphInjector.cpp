@@ -216,15 +216,31 @@ void PublishSync(SyncNode node) {
     g_syncNodes.push_back(std::move(node));
 }
 // Graphs already handled. Claim() is the atomic check-and-insert between loader threads.
+// A graph is known by its address with its data and root generator: a project loaded again can get a new graph at
+// a freed graph's address, and that one has not been injected (2026-10-28 review R-22; EventMaps re-checks the
+// same way).
+struct Handled {
+    const void* data = nullptr;
+    const void* root = nullptr;
+};
 std::mutex g_doneLock;
-std::unordered_set<const void*> g_done;
-bool Claimed(const void* graph) {
+std::unordered_map<const void*, Handled> g_done;
+Handled HandledOf(RE::hkbBehaviorGraph* graph) { return {graph->data.get(), graph->rootGenerator.get()}; }
+bool Claimed(RE::hkbBehaviorGraph* graph) {
+    const auto now = HandledOf(graph);
     std::lock_guard lock(g_doneLock);
-    return g_done.contains(graph);
+    const auto it = g_done.find(graph);
+    if (it == g_done.end()) return false;
+    if (it->second.data == now.data && it->second.root == now.root) return true;
+    logger::info("[Inject] graph at {:X} was replaced (new data or root); injecting again",
+        reinterpret_cast<std::uintptr_t>(graph));
+    g_done.erase(it);
+    return false;
 }
-bool Claim(const void* graph) {
+bool Claim(RE::hkbBehaviorGraph* graph) {
+    const auto now = HandledOf(graph);
     std::lock_guard lock(g_doneLock);
-    return g_done.insert(graph).second;
+    return g_done.try_emplace(graph, now).second;
 }
 
 int RegisterAnimationFiles(RE::hkbCharacterStringData* strings, const char* stage) {
@@ -458,7 +474,6 @@ void InjectPairedAction(int actionIndex, RE::hkbBehaviorGraph* graph, RE::hkbSta
     Result result;
     result.actionIdx = actionIndex;
     result.graph = "RootBehaviorGraph";
-    result.graphPtr = graph;
     result.pairedRig = PairedRig::Kind::kCharacter;
     result.enterIds.resize(2, -1);
     std::array<StateInfoLayout*, 2> newStates{};
@@ -820,7 +835,6 @@ void InjectCreaturePair(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateMac
     result.actionIdx = action;
     result.graph = NodeName(sm);
     result.pairedRig = profile.kind;
-    result.graphPtr = graph;
     result.injected = true;
     result.enterIds = {enter, -1};
     result.stateIds = {stateId};
@@ -1220,7 +1234,6 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
     const auto& spec = Actions::Spec(action);
     Result result;
     result.actionIdx = action;
-    result.graphPtr = graph;
     result.graph = "FullBodyPlayerIdles_Behavior";
     auto fail = [&](const char* reason) {
         result.reason = reason;
@@ -1458,7 +1471,6 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
     Result res;
     res.actionIdx = a_actionIdx;
     res.graph = tgt.smName;
-    res.graphPtr = a_graph;
     res.airRoute = a_airRoute;
     auto fail = [&](std::string a_why) {
         res.reason = std::move(a_why);
@@ -2105,12 +2117,6 @@ bool IsOurStateId(const char* a_smName, std::int32_t a_stateId) {
             for (auto s : r.stateIds)
                 if (s == a_stateId) return true;
     return false;
-}
-const char* EventName(const char* a_smName, std::int32_t a_id) {
-    std::shared_lock lock(g_publishLock);
-    for (auto& r : g_results)
-        if (r.injected && r.graphPtr && _stricmp(r.graph.c_str(), a_smName) == 0) return EventNameOf(r.graphPtr, a_id);
-    return nullptr;
 }
 
 }  // namespace AnimationInjector::GraphInjector

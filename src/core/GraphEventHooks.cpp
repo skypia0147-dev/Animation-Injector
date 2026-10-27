@@ -95,8 +95,9 @@ struct SmHandleEvent {
             return;
         }
         const int id = static_cast<int>(a_ev.id);
-        const char* en = pair && a_ctx.behavior ? NodeFactory::EventNameOf(a_ctx.behavior, id)
-                                                : GraphInjector::EventName(smName, id);
+        // The event's name in the graph handling it now (2026-10-28 review R-24: a pointer kept since the graph was
+        // injected was read here, past that graph's lifetime if its project was unloaded).
+        const char* en = a_ctx.behavior ? NodeFactory::EventNameOf(a_ctx.behavior, id) : nullptr;
         const auto before = a_this->currentStateID;
         func(a_this, a_ctx, a_ev);
         const bool moved = before != a_this->currentStateID;

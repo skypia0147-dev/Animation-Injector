@@ -9,6 +9,8 @@ struct Owner {
     std::uint64_t token = 0;
     RE::ActorHandle actor;
     RE::NiPointer<RE::NiAVObject> scene;
+    // Kept past its start for the pair that plays (Hold): the next start takes it over.
+    bool held = false;
 };
 std::mutex mutex;
 Owner owner;
@@ -65,10 +67,19 @@ std::uint64_t Acquire(RE::Actor* self, RE::Actor* target) {
     auto* player = self && self->IsPlayerRef() ? self : target && target->IsPlayerRef() ? target : nullptr;
     if (!installed || !Alive(player)) return 0;
     std::lock_guard lock(mutex);
-    if (owner.token) return 0;
+    if (owner.token && !owner.held) return 0;
+    if (owner.token) logger::debug("[PairStartCamera] held lease={} taken over by a new start", owner.token);
     owner = {++serial, player->GetHandle(), RE::NiPointer<RE::NiAVObject>{player->Get3D(false)}};
     traces = 0;
     return owner.token;
+}
+void Hold(std::uint64_t token) {
+    if (!token) return;
+    std::lock_guard lock(mutex);
+    if (owner.token == token && !owner.held) {
+        owner.held = true;
+        logger::debug("[PairStartCamera] lease={} held until the pair ends", token);
+    }
 }
 void Release(std::uint64_t token) {
     if (!token) return;

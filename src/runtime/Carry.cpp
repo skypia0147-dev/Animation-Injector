@@ -832,13 +832,25 @@ void Cancel(const char* reason) {
     CancelCarry(reason);
 }
 bool Enabled() { return !entries.empty(); }
+// The carry whose put-down press was taken, until that key's release (input thread only).
+int pressOwner = -1;
 bool ClaimInput(const RE::ButtonEvent& event, bool allow) {
+    // A press the carry took is the carry's to its release, even once the carry has ended: the game never saw it go
+    // down, and a lone release of E would activate what the carrier faces.
+    if (pressOwner >= 0 && pressOwner < static_cast<int>(entries.size()) && PutdownKey(entries[pressOwner], event)) {
+        if (event.IsUp()) pressOwner = -1;
+        return true;
+    }
     const int active = activeEntry.load();
     if (!allow || active < 0 || active >= static_cast<int>(entries.size()) || !PutdownKey(entries[active], event))
         return false;
-    // While a carry lasts its key is the carry's alone (press, hold and release): the game never
-    // acts on it too, so E puts the target down without also activating what the carrier faces.
-    if (event.IsDown()) input = true;
+    // While a carry lasts its key is the carry's alone (press, hold and release), so E puts the target down without
+    // also activating what the carrier faces. A key already down when the carry began is the game's: it has that
+    // press, so it gets the hold and the release too (2026-10-28 review R-23: the release was taken and the game
+    // kept the key down until it was pressed again).
+    if (!event.IsDown()) return false;
+    pressOwner = active;
+    input = true;
     return true;
 }
 void Register() {

@@ -34,6 +34,24 @@ void Check(bool ok, const char* msg) {
     }
 }
 int main() {
+    {
+        // 2026-10-28 #1: the victim before -2.5397, goal -2.2104 (18.9 degrees), the engine left it at -2.3875.
+        const float before = 3.74350f - 2 * pi, goal = -2.21036f, engine = 3.89568f - 2 * pi;
+        Check(!PivotYaw(before, goal, engine, 0.3f), "a turn the engine made further is kept");
+        const auto mid = PivotYaw(before, goal, engine, 0.75f);
+        Check(mid && std::abs(Wrap(*mid - (before + Wrap(goal - before) * 0.75f))) < 1e-4f,
+            "past the engine's turn the pivot follows the blend");
+        const auto end = PivotYaw(before, goal, engine, 1.0f);
+        Check(end && std::abs(Wrap(*end - goal)) < 1e-4f, "at the end the pivot stands at its goal heading");
+        Check(!PivotYaw(before, goal, goal, 1.0f), "at its goal nothing is written");
+        Check(!PivotYaw(1.0f, 1.0f, 0.5f, 1.0f), "no turn asked, none made (a player victim keeps its heading)");
+        // The other way round and across the seam at +-pi.
+        const auto left = PivotYaw(3.0f, -3.0f, 3.0f, 1.0f);
+        Check(left && std::abs(Wrap(*left + 3.0f)) < 1e-4f, "the short way across +-pi");
+        const auto half = PivotYaw(3.0f, -3.0f, 3.0f, 0.5f);
+        Check(half && std::abs(std::abs(*half) - pi) < 1e-3f, "half way across the seam is +-pi");
+        Check(!PivotYaw(0.2f, -0.2f, -0.3f, 0.5f), "an engine turn past the goal is not pulled back mid-blend");
+    }
     using namespace AnimationInjector::NativePairRoles;
     const auto selection = [](std::initializer_list<Role> roles) {
         return Select(std::span(roles.begin(), roles.size()));
