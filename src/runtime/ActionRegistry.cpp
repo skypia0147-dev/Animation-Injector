@@ -13,7 +13,6 @@
 #include "core/SpaceProbe.h"
 #include "Settings.h"
 #include <mutex>
-#include "runtime/FireArrow.h"
 #include "runtime/PairedSession.h"
 #include "runtime/Carry.h"
 #include "runtime/PairFeatures.h"
@@ -585,13 +584,7 @@ struct AnimEventHook {
                 if (a_ev->tag == command) AnnotationCommands::Observe(actor, a_ev->payload);
             }
         }
-        const auto result = func(a_sink, a_ev, a_src);
-        if (a_ev && a_ev->holder) {
-            static const RE::BSFixedString arrowRelease("arrowRelease");
-            if (a_ev->tag == arrowRelease)
-                FireArrow::ObserveArrowRelease(const_cast<RE::Actor*>(a_ev->holder->As<RE::Actor>()));
-        }
-        return result;
+        return func(a_sink, a_ev, a_src);
     }
     static inline REL::Relocation<decltype(thunk)> func;
 };
@@ -935,7 +928,6 @@ void BeforeGameLoad() {
     Qte::ResetOnLoad();
     GetUpHandoff::ResetOnLoad();
     NativePairAlignment::Reset(true);
-    FireArrow::ResetOnLoad();
     Carry::BeforeGameLoad();
     PairRootRuntime::Reset();
     NativePairEnd::Reset();
@@ -948,7 +940,6 @@ void BeforeGameLoad() {
 void OnGameLoad() {
     ViewGuard::OnGameLoad();
     NativePairAlignment::Reset(false);
-    FireArrow::ResetOnLoad();
     Carry::OnGameLoad();
     ExitBlendHooks::Reset();
     InputSink::Get()->Reset();

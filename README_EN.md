@@ -35,7 +35,7 @@ If you edited the INI, move your values over before overwriting it with an updat
 | Branching | A condition card inside a start or transition (`Check`, `Row`, `True`, `False`) picks the action to play by movement direction, weapon, attack state, stamina, airborne, lying side, equipment, race, sex, chance and more |
 | Movement | Moves as the HKX's AMR annotations (`animmotion`, `animrotation`) say |
 | Pairs | Paired playback from one HKX holding both roles, start alignment (the victim turns in place, the attacker moves), end position correction, an exit blend when the partner is lost |
-| Event registry | Bind functions to HKX annotation events globally: hide/show weapons, invulnerability on/off, costs, firing arrows (as drawn or direct). A function acts on the actor that sent the event |
+| Event registry | Bind functions to HKX annotation events globally: hide/show weapons, invulnerability on/off, costs, firing arrows (with no draw). A function acts on the actor that sent the event |
 | Annotation commands | The HKX annotation `AI.CamShake\|strength\|duration` shakes the camera at that moment. No registration; every number must be written |
 | QTE | Six types (`splitArc`, `timingBar`, `rotatingNeedle`, `holdRelease`, `rapidPress`, `keySequence`); events, sounds and follow-up actions per result; input-only QTEs that draw nothing (`hidden="true"`) |
 | Carry | Lift a target through a pair, carry it and put it down (partial ragdoll) |
@@ -75,6 +75,7 @@ HKX location: under `Data/meshes/actors/character/` (`clip` is a path relative t
 - Conditions (0.12.296): `<Check kind="previousAction" actions="A,B" within="0.8" ended="any|completed|cancelled"/>` (the last of our actions this actor finished; recorded only while a declaration uses it), `kind="falling" option="rising|falling"` (in the air; optionally the fallen distance by `compare`/`value`), `kind="slope" option="downhill|uphill|any" compare value` (degrees under the feet), `kind="actorValue" option="OneHanded|…|level" measure="current|base" compare value`, `kind="gameHour" compare value [upper]` (a range may wrap past midnight, 20 to 5), `kind="weather" option="pleasant|cloudy|rainy|snow"`. Each is worked out only when a condition card is checked.
 - Functions (0.12.296): `<Do op="sound" file="sound\fx\…\a.wav"|plugin form bone="spine|head|rightHand|leftHand|root"/>` (values: `volume` 0~1), `op="globalSet" plugin form restore="end"` (values: `value`; with restore the old value comes back when the run ends, and after loading a save made meanwhile), `op="modEvent" name text` (values: `number`; Papyrus `RegisterForModEvent` hears it, sent as the actor's).
 - A ragdoll is `<Do op="ragdoll" direction="down|up|forward|backward|left|right"/>` in the registry, its force `force="0~20"` in an action's `<EventValues>`. During a pair it first frees that actor from the pair's physics hold and watches its get-up after the ragdoll (0.12.278; the old `releasePhysics` is refused).
+- Firing an arrow (0.12.303) has one way, with no draw: the equipped arrow leaves at full power toward the crosshair and one arrow is used. On an event, `<Do op="fireArrow"/>` in the registry with each action's `damage="1~1000"` (percent of a full draw's damage, default 100) in its `<EventValues>`; at a clip time, an ordinary action's `<Do at="seconds" op="fireArrow" damage="…"/>` (any number). It takes no `delay`; `mode` and `onRelease` are gone. It fires only when the player plays the action.
 - Only a `<AnimationSet version="6">` root is read. A file in any other format is skipped whole, with the reason in the log. Convert a format 4 or 5 file with `python tools/convert_format6.py --backup <folder> <xml>...` (`AnimationInjectorXmlCheck --compare-starts <old.xml> <new.xml>` confirms the result behaves the same).
 - A file loads completely or not at all: a single error keeps every action in it from registering.
 - File and folder names in HKX paths must be ASCII letters, digits and common symbols (no non-ASCII characters).
@@ -92,7 +93,6 @@ Main entries of `SKSE/Plugins/AnimationInjector.ini`. Each is described in the I
 |---|---|---|
 | `[Compatibility] iNativePairAlignment` | 2 | Paired start alignment. 0 off / 1 Animation Injector pairs only / 2 every pair (kill moves included). Use 1 with Paired Animation Improvements |
 | `[Compatibility] iPairEndPosition` | 2 | Paired end position correction. 0 off / 1 Animation Injector pairs only / 2 every pair |
-| `[Compatibility] bFireArrow` | true | Bow release integration during actions |
 | `[Preload] bOrdinary` | true | Preload ordinary action animations too |
 | `[Display] bLoadingProgress` | true | Show preparation progress at game start and load |
 | `[Debug] bDebug` | false | Verbose log. Turn on only when reporting a problem |

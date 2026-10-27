@@ -32,7 +32,7 @@ struct Digest {
     void function(const EventFunctionSpec& f) {
         add(static_cast<int>(f.op), static_cast<int>(f.target), f.delay, f.plugin, f.form,
             static_cast<int>(f.direction), f.force, f.stamina, f.magicka, f.strength, f.duration, f.factor,
-            static_cast<int>(f.arrow.mode), f.arrow.damage);
+            f.arrowDamage);
     }
 };
 void qteDigest(Digest& d, const QteSpec& q) {
@@ -49,7 +49,6 @@ std::string snapshot(const ActionSpec& a) {
     d.add(static_cast<int>(a.suppress.when));
     d.strings(a.suppress.events);
     d.add(a.rotationLocked);
-    d.add(a.fireArrow.enabled, a.fireArrow.at, a.fireArrow.onRelease);
     for (const auto& q : a.qtes) qteDigest(d, q);
     // Node IDs label diagnostics; the branches define execution. A branch into a Stop node ends the flow
     // exactly like a missing one (ConditionFlow::Select), and the editor writes only the latter, so Stop

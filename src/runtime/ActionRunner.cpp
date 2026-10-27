@@ -22,7 +22,6 @@
 #include "runtime/EventEffects.h"
 #include "runtime/LifecyclePolicy.h"
 #include "runtime/NativeCancelPolicy.h"
-#include "runtime/FireArrow.h"
 #include "runtime/ViewGuard.h"
 
 namespace AnimationInjector {
@@ -646,8 +645,6 @@ bool ActionRunner::InterruptIfUnavailable() {
 }
 
 void ActionRunner::RestoreSlots() {
-    _fireArrow.Cancel();
-    _firePlaybackReady = false;
     RestoreAttackData();
     ReleaseRotation();
     if (_iframeOn) ApplyIFrame(false);
@@ -776,12 +773,6 @@ void ActionRunner::SlotEvent(const RE::BSFixedString& a_tag) {
         ReachCarryRelease("event");
 }
 
-void ActionRunner::QueueFireArrowOnRelease(std::uint64_t draw) {
-    if (_isPlayer && _state == State::kActive && _firePlaybackReady && Spec().fireArrow.enabled &&
-        Spec().fireArrow.shot.mode == FireArrowMode::kDrawn && Spec().fireArrow.onRelease && _fireArrow.draw == draw)
-        _fireArrow.Request();
-}
-
 namespace {
 // Clips whose HKX was seen without AMR motion (main thread, clip activation): a clip does not move unless its
 // HKX carries "animmotion" annotations.
@@ -889,7 +880,6 @@ void ActionRunner::OnClipActivated(int a_variant, float a_duration, bool a_moves
     _motionTraceNext = 0;
     _motionTraceCount = 0;
     ActionLinks::Begin(_owner, _idx, false, _isPlayer);
-    _firePlaybackReady = true;
     if (a_duration > 0.05f) {
         _clipDuration = a_duration;
         AnimData::SetClipDuration(Spec().clips[_variant].clipName.c_str(), a_duration);
@@ -1000,8 +990,6 @@ void ActionRunner::ResetPlaybackFlags() {
     for (auto& st : _slot) st = SlotState{};
     _costDone = false;
     _timedFired.assign(Spec().pairFeatures.timed.size(), false);
-    _fireArrow.Reset(FireArrow::CurrentDraw());
-    _firePlaybackReady = false;
     // 새 재생이 시작되면 켜져 있던 슬롯은 새 재생의 창으로 다시 판정한다
     if (_rotateOn) ApplyRotate(false);
     if (_iframeOn) ApplyIFrame(false);
@@ -1156,16 +1144,6 @@ void ActionRunner::Update(float a_delta) {
     RecoveryClock();
     UpdateNativeCancel();
     SlotUpdate();
-    if (_state == State::kActive && _firePlaybackReady && Spec().fireArrow.enabled && !InterruptIfUnavailable()) {
-        const auto& fire = Spec().fireArrow;
-        if (fire.at >= 0 && _elapsed >= fire.at) _fireArrow.Request();
-        if (_fireArrow.Take()) {
-            if (fire.shot.mode == FireArrowMode::kDirect)
-                FireArrow::Direct(Owner(), fire.shot.damage, Spec().id.c_str(), _elapsed);
-            else
-                FireArrow::Release(Owner(), _fireArrow.draw, Spec().id.c_str(), _elapsed);
-        }
-    }
     if (_state == State::kExiting) {
         _exitingTime += a_delta;
         if (_exitingTime > _exitTimeout) {

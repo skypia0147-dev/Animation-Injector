@@ -95,8 +95,8 @@ int main() {
         Check(Rejected("<Pair id='P' clip='p.hkx'><Effect at='1' op='hide'/></Pair>"),
             "including clip-time Effect elements");
         Check(Rejected("<Action id='A' clip='a.hkx'><Events extra='X'/></Action>"), "Events extra is gone");
-        Check(Rejected("<Action id='A' clip='a.hkx'><FireArrow at='event:Fire'/></Action>"),
-            "an event shot is a registry function (its numbers the action's EventValues)");
+        Check(Rejected("<Action id='A' clip='a.hkx'><FireArrow/></Action>"),
+            "FireArrow is gone (0.12.302): the action's shot is a fireArrow function");
         Check(Rejected("<Action id='A' clip='a.hkx'><IFrame from='event:On' until='end'/></Action>"),
             "windows open at clip times");
         Check(Rejected("<Action id='A' clip='a.hkx'><HyperArmor from='0.1' until='0.5' untilFallback='end'/></Action>"),
@@ -303,7 +303,7 @@ int main() {
         // 0.12.281: the registry holds the events' functions and what they act with; the numbers are the actions'.
         {
             for (const char* number : {"delay='0.4'", "strength='1.5'", "duration='1'", "stamina='5'", "factor='0.5'",
-                     "mode='direct'", "force='3'"}) {
+                     "damage='80'", "force='3'"}) {
                 const auto r = Parse(std::string("<EventRegistry><Event name='X'><Do op='shake' ") + number +
                                      "/></Event></EventRegistry>");
                 Check(!r.ok && r.error.find("0.12.281") != std::string::npos &&
@@ -311,7 +311,7 @@ int main() {
                     "a number in the registry is refused, naming EventValues");
             }
             const auto p = Parse(R"(<Action id='A' clip='a.hkx'><EventValues>
-                <Event name='Fire'><Do op='fireArrow' mode='direct' damage='150'/><Do op='shake' strength='2' delay='0.2'/></Event>
+                <Event name='Fire'><Do op='fireArrow' damage='150'/><Do op='shake' strength='2' delay='0.2'/></Event>
                 <Event name='Throw'><Do op='ragdoll' force='8'/></Event>
                 <Event name='Pay'><Do op='cost' stamina='12'/></Event>
             </EventValues></Action>
@@ -324,10 +324,9 @@ int main() {
             Check(p.ok, p.error.c_str());
             const auto& v = p.actions[0].eventValues;
             Check(v.size() == 3 && v[0].event == "Fire" && v[0].functions.size() == 2, "an action's values by event");
-            Check(v[0].functions[0].op == EventOp::kFireArrow &&
-                      v[0].functions[0].arrow.mode == FireArrowMode::kDirect &&
-                      std::fabs(v[0].functions[0].arrow.damage - 1.5f) < 1e-6f,
-                "a direct shot's numbers");
+            Check(
+                v[0].functions[0].op == EventOp::kFireArrow && std::fabs(v[0].functions[0].arrowDamage - 1.5f) < 1e-6f,
+                "a shot's damage");
             Check(v[0].functions[1].op == EventOp::kShake && std::fabs(v[0].functions[1].strength - 2) < 1e-6f &&
                       std::fabs(v[0].functions[1].delay - 0.2f) < 1e-6f,
                 "a shake's numbers and delay");
@@ -430,7 +429,7 @@ int main() {
                 "clip-time cost");
             Check(Rejected("<Pair id='P' clip='p.hkx'><Do op='hide'/></Pair>"), "a pair's Do needs its clip time");
             Check(Rejected("<Pair id='P' clip='p.hkx'><Do at='1' op='fireArrow'/></Pair>"),
-                "a clip-time shot is the action's FireArrow");
+                "a shot is an ordinary action's");
             // 0.12.275: a clip-time effect names the role it changes; without one, both. No sender filter.
             const auto plain = Parse("<Pair id='P' clip='p.hkx'><Do at='0.1' op='hide'/></Pair>");
             Check(plain.ok && plain.actions[0].pairFeatures.timed[0].function.target == EventTarget::kBoth,
@@ -462,7 +461,7 @@ int main() {
                       timed.actions[0].pairFeatures.timed[1].function.op == EventOp::kShake &&
                       std::fabs(timed.actions[0].pairFeatures.timed[1].at - 0.5f) < 1e-6f,
                 "an ordinary action's clip-time effects");
-            for (const char* op : {"iframeOn", "armorOn", "rotateOn", "cost", "cancel", "fireArrow"})
+            for (const char* op : {"iframeOn", "armorOn", "rotateOn", "cost", "cancel"})
                 Check(Rejected(std::string("<Action id='A' clip='a.hkx'><Do at='0.1' op='") + op + "'/></Action>"),
                     (std::string("not an ordinary action's clip-time effect: ") + op).c_str());
             Check(Rejected("<Action id='A' clip='a.hkx'><Do at='0.1' op='hide' target='player'/>"
@@ -472,17 +471,28 @@ int main() {
                 "third-party interruption stays a pair's");
         }
 
-        // FireArrow: a clip time and/or the button release during the action.
+        // A shot (0.12.303): the direct one only, at its event or clip time; a clip-time one is a timed effect.
         {
-            const auto p = Parse("<Action id='A' clip='a.hkx'><FireArrow at='0.5'/></Action>");
-            Check(p.ok && p.actions[0].fireArrow.enabled && std::fabs(p.actions[0].fireArrow.at - 0.5f) < 1e-6f &&
-                      p.actions[0].fireArrow.onRelease,
-                "a timed shot, release on by default");
-            const auto release = Parse("<Action id='A' clip='a.hkx'><FireArrow/></Action>");
-            Check(release.ok && release.actions[0].fireArrow.at < 0 && release.actions[0].fireArrow.onRelease,
-                "release only");
-            Check(Rejected("<Action id='A' clip='a.hkx'><FireArrow onRelease='false'/></Action>"),
-                "a FireArrow that never fires");
+            const auto p = Parse("<Action id='A' clip='a.hkx'><Do at='0.5' op='fireArrow' damage='50'/>"
+                                 "<Do at='0.9' op='fireArrow'/></Action>");
+            const auto& timed = p.actions[0].pairFeatures.timed;
+            Check(p.ok && timed.size() == 2 && timed[0].function.op == EventOp::kFireArrow &&
+                      std::fabs(timed[0].at - 0.5f) < 1e-6f &&
+                      std::fabs(timed[0].function.arrowDamage - 0.5f) < 1e-6f &&
+                      std::fabs(timed[1].function.arrowDamage - 1.0f) < 1e-6f,
+                "clip-time shots are timed effects, more than one");
+            for (const char* attr : {"mode='direct'", "mode='drawn'", "onRelease='true'", "delay='0.2'"}) {
+                Check(Rejected(std::string("<Action id='A' clip='a.hkx'><Do at='0.5' op='fireArrow' ") + attr +
+                               "/></Action>"),
+                    (std::string("a shot has no ") + attr).c_str());
+                Check(Rejected(std::string("<EventRegistry><Event name='Fire'><Do op='fireArrow'/></Event>"
+                                           "</EventRegistry><Action id='A' clip='a.hkx'><EventValues><Event "
+                                           "name='Fire'><Do op='fireArrow' ") +
+                               attr + "/></Event></EventValues></Action>"),
+                    (std::string("an action's shot values have no ") + attr).c_str());
+            }
+            Check(Rejected("<Action id='A' clip='a.hkx'><Do at='0.5' op='hide' damage='50'/></Action>"),
+                "damage is a shot's");
         }
 
         // Every file's registry merged: all functions run, equal ones once, names ignore case.

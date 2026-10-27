@@ -58,7 +58,6 @@ void FrameworkSettings::Load() {
     preloadOrdinary = ini.Bool(L"Preload", L"bOrdinary", true);
     preloadOrdinaryBudgetMB = std::clamp(ini.Int(L"Preload", L"iOrdinaryBudgetMB", 0), 0, 1 << 20);
     switchZoom = std::clamp(ini.Float(L"Camera", L"fSwitchZoom", 0.5f), -1.0f, 2.0f);
-    fireArrow = ini.Bool(L"Compatibility", L"bFireArrow", true);
     nativePairAlignment = std::clamp(ini.Int(L"Compatibility", L"iNativePairAlignment", 2), 0, 2);
     pairEndPosition = std::clamp(ini.Int(L"Compatibility", L"iPairEndPosition", 2), 0, 2);
     debug = ini.Bool(L"Debug", L"bDebug", false);

@@ -31,7 +31,6 @@
 #include "runtime/ActionRegistry.h"
 #include "runtime/MainThread.h"
 #include "runtime/InputSink.h"
-#include "runtime/FireArrow.h"
 #include "runtime/PairedSession.h"
 #include "runtime/Carry.h"
 #include "runtime/CarryHold.h"
@@ -157,7 +156,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
             AnimData::TryRegister("kDataLoaded");
             // Observe release input before the ordinary sink can start a carry.
             Carry::Register();
-            FireArrow::Install();
             InputSink::Register();
             HitDispatch::Register();  // Gameplay hit dispatch and optional diagnostics
             break;

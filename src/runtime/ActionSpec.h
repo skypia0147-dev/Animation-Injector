@@ -2,7 +2,6 @@
 #include "PCH.h"
 #include "runtime/QteSpec.h"
 #include "runtime/GameControls.h"
-#include "runtime/FireArrowShot.h"
 #include <optional>
 #include "runtime/PairedRig.h"
 #include "runtime/CarrySpec.h"
@@ -120,15 +119,6 @@ struct PairedSpec {
     bool reorientSupport = true, applyMotionFromRoot = false;
 };
 
-// The player's automatic shot while this action plays: at a clip time, and/or when the player lets
-// go of the attack button during it. An event that fires the arrow is a global registry function.
-struct FireArrowSpec {
-    bool enabled = false;
-    float at = -1.0f;       // seconds from the clip start; <0 = none
-    bool onRelease = true;  // releasing the attack button during the action fires the drawn arrow (kDrawn only)
-    FireArrowShot shot;     // how the arrow leaves the bow (0.12.268)
-};
-
 // The putdown Action's moment to release the carried target (seconds or annotation event).
 struct CarryReleaseSpec {
     bool enabled = false;
@@ -176,7 +166,6 @@ struct ActionSpec {
     SlotWindow hyperArmor;  // 스태거 무시
     CostSpec cost;
     CarryReleaseSpec carryRelease;
-    FireArrowSpec fireArrow;
     std::vector<QteSpec> qtes;
     AttackSpec attack;  // 공격 의미 (attackData)
     PairedSpec paired;  // 페어 (V10)

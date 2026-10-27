@@ -33,36 +33,30 @@
     <Exit blend="0.3"/>
     <IFrame until="0.8"/>
     <MoveCancel at="1.647" blend="0.35"/>
-    <FireArrow/>
   </Action>
   <Action id="BowDodge_L1" clip="Animations\DynamicDodgeShot\BowDodgeLeft.hkx" safety="2.5">
     <Exit blend="0.3"/>
     <IFrame until="0.8"/>
     <MoveCancel at="1.397" blend="0.35"/>
-    <FireArrow/>
   </Action>
   <Action id="BowDodge_R1" clip="Animations\DynamicDodgeShot\BowDodgeRight.hkx" safety="2.5">
     <Exit blend="0.3"/>
     <IFrame until="0.8"/>
     <MoveCancel at="1.647" blend="0.35"/>
-    <FireArrow/>
   </Action>
   <Action id="SneakBowDodge_B1" clip="Animations\DynamicDodgeShot\SneakBowDodgeBack.hkx" safety="2.5">
     <Exit blend="0.3"/>
     <IFrame until="0.8"/>
     <MoveCancel at="1.647" blend="0.35"/>
-    <FireArrow/>
   </Action>
   <Action id="SneakBowDodge_L1" clip="Animations\DynamicDodgeShot\SneakBowDodgeLeft.hkx" safety="2.5">
     <Exit blend="0.3"/>
     <IFrame until="0.8"/>
     <MoveCancel at="1.397" blend="0.35"/>
-    <FireArrow/>
   </Action>
   <Action id="SneakBowDodge_R1" clip="Animations\DynamicDodgeShot\SneakBowDodgeRight.hkx" safety="2.5">
     <Exit blend="0.3"/>
     <IFrame until="0.8"/>
     <MoveCancel at="1.647" blend="0.35"/>
-    <FireArrow/>
   </Action>
 </AnimationSet>

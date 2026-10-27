@@ -1,6 +1,5 @@
 #pragma once
 #include "runtime/QteSpec.h"
-#include "runtime/FireArrowShot.h"
 #include "runtime/RagdollPush.h"
 #include "runtime/StrikeSpec.h"
 #include <cstdint>
@@ -37,7 +36,7 @@ enum class EventOp : std::uint8_t {
     kRotateOn,  // the graph's rotation variable (lasting until kRotateOff)
     kRotateOff,
     kCancel,     // ends the sender's pair
-    kFireArrow,  // automatic shot of the bow (drawn, or direct at full power), player only
+    kFireArrow,  // a bow shot with no draw, at full power toward the crosshair, player only
     kRagdoll,    // push into the engine's ragdoll once; a pair's role first leaves the pair's physics hold
     kStrike,     // hit chosen actors with the engine's damage, the changed actor as attacker (StrikeSpec.h)
     kSound,      // play a sound file or a registered sound at one of the actor's bones (0.12.296)
@@ -65,7 +64,7 @@ struct EventFunctionSpec {
     float stamina = 0.0f, magicka = 0.0f;                              // kCost
     float strength = 1.0f, duration = 0.5f;  // kShake (an annotation's own numbers: AI.CamShake)
     float factor = 1.0f;                     // kTimeOn
-    FireArrowShot arrow;                     // kFireArrow: drawn or direct, the direct shot's damage
+    float arrowDamage = 1.0f;                // kFireArrow: multiplier on a full draw's damage (percent / 100)
     StrikeSpec strike;                       // kStrike
     // kSound: `file` (a path under Data, a .wav or .xwm) or `plugin`·`form` (a sound descriptor), at `bone`
     // (spine, head, rightHand, leftHand, root), `volume` 0~1.

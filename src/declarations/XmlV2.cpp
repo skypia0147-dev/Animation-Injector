@@ -187,7 +187,7 @@ std::string VanillaMatch(const std::string& alias) {
     if (_strnicmp(alias.c_str(), "event:", 6) == 0) return alias.substr(6);
     return "";
 }
-// A seconds time read as a clock time or an event: Recovery, QTE, FireArrow, Cost, CarryRelease.
+// A seconds time read as a clock time or an event: Recovery, QTE, Cost, CarryRelease.
 void ReadMoment(const std::string& text, std::string& event, float& at) {
     float t;
     bool relative;
@@ -258,24 +258,11 @@ const std::pair<std::string_view, EventOp> kOps[] = {{"hide", EventOp::kHide}, {
     {"sound", EventOp::kSound}, {"globalSet", EventOp::kGlobalSet}, {"modEvent", EventOp::kModEvent}};
 const std::pair<std::string_view, EventTarget> kTargets[] = {{"both", EventTarget::kBoth},
     {"player", EventTarget::kPlayer}, {"initiator", EventTarget::kInitiator}, {"receiver", EventTarget::kReceiver}};
-// How a shot leaves the bow (0.12.268): mode "drawn" (default) releases the drawn bow as the player would;
-// "direct" launches at full power with no draw, `damage` percent of a full draw's damage (1~1000, default 100).
-FireArrowShot fireArrowShot(Node e) {
-    choice(e, "mode", {"drawn", "direct"});
-    num(e, "damage", 1000, 1);
-    FireArrowShot shot;
-    shot.mode = get(e, "mode", "drawn") == "direct" ? FireArrowMode::kDirect : FireArrowMode::kDrawn;
-    if (e.attribute("damage")) {
-        if (shot.mode != FireArrowMode::kDirect) fail(e, "damage는 mode=\"direct\"(바로 발사)에서만 씁니다");
-        shot.damage = e.attribute("damage").as_float(100.0f) / 100.0f;
-    }
-    return shot;
-}
 // Where a <Do> stands (0.12.281): a registered event's function holds what it acts with (op, a spell, a ragdoll's
 // direction); an action's <EventValues> the numbers it runs with there; a clip-time effect both.
 enum class DoUse { kRegistry, kValues, kTimed };
 constexpr std::initializer_list<const char*> kNumbers = {"delay", "stamina", "magicka", "strength", "duration",
-    "factor", "mode", "damage", "force", "ratio", "amount", "radius", "angle", "up", "down", "edge", "volume", "value",
+    "factor", "damage", "force", "ratio", "amount", "radius", "angle", "up", "down", "edge", "volume", "value",
     "number"};
 // What a sound, a global and a mod event act with (0.12.296): a registered event's function holds them.
 constexpr std::initializer_list<const char*> kOpKinds = {"file", "bone", "restore", "name", "text"};
@@ -376,16 +363,16 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
             if (e.attribute(n))
                 fail(e, std::string(n) +
                             ": 소리 파일·뼈, 전역 값 되돌리기, 모드 이벤트 이름·글은 이벤트 등록에서 정합니다");
-        shape(e, {"op", "delay", "stamina", "magicka", "strength", "duration", "factor", "mode", "damage", "force",
-                     "ratio", "amount", "radius", "angle", "up", "down", "edge", "volume", "value", "number"});
+        shape(e, {"op", "delay", "stamina", "magicka", "strength", "duration", "factor", "damage", "force", "ratio",
+                     "amount", "radius", "angle", "up", "down", "edge", "volume", "value", "number"});
     }
     // A registered event's function changes the actor that sent the event (0.12.273); a pair's clip-time effect
     // names the role it changes (both actors play the clip, so no role sends it).
     if (timed)
         shape(e, {"at", "op", "target", "plugin", "form", "delay", "stamina", "magicka", "strength", "duration",
-                     "factor", "mode", "damage", "direction", "force", "pick", "hit", "hand", "block", "ratio",
-                     "amount", "radius", "angle", "up", "down", "edge", "reaction", "without", "file", "bone", "volume",
-                     "value", "restore", "name", "text", "number"});
+                     "factor", "damage", "direction", "force", "pick", "hit", "hand", "block", "ratio", "amount",
+                     "radius", "angle", "up", "down", "edge", "reaction", "without", "file", "bone", "volume", "value",
+                     "restore", "name", "text", "number"});
     else if (use == DoUse::kRegistry)
         shape(e, {"op", "plugin", "form", "direction", "pick", "hit", "hand", "block", "reaction", "without", "file",
                      "bone", "restore", "name", "text"});
@@ -424,10 +411,13 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
             fail(e, "form은 16진수 ID여야 합니다");
     } else if (e.attribute("plugin") || e.attribute("form"))
         fail(e, "plugin·form은 spell·stateOn·stateOff·sound·globalSet에서만 씁니다");
+    // A shot fires when its event or clip time comes (0.12.303): the arrow leaves with no draw, `damage` percent of
+    // a full draw's damage (1~1000, default 100).
     if (op == "fireArrow") {
-        if (timed) fail(e, "시간 기준 활 발사는 동작의 FireArrow at으로 지정합니다");
-    } else if (e.attribute("mode") || e.attribute("damage"))
-        fail(e, "mode·damage는 fireArrow에서만 씁니다");
+        num(e, "damage", 1000, 1);
+        if (e.attribute("delay")) fail(e, "fireArrow는 delay를 쓰지 않습니다(이벤트·시각에 바로 발사)");
+    } else if (e.attribute("damage"))
+        fail(e, "damage는 fireArrow에서만 씁니다");
     if (op != "ragdoll" && e.attribute("direction")) fail(e, "direction은 ragdoll에서만 씁니다");
     if (op != "ragdoll" && op != "strike" && e.attribute("force")) fail(e, "force는 ragdoll·strike에서만 씁니다");
     // A sound, a global and a mod event (0.12.296).
@@ -469,7 +459,7 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
             if (RagdollPush::kNames[i] == direction) f.direction = static_cast<RagdollPush::Direction>(i);
         if (e.attribute("force")) f.force = number(e.attribute("force"), 1, RagdollPush::kMaxForce);
     }
-    if (op == "fireArrow") f.arrow = fireArrowShot(e);
+    if (op == "fireArrow") f.arrowDamage = e.attribute("damage").as_float(100.0f) / 100.0f;
     if (op == "strike") strikeSpec(e, use, f.strike);
     if (op == "sound") {
         f.file = get(e, "file");
@@ -940,13 +930,14 @@ struct Compiler {
                     fail(d,
                         "일반 동작의 시각 기능은 그 동작을 재생하는 액터에게 적용됩니다: target·from을 쓰지 않습니다");
                 const auto op = get(d, "op");
-                if (!op.empty() && !has({"hide", "show", "spell", "stateOn", "stateOff", "shake", "stopVelocity",
-                                            "timeOn", "timeOff", "ragdoll", "strike", "sound", "globalSet", "modEvent"},
-                                       op))
+                if (!op.empty() &&
+                    !has({"hide", "show", "spell", "stateOn", "stateOff", "shake", "stopVelocity", "timeOn", "timeOff",
+                             "ragdoll", "strike", "sound", "globalSet", "modEvent", "fireArrow"},
+                        op))
                     fail(d, "일반 동작의 시각 기능이 아닙니다: " + op +
-                                " (무적·슈퍼아머·회전·비용은 IFrame·HyperArmor·Rotate·Cost, 활 발사는 FireArrow, "
-                                "cancel은 페어 전용)");
-            }
+                                " (무적·슈퍼아머·회전·비용은 IFrame·HyperArmor·Rotate·Cost, cancel은 페어 전용)");
+            } else if (get(d, "op") == "fireArrow")
+                fail(d, "활 발사는 플레이어가 재생하는 일반 동작(Action)에서만 씁니다");
             TimedEffectSpec timed;
             timed.at = static_cast<float>(numeric(d, required(d, "at"), 600));
             timed.function = eventFunction(d, DoUse::kTimed);
@@ -962,7 +953,7 @@ struct Compiler {
             {"id", "clip", "view", "firstPerson", "air", "attack", "enter", "block", "safety", "lostBlend", "reorient",
                 "interruptOnHit"},
             {"Exit", "Rotate", "IFrame", "HyperArmor", "Cost", "MoveCancel", "Vanilla", "Transition", "FindPartner",
-                "Carry", "FireArrow", "QTE", "CarryRelease", "EventValues", "Do", "Camera"});
+                "Carry", "QTE", "CarryRelease", "EventValues", "Do", "Camera"});
         if (!pair) {
             for (const char* only : {"lostBlend", "reorient", "interruptOnHit"})
                 if (n.attribute(only)) fail(n, std::string(only) + "는 페어 전용 속성입니다");
@@ -1065,27 +1056,6 @@ struct Compiler {
         std::vector<LinkDeclaration> links;  // QTE results first, then transitions, in document order
         std::set<std::string> qteIds;
         for (auto q : n.children("QTE")) s.qtes.push_back(qte(q, n, pair, qteIds, &links));
-        if (auto f = one(n, "FireArrow")) {
-            shape(f, {"at", "onRelease", "mode", "damage"});
-            boolean(f, "onRelease");
-            s.fireArrow.enabled = true;
-            s.fireArrow.shot = fireArrowShot(f);
-            const bool direct = s.fireArrow.shot.mode == FireArrowMode::kDirect;
-            // A direct shot has no draw to release: it fires at its time (an event shot is the registry's).
-            if (direct && f.attribute("onRelease").as_bool(false))
-                fail(f, "mode=\"direct\"(바로 발사)는 당김이 없어 onRelease를 쓸 수 없습니다");
-            s.fireArrow.onRelease = !direct && f.attribute("onRelease").as_bool(true);
-            if (f.attribute("at")) {
-                std::string unused;
-                ReadMoment(seconds(f, "at", Basis::Seconds), unused, s.fireArrow.at);
-            }
-            if (direct && s.fireArrow.at < 0)
-                fail(f, "mode=\"direct\"(바로 발사)에는 at이 필요합니다(이벤트 발사는 EventRegistry의 fireArrow)");
-            if (s.fireArrow.at < 0 && !s.fireArrow.onRelease)
-                fail(f,
-                    "FireArrow에는 at 또는 onRelease=\"true\"가 필요합니다(이벤트 발사는 EventRegistry의 fireArrow)");
-        }
-        if (pair && n.child("FireArrow")) fail(n.child("FireArrow"), "FireArrow is player-only and requires an Action");
         if (auto c = one(n, "Cost")) {
             shape(c, {"at", "stamina", "magicka"});
             num(c, "stamina", 100000);

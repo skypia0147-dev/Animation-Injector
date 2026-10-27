@@ -314,11 +314,7 @@ void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor,
         break;
     case EventOp::kCancel: PairFeatures::RequestCancel(handle); break;
     case EventOp::kFireArrow:
-        if (!actor->IsPlayerRef()) break;
-        if (f.arrow.mode == FireArrowMode::kDirect)
-            FireArrow::Direct(actor, f.arrow.damage, context.origin, 0.0f);
-        else
-            FireArrow::Release(actor, FireArrow::CurrentDraw(), context.origin, 0.0f);
+        if (actor->IsPlayerRef()) FireArrow::Direct(actor, f.arrowDamage, context.origin, 0.0f);
         break;
     case EventOp::kRagdoll:
         if (actor->IsDead() || actor->IsOnMount() || !actor->Is3DLoaded()) break;

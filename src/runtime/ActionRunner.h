@@ -1,7 +1,6 @@
 #pragma once
 #include "PCH.h"
 #include "runtime/ActionSpec.h"
-#include "runtime/FireArrowState.h"
 #include "runtime/DirectLinkRetirement.h"
 #include <atomic>
 #include <mutex>
@@ -58,7 +57,6 @@ public:
     bool Cancel(const char* why);
     int RequestOrigin() const { return _requestOrigin; }
     void Update(float a_delta);  // 매 프레임 (플레이어)
-    void QueueFireArrowOnRelease(std::uint64_t draw);
     void ResetOnLoad();
     void OnAnimEvent(const RE::BSFixedString& a_tag);
     // a_moves: the clip's HKX carries AMR motion ("animmotion" annotations).
@@ -145,8 +143,6 @@ private:
     bool _recoveryMovement = false;
     bool _recoveryAttackCleared = false;
     // 슬롯 상태 (재생마다 초기화, 종료 경로 전부에서 복원)
-    FireArrowStep _fireArrow;
-    bool _firePlaybackReady = false;
     bool _rotationLockOwned = false, _rotationBeforeLock = false;
     bool _rotateOn = false, _costDone = false;
     std::vector<bool> _timedFired;  // per clip-time effect (Spec().pairFeatures.timed), 0.12.274

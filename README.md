@@ -35,7 +35,7 @@ XML 선언과 HKX 파일만으로 Skyrim에 일반 동작과 두 사람이 하�
 | 조건 분기 | 시작·전환 안의 조건 카드(`Check`·`Row`·`True`·`False`)로 이동 방향·무기·공격 상태·스태미나·공중·누운 방향·장비·종족·성별·확률 등 조건에 따라 재생할 동작 선택 |
 | 이동 | HKX의 AMR 주석(`animmotion`, `animrotation`)대로 이동 |
 | 페어 | 두 역할이 든 HKX 하나로 페어 재생, 시작 정렬(피해자는 제자리 회전, 가해자 이동), 종료 위치 보정, 상대를 잃었을 때의 종료 블렌드 |
-| 이벤트 등록 | HKX 주석 이벤트에 무기 숨김·표시, 무적 켜고 끄기, 소모, 화살 발사(당긴 만큼·바로 발사) 등 기능을 전역으로 연결. 기능은 이벤트를 보낸 액터에게 적용 |
+| 이벤트 등록 | HKX 주석 이벤트에 무기 숨김·표시, 무적 켜고 끄기, 소모, 화살 발사(당김 없이 바로) 등 기능을 전역으로 연결. 기능은 이벤트를 보낸 액터에게 적용 |
 | 주석 명령 | HKX 주석 `AI.CamShake\|세기\|시간`으로 그 순간 카메라 흔들림. 등록 없이 동작하며 숫자는 모두 적어야 함 |
 | QTE | 6가지 유형(`splitArc`, `timingBar`, `rotatingNeedle`, `holdRelease`, `rapidPress`, `keySequence`), 결과별 이벤트·소리·다음 동작, 화면에 그리지 않는 입력 전용 QTE(`hidden="true"`) |
 | 운반 | 페어로 대상을 들어 올려 운반하고 내려놓기(부분 래그돌) |
@@ -75,6 +75,7 @@ HKX 위치: `Data/meshes/actors/character/` 아래 (`clip`은 이 폴더 기준 
 - 조건(0.12.296): `<Check kind="previousAction" actions="A,B" within="0.8" ended="any|completed|cancelled"/>`(이 액터가 마지막으로 끝낸 우리 동작, 그 조건을 쓰는 선언이 있을 때만 기록), `kind="falling" option="rising|falling"`(공중, 선택으로 낙하 거리 `compare`·`value`), `kind="slope" option="downhill|uphill|any" compare value`(발밑 경사 도), `kind="actorValue" option="OneHanded|…|level" measure="current|base" compare value`, `kind="gameHour" compare value [upper]`(range는 자정을 넘어도 됨, 20~5), `kind="weather" option="pleasant|cloudy|rainy|snow"`. 모두 조건 카드를 판정할 때만 계산합니다.
 - 기능(0.12.296): `<Do op="sound" file="sound\fx\…\a.wav"|plugin form bone="spine|head|rightHand|leftHand|root"/>`(값: `volume` 0~1), `op="globalSet" plugin form restore="end"`(값: `value`; restore면 실행이 끝날 때·저장 뒤 불러올 때 원래 값으로), `op="modEvent" name text`(값: `number`, Papyrus `RegisterForModEvent`가 받음, sender는 그 액터).
 - 래그돌은 등록에 `<Do op="ragdoll" direction="down|up|forward|backward|left|right"/>`, 힘은 동작의 `<EventValues>`에 `force="0~20"`입니다. 페어 중이면 그 액터의 페어 물리 고정을 먼저 풀고 래그돌 뒤 기상을 지켜봅니다(0.12.278, 예전 `releasePhysics`는 거부).
+- 활 발사(0.12.303)는 당김 없이 바로 쏘는 방식 하나입니다: 장착한 화살을 풀파워로 조준점을 향해 쏘고, 화살 1개를 씁니다. 이벤트로 쏘면 등록 `<Do op="fireArrow"/>`, 동작마다 `<EventValues>`에 `damage="1~1000"`(풀차징 피해의 %, 기본 100). 클립 시각으로 쏘면 일반 동작의 `<Do at="초" op="fireArrow" damage="…"/>`(여러 개 가능). 지연(`delay`)은 쓰지 않고, `mode`·`onRelease`는 없어졌습니다. 플레이어가 재생할 때만 쏩니다.
 - 루트는 `<AnimationSet version="6">`만 읽습니다. 다른 형식의 파일은 로그에 이유를 남기고 파일 전체를 건너뜁니다. 형식 4·5 파일은 `python tools/convert_format6.py --backup <폴더> <xml>...`로 바꿉니다(바꾼 결과가 같은 동작인지는 `AnimationInjectorXmlCheck --compare-starts <옛.xml> <새.xml>`).
 - 파일 하나는 전부 읽히거나 전부 건너뜁니다. 오류가 하나라도 있으면 그 파일의 동작은 하나도 등록되지 않습니다.
 - HKX 경로의 파일·폴더 이름은 ASCII 영문·숫자·일반 기호만 쓸 수 있습니다(한글 불가).
@@ -92,7 +93,6 @@ HKX 위치: `Data/meshes/actors/character/` 아래 (`clip`은 이 폴더 기준 
 |---|---|---|
 | `[Compatibility] iNativePairAlignment` | 2 | 페어 시작 정렬. 0 끔 / 1 Animation Injector 페어만 / 2 모든 페어(킬무브 포함). Paired Animation Improvements와 함께 쓰면 1 권장 |
 | `[Compatibility] iPairEndPosition` | 2 | 페어 종료 위치 보정. 0 끔 / 1 Animation Injector 페어만 / 2 모든 페어 |
-| `[Compatibility] bFireArrow` | true | 동작 중 활 발사 연동 |
 | `[Preload] bOrdinary` | true | 일반 동작 애니메이션도 미리 불러 두기 |
 | `[Display] bLoadingProgress` | true | 게임 시작·로드 때 준비 진행 표시 |
 | `[Debug] bDebug` | false | 상세 로그. 문제를 보고할 때만 켜세요 |
