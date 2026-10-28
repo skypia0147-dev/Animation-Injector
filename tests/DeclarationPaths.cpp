@@ -36,10 +36,10 @@ int main() {
         std::vector<EventRuleSpec> events;
         const auto actions = Declarations::LoadAllFrom(root, &events);
         Check(actions.size() == 2, "both files load");
-        // The source names the file in UTF-8 (the log is UTF-8).
+        // The source names the file in UTF-8 (the log is UTF-8); the action is named after its set.
         const auto thaiText = Declarations::PathText(thai);
         const bool named = std::any_of(actions.begin(), actions.end(),
-            [&](const ActionSpec& a) { return a.id == "ThaiFolder" && a.source == thaiText; });
+            [&](const ActionSpec& a) { return a.id == "ThaiFolder_ThaiFolder" && a.source == thaiText; });
         Check(named, "the source is the UTF-8 path");
         Check(thaiText.find("\xE0\xB8\x81") != std::string::npos, "PathText is UTF-8");
         // A broken file in such a folder is skipped with its log line, not thrown.

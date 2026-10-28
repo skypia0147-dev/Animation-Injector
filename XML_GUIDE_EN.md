@@ -34,7 +34,7 @@ Pressing G (RB on a pad) plays a roll HKX.
 - `<?xml … ?>`: the standard XML declaration (says the file is XML saved as UTF-8). It may be left out; if you keep it, it must be the very first line and the file must be saved as UTF-8.
 - `<AnimationSet>`: the outside of the file. Keep `version="6"` as it is; give `id` a name of your own for each mod (English letters, digits, `_`).
 - `<Start>`: how the action starts. `to` is the action to play. It does not start again until `cooldown` (seconds) has passed.
-- `<Action>`: an action that plays one HKX. Its `id` must not repeat within the file.
+- `<Action>`: an action that plays one HKX. Its `id` must not repeat within the file; another mod may use the same `id` without the two mixing.
 - `<Exit>`: the blend time (seconds) back to normal movement when it ends.
 
 ## Chaining actions
@@ -132,7 +132,7 @@ Common conditions:
 | `chance` | `value` (0~100) | with that chance |
 | `magicEffect` `perk` `spell` `race` `faction` `keyword` | `plugin="Mod.esp"` `form="hex ID"` | it has that |
 | `global` | `plugin` `form` `equals` | the global equals the value |
-| `previousAction` | `actions="A,B"` `within="seconds"` | it did that action just before |
+| `previousAction` | `actions="A,B"` (this file's actions) `within="seconds"` | it did that action just before |
 | `weather` | `option="pleasant\|cloudy\|rainy\|snow"` | that weather |
 | `gameHour` | `compare` `value` | the game hour compares so |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | there is that much open space that way |

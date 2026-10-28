@@ -190,8 +190,18 @@ std::uint32_t ParseKey(const char* a_text, std::uint32_t a_def) {
     const long v = std::strtol(a_text, &end, 0);
     return end != a_text ? static_cast<std::uint32_t>(v) : a_def;
 }
-bool FromXml(
-    const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out, std::vector<EventRuleSpec>* a_events) {
+// What the files loaded before this one took (LoadAllFrom): AnimationSet ids (lower case, with the file that has
+// it) and the runtime action ids their actions became (lower case).
+struct LoadedNames {
+    std::unordered_map<std::string, std::string> sets;
+    std::unordered_set<std::string> actions;
+};
+std::string Lower(std::string text) {
+    for (auto& c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return text;
+}
+bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out, std::vector<EventRuleSpec>* a_events,
+    LoadedNames* a_names) {
     const auto file = PathText(a_file);
     pugi::xml_document doc;
     const auto res = doc.load_file(a_file.c_str());
@@ -208,9 +218,33 @@ bool FromXml(
     std::vector<ActionSpec> parsed;
     std::vector<EventRuleSpec> events;
     std::string mod, error;
-    if (!XmlV2::Compile(doc, file, parsed, events, mod, error, ResolveKeyName)) {
+    // The set's id names its actions in the runtime (XmlV2::Compile): two mods' actions never meet. A second file
+    // with the same id (two mods that kept the editor's default, or one mod installed twice) gets <id>_2, <id>_3, ...:
+    // both load.
+    std::string qualifier = doc.child("AnimationSet").attribute("id").as_string();
+    if (a_names && !qualifier.empty()) {
+        const auto base = qualifier;
+        for (int i = 2; a_names->sets.contains(Lower(qualifier)); ++i) qualifier = base + "_" + std::to_string(i);
+        if (qualifier != base)
+            logger::warn("[Decl] {}: AnimationSet id '{}'를 쓰는 파일이 {}에도 있습니다 — 이 파일의 동작은 '{}'로 따로 "
+                         "다룹니다",
+                file, base, a_names->sets.at(Lower(base)), qualifier);
+    }
+    if (!XmlV2::Compile(doc, file, parsed, events, mod, error, ResolveKeyName, qualifier)) {
         logger::error("[Decl:v2] {}: {} — entire file skipped", file, error);
         return false;
+    }
+    if (a_names) {
+        // Qualified ids still meet only through underscores (set A_B's C and set A's B_C): the later file is not
+        // loaded, so no file's action is replaced by another's.
+        for (const auto& spec : parsed)
+            if (a_names->actions.contains(Lower(spec.id))) {
+                logger::error("[Decl] {}: 동작 '{}'가 앞서 불러온 파일의 동작과 같은 이름입니다 — entire file skipped",
+                    file, spec.id);
+                return false;
+            }
+        a_names->sets.emplace(Lower(qualifier), file);
+        for (const auto& spec : parsed) a_names->actions.insert(Lower(spec.id));
     }
     logger::info("[Decl:v2] {}: validated", file);
     logger::info("[Decl] {} (mod '{}'): 액션 {}개, 이벤트 등록 {}개", file, mod, parsed.size(), events.size());
@@ -230,11 +264,11 @@ std::string PathText(const std::filesystem::path& path) {
 }
 
 bool LoadXmlFile(const std::filesystem::path& file, std::vector<ActionSpec>& output) {
-    return FromXml(file, output, nullptr);
+    return FromXml(file, output, nullptr, nullptr);
 }
 bool LoadXmlFile(
     const std::filesystem::path& file, std::vector<ActionSpec>& output, std::vector<EventRuleSpec>& events) {
-    return FromXml(file, output, &events);
+    return FromXml(file, output, &events, nullptr);
 }
 
 std::vector<ActionSpec> LoadAll(std::vector<EventRuleSpec>* events) {
@@ -259,26 +293,9 @@ std::vector<ActionSpec> LoadAllFrom(const std::filesystem::path& root, std::vect
         }
     }
     std::sort(xmls.begin(), xmls.end());
-    for (const auto& f : xmls) FromXml(f, out, events);
-    // Id collision (case-insensitive): the later file in name order replaces the earlier action,
-    // which keeps its position. One hash lookup per action.
-    std::unordered_map<std::string, std::size_t> kept;
-    kept.reserve(out.size());
-    std::vector<ActionSpec> unique;
-    unique.reserve(out.size());
-    for (auto& spec : out) {
-        std::string key = spec.id;
-        for (auto& c : key) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        const auto [it, inserted] = kept.try_emplace(std::move(key), unique.size());
-        if (inserted) {
-            unique.push_back(std::move(spec));
-            continue;
-        }
-        auto& earlier = unique[it->second];
-        logger::warn("[Decl] 액션 id '{}' 중복 — {} 가 {} 를 덮음", spec.id, spec.source, earlier.source);
-        earlier = std::move(spec);
-    }
-    out = std::move(unique);
+    // Each file's actions under its set's id, unique across the files: no file replaces another's action.
+    LoadedNames names;
+    for (const auto& f : xmls) FromXml(f, out, events, &names);
     // The per-action summary is only logged at debug; its strings are not built otherwise.
     for (const auto& s : out) {
         if (!FrameworkSettings::Get().debug) break;

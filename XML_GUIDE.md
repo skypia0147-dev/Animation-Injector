@@ -34,7 +34,7 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 - `<?xml … ?>`: XML 표준 선언(이 파일은 UTF-8로 저장된 XML이라는 표시). 빼도 되지만, 쓴다면 파일 맨 첫 줄에 두고 UTF-8로 저장합니다.
 - `<AnimationSet>`: 파일의 맨 바깥. `version="6"`은 그대로 쓰고, `id`는 모드마다 다른 이름(영문·숫자·`_`)으로 정합니다.
 - `<Start>`: 동작을 시작하는 방법. `to`가 재생할 동작입니다. `cooldown`(초)이 지나기 전에는 다시 시작하지 않습니다.
-- `<Action>`: HKX 하나를 재생하는 동작. `id`는 파일 안에서 겹치지 않게 정합니다.
+- `<Action>`: HKX 하나를 재생하는 동작. `id`는 파일 안에서 겹치지 않게 정합니다. 다른 모드에 같은 `id`가 있어도 서로 섞이지 않습니다.
 - `<Exit>`: 끝날 때 원래 동작으로 돌아가는 블렌드 시간(초).
 
 ## 동작 이어 하기
@@ -132,7 +132,7 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `chance` | `value`(0~100) | 그 확률로 |
 | `magicEffect` `perk` `spell` `race` `faction` `keyword` | `plugin="모드.esp"` `form="16진수 ID"` | 그것을 가졌을 때 |
 | `global` | `plugin` `form` `equals` | 글로벌 값이 같을 때 |
-| `previousAction` | `actions="A,B"` `within="초"` | 직전에 그 동작을 했을 때 |
+| `previousAction` | `actions="A,B"`(이 파일의 동작) `within="초"` | 직전에 그 동작을 했을 때 |
 | `weather` | `option="pleasant\|cloudy\|rainy\|snow"` | 그 날씨 |
 | `gameHour` | `compare` `value` | 게임 시각 비교 |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | 그 방향에 그만큼 빈 공간이 있을 때 |

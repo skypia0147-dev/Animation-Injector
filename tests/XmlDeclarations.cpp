@@ -392,6 +392,16 @@ int validateJson(const wchar_t* path) {
 }
 int wmain(int argc, wchar_t** argv) {
     spdlog::set_level(spdlog::level::warn);
+    // --folder <SKSE/Plugins/AnimationInjector>: every declaration the game loads, by the runtime's own loader, each
+    // action with the file it came from and its first clip.
+    if (argc == 3 && std::wstring_view(argv[1]) == L"--folder") {
+        std::vector<EventRuleSpec> events;
+        const auto all = Declarations::LoadAllFrom(argv[2], &events);
+        std::cout << "Loaded: " << all.size() << " actions, " << events.size() << " registered events\n";
+        for (const auto& a : all)
+            std::cout << a.id << " <- " << a.source << " clip=" << (a.clips.empty() ? "" : a.clips[0].file) << '\n';
+        return all.empty() ? 2 : 0;
+    }
     if (argc == 3 && std::wstring_view(argv[1]) == L"--json") return validateJson(argv[2]);
     if (argc == 3 && std::wstring_view(argv[1]) == L"--dump") return dump(argv[2]);
     if (argc == 4 && std::wstring_view(argv[1]) == L"--compare-starts") return behaviour::compare(argv[2], argv[3]);

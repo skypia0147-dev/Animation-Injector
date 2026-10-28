@@ -18,9 +18,10 @@ int wmain(int argc, wchar_t** argv) {
         std::vector<ActionSpec> specs;
         Check(Declarations::LoadXmlFile(argv[1], specs), "editor XML parses");
         Check(specs.size() == 4, "three actions preserved, and the start's selecting action (format 5)");
-        const auto* back = Find(specs, "BowDodgeBack");
-        const auto* left = Find(specs, "BowDodgeLeft");
-        const auto* right = Find(specs, "BowDodgeRight");
+        // The runtime names each action after its set, ClipRecovery (XmlV2::Compile qualifier).
+        const auto* back = Find(specs, "ClipRecovery_BowDodgeBack");
+        const auto* left = Find(specs, "ClipRecovery_BowDodgeLeft");
+        const auto* right = Find(specs, "ClipRecovery_BowDodgeRight");
         Check(back && left && right, "actions found by id");
         for (const auto* s : {back, left, right}) Check(s->clips.size() == 1 && s->HasRecovery(), "one clip, recovery");
         Check(Near(back->recovery.at, 0.3f) && Near(back->recovery.blend, 0.1f), "back timing and blend");

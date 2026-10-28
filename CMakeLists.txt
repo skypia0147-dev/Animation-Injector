@@ -179,6 +179,13 @@ target_compile_definitions(AnimationInjectorDeclarationPathsTests PRIVATE UNICOD
 target_compile_options(AnimationInjectorDeclarationPathsTests PRIVATE /utf-8)
 target_precompile_headers(AnimationInjectorDeclarationPathsTests PRIVATE src/PCH.h)
 target_link_libraries(AnimationInjectorDeclarationPathsTests PRIVATE CommonLibSSE::CommonLibSSE pugixml::pugixml)
+# Every action under its AnimationSet: two mods' same ids never meet (Settings.cpp, XmlV2::Compile qualifier).
+add_executable(AnimationInjectorActionNamesTests EXCLUDE_FROM_ALL tests/ActionNames.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp src/runtime/RagdollProfile.cpp)
+target_include_directories(AnimationInjectorActionNamesTests PRIVATE src)
+target_compile_definitions(AnimationInjectorActionNamesTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(AnimationInjectorActionNamesTests PRIVATE /utf-8)
+target_precompile_headers(AnimationInjectorActionNamesTests PRIVATE src/PCH.h)
+target_link_libraries(AnimationInjectorActionNamesTests PRIVATE CommonLibSSE::CommonLibSSE pugixml::pugixml)
 # Camera views (runtime/ViewSpec.h): the rules ViewGuard applies and the view / firstPerson grammar.
 add_executable(AnimationInjectorViewTests EXCLUDE_FROM_ALL tests/View.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
 target_include_directories(AnimationInjectorViewTests PRIVATE src)
@@ -427,7 +434,7 @@ add_test(NAME XmlCompareFlowOrder COMMAND AnimationInjectorXmlCheck --compare
     "${AI_TEST_DATA}/flow-order/written.xml" "${AI_TEST_DATA}/flow-order/editor.xml")
 add_test(NAME XmlCompareFlowMembers COMMAND AnimationInjectorXmlCheck --compare
     "${AI_TEST_DATA}/flow-order/written.xml" "${AI_TEST_DATA}/flow-order/members-swapped.xml")
-set_tests_properties(XmlCompareFlowMembers PROPERTIES PASS_REGULAR_EXPRESSION "Semantic mismatch: Back")
+set_tests_properties(XmlCompareFlowMembers PROPERTIES PASS_REGULAR_EXPRESSION "Semantic mismatch: FlowOrder_Back")
 add_test(NAME RagdollProfile COMMAND AnimationInjectorXmlCheck --ragdoll "${AI_TEST_DATA}/ragdoll/chicken.xml")
 add_test(NAME RagdollProfileReject COMMAND AnimationInjectorXmlCheck --ragdoll-reject "${AI_TEST_DATA}/ragdoll/invalid.xml")
 # Which profile a carry reads: the lift clip's own (Ragdoll/<clip file name>.xml), else the rig's.

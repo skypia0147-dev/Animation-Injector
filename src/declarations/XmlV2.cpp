@@ -553,6 +553,32 @@ struct Compiler {
     std::map<std::string, std::string> byCondition;  // a shared card -> the selecting action holding it alone
     // An event QTE result's action (0.12.249): the registry is read before the actions, so it is checked after them.
     std::vector<std::pair<Node, std::string>> eventQteTargets;
+    // The file's place among the loaded files (its AnimationSet's id, Settings.cpp): the runtime names an action
+    // "<qualifier>_<id>", so two files' actions never meet whatever ids their authors chose. Empty: the ids as written.
+    std::string qualifier;
+    std::string global(const std::string& id) const {
+        return qualifier.empty() || id.empty() ? id : qualifier + "_" + id;
+    }
+    // Every action a file names is one of its own (actionRef, Cards): each such name gets the file's qualifier.
+    void qualify(ActionSpec& s) const {
+        s.id = global(s.id);
+        for (auto& a : s.flowActions) a = global(a);
+        for (auto& l : s.links) {
+            l.action = global(l.action);
+            l.partnerAction = global(l.partnerAction);
+        }
+        qualify(s.qtes);
+        s.carry.putdownAction = global(s.carry.putdownAction);
+        for (auto& p : s.flow.predicates)
+            for (auto& name : p.actionNames) name = global(name);
+    }
+    void qualify(std::vector<QteSpec>& qtes) const {
+        for (auto& q : qtes)
+            for (auto& r : q.results) {
+                r.to = global(r.to);
+                r.partnerTo = global(r.partnerTo);
+            }
+    }
     // A key the runtime will use: a table name or code:<1..265>. The resolver reports
     // unknown names as 0 or as a value above 265 (UINT32_MAX in the DLL); both fail here,
     // so a typo cannot become a key code that no input event ever matches.
@@ -777,7 +803,7 @@ struct Compiler {
                 if (r.attribute("event")) fail(r, "choose event OR to");
                 if (r.attribute("recipient")) fail(r, "transition recipient is fixed to the initiator");
                 if (r.attribute("partnerTo")) fail(r, "partnerTo는 to(동작)와 함께만 씁니다");
-                const auto event = "AI_" + get(owner, "id") + "_QTE_" + id + "_" + name;
+                const auto event = "AI_" + global(get(owner, "id")) + "_QTE_" + id + "_" + name;
                 LinkDeclaration link;
                 link.event = event;
                 link.to = through(r, get(owner, "id") + "_" + id + "_" + name);
@@ -809,7 +835,7 @@ struct Compiler {
                         fail(r, "partnerTo requires pair to two ordinary actions");
                 }
                 // The result sends this event; a connection on it starts the destination.
-                const auto event = "AI_" + get(owner, "id") + "_QTE_" + id + "_" + name;
+                const auto event = "AI_" + global(get(owner, "id")) + "_QTE_" + id + "_" + name;
                 LinkDeclaration link;
                 link.event = event;
                 link.to = get(r, "to");
@@ -1453,7 +1479,8 @@ std::string triggerName(Node st) {
     return out;
 }
 bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
-    std::vector<EventRuleSpec>& events, std::string& mod, std::string& error, KeyResolver resolveKey) {
+    std::vector<EventRuleSpec>& events, std::string& mod, std::string& error, KeyResolver resolveKey,
+    std::string_view qualifier) {
     error.clear();
     try {
         auto root = source.document_element();
@@ -1466,6 +1493,7 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
         shape(root, {"version", "id", "view"}, {"Inputs", "EventRegistry", "Start", "Condition", "Action", "Pair"});
         identifier(root, required(root, "id"));
         Compiler c{resolveKey};
+        c.qualifier = std::string(qualifier);
         if (root.attribute("view")) {
             const auto view = ParseView(get(root, "view"));
             if (!view) fail(root, "view는 third, first, both 중 하나입니다");
@@ -1555,6 +1583,12 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
         // its start's place, then the ones transitions and QTE results go through.
         std::vector<ActionSpec> actions;
         auto finish = [&](ActionSpec&& s) {
+            // The last action finished names one of this file's (the editor's choice too): a name of another
+            // file's action would be a different action once both are qualified.
+            for (const auto& p : s.flow.predicates)
+                for (const auto& name : p.actionNames)
+                    if (!c.actions.contains(name)) fail(root, "직전 동작 조건은 이 파일의 동작만 가리킵니다: " + name);
+            c.qualify(s);
             s.Finalize();
             if (s.paired.enabled && s.enterBlend < 0) s.enterBlend = 0.2f;
             actions.push_back(std::move(s));
@@ -1584,6 +1618,7 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
             fail(root, "1~256개 액션 또는 이벤트 등록이 필요합니다(조건으로 고르는 시작·전환도 하나씩 셉니다)");
         mod = get(root, "id");
         output.insert(output.end(), std::make_move_iterator(actions.begin()), std::make_move_iterator(actions.end()));
+        for (auto& r : registry) c.qualify(r.qtes);
         events.insert(events.end(), std::make_move_iterator(registry.begin()), std::make_move_iterator(registry.end()));
         return true;
     } catch (const std::exception& e) {
@@ -1593,12 +1628,13 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
 }
 }
 bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
-    std::vector<EventRuleSpec>& events, std::string& mod, std::string& error, KeyResolver resolveKey) {
-    return CompileFormat6(source, sourceName, output, events, mod, error, resolveKey);
+    std::vector<EventRuleSpec>& events, std::string& mod, std::string& error, KeyResolver resolveKey,
+    std::string_view qualifier) {
+    return CompileFormat6(source, sourceName, output, events, mod, error, resolveKey, qualifier);
 }
 bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
-    std::string& mod, std::string& error, KeyResolver resolveKey) {
+    std::string& mod, std::string& error, KeyResolver resolveKey, std::string_view qualifier) {
     std::vector<EventRuleSpec> events;
-    return Compile(source, sourceName, output, events, mod, error, resolveKey);
+    return Compile(source, sourceName, output, events, mod, error, resolveKey, qualifier);
 }
 }
