@@ -257,9 +257,11 @@ Predicate ReadPredicate(XML n) {
         predicate.subject = Subject::kPartner;
     else if (subject != "self")
         Fail(n, "invalid subject");
-    // The player's own movement keys (0.12.301): no partner to read them from.
-    if (predicate.test == Test::kMovementDirection && predicate.subject != Subject::kSelf)
-        Fail(n, "movement direction has no partner subject");
+    // A roll, the world's hour, weather or global, the player's own movement keys, or the room where the actor
+    // stands: the same whoever is asked, so a partner subject would only fail when there is no partner.
+    if (predicate.subject != Subject::kSelf &&
+        oneOf(test, {"chance", "gameHour", "weather", "global", "movementDirection", "space", "ground"}))
+        Fail(n, test + " has no subject");
     if (oneOf(test, {"magicEffect", "global", "race", "faction", "equippedKeyword", "wornKeyword", "keyword", "perk",
                         "spell", "location"})) {
         predicate.plugin = Required(n, "plugin");
@@ -272,7 +274,6 @@ Predicate ReadPredicate(XML n) {
     } else if (n.attribute("plugin") || n.attribute("form"))
         Fail(n, "form requires a form condition");
     if (predicate.test == Test::kGlobal) {
-        if (predicate.subject != Subject::kSelf) Fail(n, "global condition has no partner subject");
         const auto number = Required(n, "equals");
         const auto [end, ec] = std::from_chars(number.data(), number.data() + number.size(), predicate.equals);
         if (ec != std::errc{} || end != number.data() + number.size() || !std::isfinite(predicate.equals))
@@ -295,7 +296,6 @@ Predicate ReadPredicate(XML n) {
             predicate.distance > 2000)
             Fail(n, "invalid query distance");
         // Where the actor stands, from its own heading (0.12.299).
-        if (predicate.subject != Subject::kSelf) Fail(n, "a room or ground check measures the actor itself");
         const std::string direction = Required(n, "direction");
         const auto side = direction.starts_with("self") ? direction.substr(4) : std::string();
         if (side == "Forward")

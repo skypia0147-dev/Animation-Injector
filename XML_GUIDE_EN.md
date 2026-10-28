@@ -213,7 +213,7 @@ An action two people do together is a `<Pair>`. Its HKX is one paired HKX holdin
 
 - `<FindPartner range angle>`: finds a partner within that distance and angle ahead (default 150 and 60).
 - To start on an event another mod sends, write `<Start event="Name" target="combatTarget" to="…">`.
-- `subject="partner"` on a condition checks the partner.
+- `subject="partner"` on a condition checks the partner. Conditions that are the same whoever is asked (`chance` `gameHour` `weather` `global` `movementDirection` `space` `ground`) do not take it.
 - Pairs play in third person only. Invulnerability, stagger resistance and such in a pair are clip-time features, like `<Do at op="iframeOn">`.
 
 ## QTE

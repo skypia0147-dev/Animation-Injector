@@ -213,7 +213,7 @@ HKX에 넣은 주석 이벤트가 오면 기능을 실행합니다. 이벤트와
 
 - `<FindPartner range angle>`: 앞쪽 몇 거리·몇 도 안의 상대를 찾습니다(기본 150·60).
 - 다른 모드가 보내는 이벤트로 시작하려면 `<Start event="이름" target="combatTarget" to="…">`처럼 씁니다.
-- 조건에 `subject="partner"`를 붙이면 상대를 검사합니다.
+- 조건에 `subject="partner"`를 붙이면 상대를 검사합니다. 누구를 검사해도 같은 조건(`chance` `gameHour` `weather` `global` `movementDirection` `space` `ground`)에는 붙일 수 없습니다.
 - 페어는 3인칭에서만 재생됩니다. 페어 안의 무적·경직 저항 등은 `<Do at op="iframeOn">`처럼 시각 기능으로 씁니다.
 
 ## QTE

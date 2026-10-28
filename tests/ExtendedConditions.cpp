@@ -21,6 +21,14 @@ int main() {
     Check(!Read("kind='movementDirection' option='diagonal'"));
     Check(!Read("kind='movementDirection' option='left' value='1'"));
     Check(!Read("kind='movementDirection' option='left' subject='partner'"));
+    // The same whoever is asked: a partner subject is a file error, never a check that fails without a partner.
+    for (const char* attrs : {"kind='chance' value='20'", "kind='gameHour' compare='ge' value='18'",
+             "kind='weather' option='rainy'", "kind='global' plugin='Test.esp' form='803' equals='1'",
+             "kind='movementDirection' option='left'", "kind='space' distance='250' direction='selfForward'",
+             "kind='ground' direction='selfForward' distance='0'"}) {
+        Check(Read(attrs) && Read(std::string(attrs) + " subject='self'"));
+        Check(!Read(std::string(attrs) + " subject='partner'"));
+    }
     ConditionValues::Request movement;
     movement.CaptureMovement(2);
     auto pendingMovement = movement;
