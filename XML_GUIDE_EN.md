@@ -31,6 +31,7 @@ Pressing G (RB on a pad) plays a roll HKX.
 </AnimationSet>
 ```
 
+- `<?xml … ?>`: the standard XML declaration (says the file is XML saved as UTF-8). It may be left out; if you keep it, it must be the very first line and the file must be saved as UTF-8.
 - `<AnimationSet>`: the outside of the file. Keep `version="6"` as it is; give `id` a name of your own for each mod (English letters, digits, `_`).
 - `<Start>`: how the action starts. `to` is the action to play. It does not start again until `cooldown` (seconds) has passed.
 - `<Action>`: an action that plays one HKX. Its `id` must not repeat within the file.
