@@ -41,6 +41,8 @@ Use Animation Injector Editor. Place HKX files as cards and connect them; it wri
 - Restart the game fully after changing an XML or HKX file.
 - If an XML file has any error, none of its actions are added. The reason is in the log.
 
+To write the XML by hand, see `XML_GUIDE_EN.md`.
+
 ## Settings
 
 The main entries of `SKSE/Plugins/AnimationInjector.ini`. See the INI's notes for the others.

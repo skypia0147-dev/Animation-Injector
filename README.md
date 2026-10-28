@@ -41,6 +41,8 @@ Animation Injector Editor로 만듭니다. HKX를 카드로 놓고 연결하면 
 - XML이나 HKX를 바꾼 뒤에는 게임을 완전히 다시 시작하세요.
 - XML 파일에 오류가 하나라도 있으면 그 파일의 동작은 하나도 들어가지 않습니다. 이유는 로그에 남습니다.
 
+XML을 직접 쓰려면 `XML_GUIDE.md`를 보세요.
+
 ## 설정
 
 `SKSE/Plugins/AnimationInjector.ini`의 주요 항목입니다. 나머지 항목은 INI의 설명을 보세요.
