@@ -109,6 +109,13 @@ private:
     float _exitTimeout = 6.0f;
     RE::FormID _immunity = 0;
     void SetAnimationDriven(bool a_on, bool a_finalRelease = false);
+
+public:
+    // An NPC's move cancel (runtime/NpcMoveCancel.h): a graph event the NPC got, on any thread; true when it is the
+    // AI's request that ends the action.
+    bool NpcHandoffEvent(const RE::BSFixedString& a_event);
+
+private:
     float SafetyTime() const noexcept;
     void PostCancelWatch(float a_delta);
     enum class AirPhase : std::uint8_t { kBeforeEntry, kAfterEntry, kAfterSetup, kFrame, kFinish, kAdopt };
@@ -123,6 +130,10 @@ private:
     State _state = State::kIdle;
     int _variant = 0;
     float _elapsed = 0.0f;
+    // An NPC's move cancel (runtime/NpcMoveCancel.h): movement handed back to the AI at the move-cancel point, and a
+    // request it sent since (set on any thread, acted on in Update).
+    bool _npcHandoff = false;
+    std::atomic_bool _npcHandoffExit{false};
     float _cooldown = 0.0f;
     bool _idleSettled = false;  // an idle update ran since the runner last left idle (Update skips then)
     bool _exitSent = false;

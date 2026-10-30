@@ -3,6 +3,7 @@
 #include "runtime/ActionRunner.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionHistory.h"
+#include "runtime/NpcMoveCancel.h"
 #include "core/GraphInjector.h"
 #include "core/AirControl.h"
 #include "core/AnimDataRegistry.h"
@@ -637,6 +638,8 @@ bool ActionRunner::InterruptIfUnavailable() {
         actor && actor->IsDead(), actor && actor->IsInRagdollState());
     _interrupted = true;
     _recoveryOpen = false;
+    _npcHandoff = false;
+    _npcHandoffExit = false;
     _exitSent = false;
     // Physics owns the graph now. Do not send Idle/JumpFall or clear its driven flag.
     _animDrivenSet = false;
@@ -987,6 +990,8 @@ void ActionRunner::ResetPlaybackFlags() {
     _closeSeen.assign(Spec().cancels.size(), false);
     _exitSeen = false;
     _recoveryOpen = false;
+    _npcHandoff = false;
+    _npcHandoffExit = false;
     for (auto& st : _slot) st = SlotState{};
     _costDone = false;
     _timedFired.assign(Spec().pairFeatures.timed.size(), false);
@@ -998,7 +1003,19 @@ void ActionRunner::ResetPlaybackFlags() {
 
 // Recovery 가 열림: 이미 이동키를 누르고 있으면 즉시 나간다 (MCO 는 새로 눌러야 하지만 우리는 누른 상태도 인정)
 void ActionRunner::OpenRecovery(const char* a_why) {
-    if (!_isPlayer || _recoveryOpen || _state != State::kActive) return;
+    if (_recoveryOpen || _state != State::kActive) return;
+    if (!_isPlayer) {
+        // An NPC in combat: movement back to its AI from here, the clip playing on (runtime/NpcMoveCancel.h).
+        auto* actor = Owner();
+        if (!Spec().recovery.move || !actor || !actor->IsInCombat()) return;
+        _recoveryOpen = true;
+        _npcHandoff = true;
+        _npcHandoffExit = false;
+        actor->SetGraphVariableBool(VarAnimDriven(), false);
+        logger::debug("[NpcMoveCancel] {} actor={:08X}: movement to the AI at {:.2f}s ({})", Spec().id,
+            actor->GetFormID(), _elapsed, a_why);
+        return;
+    }
     _recoveryOpen = true;
     const auto& r = Spec().recovery;
     const bool held = r.move && InputSink::Get()->AnyMoveInput();
@@ -1080,6 +1097,13 @@ void ActionRunner::MaintainRecoveryMovement() {
         [&](bool value) { return actor->SetGraphVariableBool(VarAllowRotation(), value); });
 }
 
+bool ActionRunner::NpcHandoffEvent(const RE::BSFixedString& a_event) {
+    if (!_npcHandoff || _state != State::kActive || !a_event.c_str()) return false;
+    const bool request = NpcMoveCancel::IsRequest(a_event.c_str());
+    if (request) _npcHandoffExit = true;
+    return request;
+}
+
 void ActionRunner::OnMoveInput(int a_kind) {
     if (!_isPlayer || _state != State::kActive || !_recoveryOpen) return;
     const auto& r = Spec().recovery;
@@ -1106,6 +1130,12 @@ void ActionRunner::Update(float a_delta) {
     if (InterruptIfUnavailable()) return;
 
     MaintainRecoveryMovement();
+    // An NPC's move cancel (runtime/NpcMoveCancel.h): movement stays with the AI (the clip's state may set the flag
+    // back), and an AI request heard since ends the action.
+    if (_npcHandoff && _state == State::kActive) {
+        if (auto* actor = Owner()) actor->SetGraphVariableBool(VarAnimDriven(), false);
+        if (_npcHandoffExit.exchange(false)) Recover("AI 요청");
+    }
     if (_state != State::kActive && !Spec().qtes.empty()) Qte::End(_owner, _idx);
     // The destination graph owns rotation once exit blending starts.
     if (Spec().rotationLocked && _state == State::kActive) {
@@ -1221,6 +1251,8 @@ void ActionRunner::Finish() {
     ClearNativeCapture();
     _nativeExiting = false;
     _recoveryOpen = false;
+    _npcHandoff = false;
+    _npcHandoffExit = false;
     _linkSource = _linkTarget = -1;
     _linkRetirement = {};
     ActionLinks::End(_owner, _idx);

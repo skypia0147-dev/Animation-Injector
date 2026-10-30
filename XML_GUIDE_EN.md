@@ -66,7 +66,7 @@ With a weapon drawn, G does slash 1; pressing G again during it leads on to slas
 | Element | Meaning |
 |---|---|
 | `<Transition to key from until>` | A key press between `from` and `until` moves on to the `to` action. `event="Name"` works in place of a key |
-| `<MoveCancel at blend>` | After `at`, a movement key cancels the action back to walking or running |
+| `<MoveCancel at blend>` | After `at`, a movement key cancels the action back to walking or running. An NPC in combat gets movement back from `at` and leaves as soon as its AI moves or attacks (or plays on if it stays) |
 | `<Vanilla to from until>` | In that window, the game's own action can cancel it. `to`: `Attack` `PowerAttack` `Block` `Bash` `Sprint` `Jump` `Sneak`. `until` is counted from the end (`end`, `end-0.2`) |
 | `<IFrame from until>` | Invulnerable in that window |
 | `<HyperArmor from until>` | Stagger resistance in that window |

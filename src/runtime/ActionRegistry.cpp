@@ -866,7 +866,15 @@ bool CaptureNativeCancel(RE::Actor* actor, const RE::BSFixedString& event) {
     if (actor->IsPlayerRef()) return g_playerBound.load(std::memory_order_acquire) && g_player->FindIf(capture);
     // Every graph event of every NPC comes here: one lookup, then only the runners it has used.
     const auto entry = FindNpc(actor->GetFormID());
-    return entry && entry->runners.FindIf(capture);
+    if (!entry) return false;
+    // An NPC's move cancel (runtime/NpcMoveCancel.h): a request its AI sends after getting movement back ends the
+    // action that gave it back.
+    entry->runners.FindIf([&](int, ActionRunner& r) {
+        if (r.NpcHandoffEvent(event))
+            logger::debug("[NpcMoveCancel] actor={:08X} '{}' ends the action", actor->GetFormID(), event.c_str());
+        return false;
+    });
+    return entry->runners.FindIf(capture);
 }
 
 int Count() {

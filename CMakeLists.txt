@@ -59,6 +59,8 @@ target_include_directories(AnimationInjectorCameraTests PRIVATE src)
 
 add_executable(AnimationInjectorDrivenTests EXCLUDE_FROM_ALL tests/DrivenCleanup.cpp)
 add_executable(AnimationInjectorExitBlendTests EXCLUDE_FROM_ALL tests/ExitBlendMovement.cpp)
+add_executable(AnimationInjectorNpcMoveCancelTests EXCLUDE_FROM_ALL tests/NpcMoveCancel.cpp)
+target_include_directories(AnimationInjectorNpcMoveCancelTests PRIVATE src)
 target_include_directories(AnimationInjectorExitBlendTests PRIVATE src)
 target_include_directories(AnimationInjectorDrivenTests PRIVATE src)
 
