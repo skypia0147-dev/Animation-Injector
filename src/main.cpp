@@ -10,6 +10,7 @@
 #include "runtime/PairFeatures.h"
 #include "runtime/EventEffects.h"
 #include "runtime/ActionHistory.h"
+#include "runtime/HitHistory.h"
 #include "runtime/EventRegistry.h"
 #include "runtime/ActionLinks.h"
 #include "Settings.h"
@@ -90,6 +91,7 @@ void EndSession() {
     AnnotationCommands::ResetOnLoad();
     EventEffects::ResetOnLoad();
     ActionHistory::ResetOnLoad();
+    HitHistory::ResetOnLoad();
     PairedSession::ResetOnLoad();
     PairRootScale::Reset();
     // Every holder has let go above; a lease still held would keep its actor a ghost in the next session.
@@ -130,6 +132,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
         using namespace AnimationInjector;
         switch (msg->type) {
         case SKSE::MessagingInterface::kDataLoaded:
+            Actions::OnDataLoaded();
             PairedClipBinding::Install();
             LoadingMenu::Register();
             QteMenu::Register();

@@ -52,13 +52,21 @@ struct Notify {
                 return true;
             }
         }
-        if (EventSuppression::Consume(actor, a_event)) return true;
-        if (Actions::CaptureNativeCancel(actor, a_event)) return true;
         // Snapshot an event-bound partner before downstream graph handlers can change the combat target.
         // The graph's answer cannot tell a real SprintStop from the one Papyrus
         // DisablePlayerControls sends to a standing player (both are refused); the sprint flag
         // captured here can, and the start flow reads it through its 'sprinting' test.
         const auto captured = Actions::CaptureEventTrigger(actor, a_event);
+        // A blocked event is kept from the vanilla graph only: a start, a transition and an event QTE on it still
+        // hear it (10-29: a start on blockHitStart that blocked it played nothing, its trigger swallowed with the
+        // vanilla block hit).
+        if (EventSuppression::Consume(actor, a_event)) {
+            Actions::CommitEventTrigger(captured);
+            ActionLinks::ObserveEvent(actor->GetHandle(), a_event);
+            EventRegistry::ObserveSent(actor, a_event);
+            return true;
+        }
+        if (Actions::CaptureNativeCancel(actor, a_event)) return true;
         // A full-body or paired entry event first sends its shared root entry (core/FullBodyEntry,
         // core/PairEntry); an event is at most one of them.
         const auto fullBody = FullBodyEntry::BeforeNotify(actor, a_event);

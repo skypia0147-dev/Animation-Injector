@@ -12,8 +12,6 @@ enum class Test {
     kWeaponDrawn,
     kCombat,
     kAlive,
-    kStamina,
-    kMagicka,
     kSpace,
     kGround,
     kMagicEffect,
@@ -64,7 +62,10 @@ enum class Test {
     // The game's hour, 0~24 (compare, value; a range may wrap past midnight).
     kGameHour,
     // The current weather's class (option pleasant|cloudy|rainy|snow).
-    kWeather
+    kWeather,
+    // 10-29. The last weapon hit the subject received (runtime/HitHistory.h): option normal|power|bash|sneak|blocked,
+    // within (seconds since, absent = any time).
+    kHitReceived
 };
 enum class EquippedType {
     kBow,
@@ -105,7 +106,6 @@ struct Predicate {
     EquippedType equippedType = EquippedType::kUnarmed;
     AttackState attackState = AttackState::kNone;
     Subject subject = Subject::kSelf;
-    float minimum = 0;
     float distance = 0;
     // A room or ground check's direction from the actor's current heading (0.12.299: measured where it stands, for
     // no particular action).
@@ -113,13 +113,18 @@ struct Predicate {
     GroundPolicy::Limits ground;
     std::string plugin;
     std::uint32_t form = 0;
+    // A keyword check named by its editor ID (keyword=) instead of plugin and form: keywords keep their editor ID in
+    // game, unlike most forms. `keywordForm` is the keyword found once the game data is loaded (ActionRegistry), 0
+    // until then or when no loaded plugin has it.
+    std::string keyword;
+    std::uint32_t keywordForm = 0;
     float equals = 1;
     std::string option;
     std::string compare = "le";
     std::string measure = "current";
     float value = 0, upper = 0;
     // kPreviousAction: the action ids as written, their indices once every declaration is loaded
-    // (runtime/ActionRegistry.cpp), the seconds since it ended (< 0 = any) and how it ended.
+    // (runtime/ActionRegistry.cpp), the seconds since it ended (< 0 = any) and how it ended. kHitReceived: within.
     std::vector<std::string> actionNames;
     std::vector<int> actions;
     float within = -1.0f;

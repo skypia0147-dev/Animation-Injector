@@ -39,6 +39,7 @@ struct Pending {
     bool player = false;
     std::uint32_t key = 0, gamepad = 0;
     GameControl control = GameControl::kNone;
+    RE::BSFixedString event;  // an event transition's event, claimed while its destination waits (ClaimsEvent)
     int flow = -1;
     bool explicitBlend = false;
     ConditionValues::Request conditionRequest;
@@ -159,6 +160,16 @@ void ObserveEvent(RE::ActorHandle actor, const RE::BSFixedString& event) {
                     w.pressed = true;
             }
 }
+bool ClaimsEvent(RE::ActorHandle actor, const RE::BSFixedString& event) {
+    if (!actor || event.empty()) return false;
+    std::lock_guard lock(mutex);
+    for (const auto& e : entries)
+        if (e.actor == actor || (e.paired && e.partner == actor))
+            for (const auto& w : e.windows)
+                if (!w.spec.event.empty() && event == w.event) return true;
+    return std::any_of(pending.begin(), pending.end(),
+        [&](const Pending& p) { return p.actor == actor && !p.event.empty() && event == p.event; });
+}
 InputResult Input(std::uint32_t code, bool gamepad, GameControl control, bool down) {
     std::lock_guard lock(mutex);
     InputResult result;
@@ -207,6 +218,7 @@ void Update(float delta) {
                     item.key = w.spec.key;
                     item.gamepad = w.spec.gamepad;
                     item.control = w.spec.control;
+                    item.event = w.event;
                     item.enter = w.enter;
                     item.airEnter = w.airEnter;
                     item.routes = w.routes;

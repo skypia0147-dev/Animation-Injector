@@ -31,6 +31,7 @@
 #include "runtime/ViewGuard.h"
 #include "runtime/AnnotationCommands.h"
 #include "runtime/ActionHistory.h"
+#include "runtime/HitHistory.h"
 #include <atomic>
 #include <future>
 #include <shared_mutex>
@@ -198,16 +199,6 @@ int ResolveFlow(
                 answer = controller->context.currentState == RE::hkpCharacterStateType::kInAir;
                 break;
             }
-            case Test::kStamina:
-            case Test::kMagicka: {
-                auto* values = subject->AsActorValueOwner();
-                if (!values) return Value::kUnavailable;
-                const auto value = values->GetActorValue(
-                    p.test == Test::kStamina ? RE::ActorValue::kStamina : RE::ActorValue::kMagicka);
-                if (!std::isfinite(value)) return Value::kUnavailable;
-                answer = value >= p.minimum;
-                break;
-            }
             }
             return answer ? Value::kTrue : Value::kFalse;
         });
@@ -269,6 +260,7 @@ struct Declared {
     std::array<std::vector<int>, kGameControlCount> controlActions;
     bool usesControls = false;
     bool usesHistory = false;  // a previousAction check is loaded (runtime/ActionHistory.h)
+    bool usesHits = false;     // a hitReceived check is loaded (runtime/HitHistory.h)
     std::vector<std::vector<std::pair<int, int>>> incomingLinks;
     double loadMs = 0, catalogMs = 0;
 };
@@ -295,6 +287,7 @@ Declared BuildDeclarations() {
     // A previousAction check names actions by id, in any declaration file: their indices, now that all are in.
     for (auto& spec : d.specs)
         for (auto& p : spec.flow.predicates) {
+            d.usesHits |= p.test == ConditionFlowXml::Test::kHitReceived;
             if (p.test != ConditionFlowXml::Test::kPreviousAction) continue;
             d.usesHistory = true;
             p.actions.clear();
@@ -323,12 +316,55 @@ Declared BuildDeclarations() {
 std::future<Declared> g_loading;
 std::atomic_bool g_loaded{false};
 std::once_flag g_publishOnce;
+// Keyword checks named by editor ID find their keywords once both the declarations and the game data are in,
+// whichever comes last; nothing evaluates a check before then. Editor IDs match without case, as the game's do; of
+// two plugins giving the same name, the later one's keyword is used.
+std::mutex g_keywordMutex;
+bool g_dataLoaded = false, g_specsPublished = false;
+void ResolveKeywordNames() {
+    const auto lower = [](std::string_view s) {
+        std::string out(s);
+        for (auto& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return out;
+    };
+    std::unordered_map<std::string, RE::FormID> named;
+    for (const auto& spec : g_specs)
+        for (const auto& p : spec.flow.predicates)
+            if (!p.keyword.empty()) named.try_emplace(lower(p.keyword), 0);
+    if (named.empty()) return;
+    auto* data = RE::TESDataHandler::GetSingleton();
+    if (!data) return;
+    for (auto* keyword : data->GetFormArray<RE::BGSKeyword>()) {
+        if (!keyword || keyword->formEditorID.empty()) continue;
+        const auto found = named.find(lower(keyword->formEditorID.c_str()));
+        if (found == named.end()) continue;
+        if (found->second)
+            logger::warn("[Flow] keyword '{}' is in two plugins ({:08X}, {:08X}); the later one is used",
+                keyword->formEditorID.c_str(), found->second, keyword->GetFormID());
+        found->second = keyword->GetFormID();
+    }
+    for (auto& spec : g_specs)
+        for (auto& p : spec.flow.predicates) {
+            if (p.keyword.empty()) continue;
+            p.keywordForm = named[lower(p.keyword)];
+            if (p.keywordForm)
+                logger::info("[Flow] '{}': keyword '{}' = {:08X}", spec.id, p.keyword, p.keywordForm);
+            else
+                logger::warn(
+                    "[Flow] '{}': no loaded plugin has the keyword '{}'; the check is unavailable", spec.id, p.keyword);
+        }
+}
 void Publish() {
     const auto waitStart = std::chrono::steady_clock::now();
     auto d = g_loading.get();
     const double waited =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - waitStart).count();
     g_specs = std::move(d.specs);
+    {
+        std::lock_guard lock(g_keywordMutex);
+        g_specsPublished = true;
+        if (g_dataLoaded) ResolveKeywordNames();
+    }
     g_clipIndex = std::move(d.clips);
     g_catalog = std::move(d.catalog);
     g_idIndex = std::move(d.ids);
@@ -337,6 +373,7 @@ void Publish() {
     g_controlActions = std::move(d.controlActions);
     g_usesControls = d.usesControls;
     ActionHistory::SetNeeded(d.usesHistory);
+    HitHistory::SetNeeded(d.usesHits);
     g_incomingLinks = std::move(d.incomingLinks);
     EventSuppression::Load(g_specs);
     EventRegistry::Build(d.events, g_specs);
@@ -663,6 +700,11 @@ void Load() {
     });
     logger::info("[Actions] declarations loading in the background");
 }
+void OnDataLoaded() {
+    std::lock_guard lock(g_keywordMutex);
+    g_dataLoaded = true;
+    if (g_specsPublished) ResolveKeywordNames();
+}
 
 ActionRunner* RunnerFor(RE::Actor* a_actor, int a_idx, bool a_create) {
     if (!a_actor || a_idx < 0 || a_idx >= Count()) return nullptr;
@@ -759,6 +801,13 @@ std::vector<CapturedTrigger> CaptureEventTrigger(RE::Actor* actor, const RE::BSF
             return player ? table.triggers[i].player : table.triggers[i].npc;
         }))
         return captured;
+    // A running action's transition on this event takes it, as a key's (10-29: a blockHitStart start restarted a
+    // block hit at once, so its own transition on blockHitStart, with its window, never ran).
+    if (ActionLinks::ClaimsEvent(actor->GetHandle(), event)) {
+        logger::debug("[EventTrigger] actor={:08X} event='{}' left to the running action's transition",
+            actor->GetFormID(), event.c_str());
+        return captured;
+    }
     const auto handle = actor->GetHandle();
     const auto* state = actor->AsActorState();
     const bool sprinting = state && state->IsSprinting();

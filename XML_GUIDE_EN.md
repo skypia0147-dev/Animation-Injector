@@ -87,7 +87,7 @@ The sprint key does a different dodge for each movement direction, only with a w
 <AnimationSet version="6" id="MyDodge">
   <Start control="sprint" cooldown="0.3">
     <Check kind="weaponDrawn"/>
-    <Check kind="stamina" minimum="10"/>
+    <Check kind="resource" option="stamina" measure="current" compare="ge" value="10"/>
     <Row to="DodgeBack"><Check kind="movementDirection" option="back"/></Row>
     <Row to="DodgeLeft"><Check kind="movementDirection" option="left"/></Row>
     <Row to="DodgeRight"><Check kind="movementDirection" option="right"/></Row>
@@ -124,16 +124,17 @@ Common conditions:
 | `kind` | Also takes | Holds when |
 |---|---|---|
 | `weaponDrawn` `combat` `air` `sneaking` `blocking` `sprinting` `swimming` `mounted` `female` `interior` | nothing | in that state |
-| `stamina` `magicka` | `minimum` | at least that much |
 | `resource` | `option="health\|stamina\|magicka"` `measure="current\|percent"` `compare` `value` | the value compares so |
 | `equippedType` | `hand="left\|right"` `type` | that kind in that hand: `sword` `dagger` `axe` `mace` `greatsword` `battleaxe` `warhammer` `bow` `crossbow` `staff` `shield` `spell` `torch` `unarmed` |
 | `attackState` | `state` | the attack stage: `none` `draw` `swing` `hit` `bowDraw` `bowDrawn` `bowReleased` and more |
 | `movementDirection` | `option="forward\|back\|left\|right\|none"` | the movement key direction |
 | `chance` | `value` (0~100) | with that chance |
 | `magicEffect` `perk` `spell` `race` `faction` `keyword` | `plugin="Mod.esp"` `form="hex ID"` | it has that |
+| `keyword` `wornKeyword` `equippedKeyword` | `keyword="WeapTypeClaw"` (editor ID) instead of `plugin` `form`. `equippedKeyword` takes `option="left\|right\|either"` | it has that keyword (itself, the gear it wears, the gear in that hand). Names match without case; when two plugins use one name, the later loaded wins. An unknown name logs a warning and the check is unavailable |
 | `global` | `plugin` `form` `equals` | the global equals the value |
 | `previousAction` | `actions="A,B"` (this file's actions) `within="seconds"` | it did that action just before |
 | `weather` | `option="pleasant\|cloudy\|rainy\|snow"` | that weather |
+| `hitReceived` | `option="normal\|power\|bash\|sneak\|blocked"` `within="seconds"` | the last weapon hit it took was normal (no power attack, no bash), a power attack, a bash, a sneak attack or blocked. Spells do not count. On a block, use it in `<Start event="blockHitStart">` with `within="0.5"` |
 | `gameHour` | `compare` `value` | the game hour compares so |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | there is that much open space that way |
 
@@ -213,6 +214,8 @@ An action two people do together is a `<Pair>`. Its HKX is one paired HKX holdin
 
 - `<FindPartner range angle>`: finds a partner within that distance and angle ahead (default 150 and 60).
 - To start on an event another mod sends, write `<Start event="Name" target="combatTarget" to="…">`.
+- To replace a vanilla action, start on its event and name the same event in `block`, e.g. on a blocked hit `<Start event="blockHitStart" block="blockHitStart" to="…">`. While the action can start, the vanilla graph does not get the event and this action plays (not with a `chance` condition). An NPC is the same when `actor` includes NPCs. `<Action block="…">` blocks while that action plays; a key or control start's `block` is the player's only.
+- While an action plays that has a `<Transition event>` on an event, that event is the transition's and a `<Start>` on the same event does not start (the rule keys follow). Before its window opens a buffered transition keeps it and goes when the window opens; after it closes nothing happens. For example a `<Transition event="blockHitStart" from="0.1">` inside a block hit action for a block hit after block hit.
 - `subject="partner"` on a condition checks the partner. Conditions that are the same whoever is asked (`chance` `gameHour` `weather` `global` `movementDirection` `space` `ground`) do not take it.
 - Pairs play in third person only. Invulnerability, stagger resistance and such in a pair are clip-time features, like `<Do at op="iframeOn">`.
 

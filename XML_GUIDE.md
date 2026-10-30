@@ -87,7 +87,7 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 <AnimationSet version="6" id="MyDodge">
   <Start control="sprint" cooldown="0.3">
     <Check kind="weaponDrawn"/>
-    <Check kind="stamina" minimum="10"/>
+    <Check kind="resource" option="stamina" measure="current" compare="ge" value="10"/>
     <Row to="DodgeBack"><Check kind="movementDirection" option="back"/></Row>
     <Row to="DodgeLeft"><Check kind="movementDirection" option="left"/></Row>
     <Row to="DodgeRight"><Check kind="movementDirection" option="right"/></Row>
@@ -124,16 +124,17 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `kind` | 더 쓰는 속성 | 참일 때 |
 |---|---|---|
 | `weaponDrawn` `combat` `air` `sneaking` `blocking` `sprinting` `swimming` `mounted` `female` `interior` | 없음 | 그 상태일 때 |
-| `stamina` `magicka` | `minimum` | 그 값 이상 |
 | `resource` | `option="health\|stamina\|magicka"` `measure="current\|percent"` `compare` `value` | 값 비교 |
 | `equippedType` | `hand="left\|right"` `type` | 그 손에 그 종류: `sword` `dagger` `axe` `mace` `greatsword` `battleaxe` `warhammer` `bow` `crossbow` `staff` `shield` `spell` `torch` `unarmed` |
 | `attackState` | `state` | 공격 단계: `none` `draw` `swing` `hit` `bowDraw` `bowDrawn` `bowReleased` 등 |
 | `movementDirection` | `option="forward\|back\|left\|right\|none"` | 이동 키 방향 |
 | `chance` | `value`(0~100) | 그 확률로 |
 | `magicEffect` `perk` `spell` `race` `faction` `keyword` | `plugin="모드.esp"` `form="16진수 ID"` | 그것을 가졌을 때 |
+| `keyword` `wornKeyword` `equippedKeyword` | `keyword="WeapTypeClaw"`(Editor ID) — `plugin` `form` 대신. `equippedKeyword`는 `option="left\|right\|either"` | 그 키워드를 가졌을 때(본인·착용한 장비·그 손의 장비). 이름은 대소문자를 가리지 않고, 두 플러그인이 같은 이름을 쓰면 나중에 로드된 쪽. 없는 이름이면 로그에 경고하고 검사 불능 |
 | `global` | `plugin` `form` `equals` | 글로벌 값이 같을 때 |
 | `previousAction` | `actions="A,B"`(이 파일의 동작) `within="초"` | 직전에 그 동작을 했을 때 |
 | `weather` | `option="pleasant\|cloudy\|rainy\|snow"` | 그 날씨 |
+| `hitReceived` | `option="normal\|power\|bash\|sneak\|blocked"` `within="초"` | 마지막으로 맞은 무기 공격이 일반(파워어택·방패 밀치기 아님)·파워어택·방패 밀치기·기습·막음일 때. 마법은 세지 않음. 막았을 때 `<Start event="blockHitStart">`에 `within="0.5"`로 씁니다 |
 | `gameHour` | `compare` `value` | 게임 시각 비교 |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | 그 방향에 그만큼 빈 공간이 있을 때 |
 
@@ -213,6 +214,8 @@ HKX에 넣은 주석 이벤트가 오면 기능을 실행합니다. 이벤트와
 
 - `<FindPartner range angle>`: 앞쪽 몇 거리·몇 도 안의 상대를 찾습니다(기본 150·60).
 - 다른 모드가 보내는 이벤트로 시작하려면 `<Start event="이름" target="combatTarget" to="…">`처럼 씁니다.
+- 바닐라 동작을 바꾸려면 그 이벤트로 시작하고 같은 이벤트를 `block`에 씁니다. 예: 막았을 때 `<Start event="blockHitStart" block="blockHitStart" to="…">`. 시작할 수 있을 때만 바닐라 그래프에 그 이벤트가 가지 않고 이 동작이 재생됩니다(`chance` 조건이 있으면 막지 않음). NPC도 `actor`가 NPC를 포함하면 같습니다. `<Action block="…">`은 그 동작이 재생되는 동안 막고, 키·조작 시작의 `block`은 플레이어에게만 적용됩니다.
+- 재생 중인 동작에 같은 이벤트의 `<Transition event>`가 있으면 그 이벤트는 전환이 받고, 같은 이벤트의 `<Start>`는 시작하지 않습니다(키와 같은 규칙). 구간이 열리기 전이면 선입력으로 기억했다가 열릴 때 전환하고, 닫힌 뒤에는 아무것도 하지 않습니다. 예: 막기 피격 동작 안의 `<Transition event="blockHitStart" from="0.1">`로 연속 막기.
 - 조건에 `subject="partner"`를 붙이면 상대를 검사합니다. 누구를 검사해도 같은 조건(`chance` `gameHour` `weather` `global` `movementDirection` `space` `ground`)에는 붙일 수 없습니다.
 - 페어는 3인칭에서만 재생됩니다. 페어 안의 무적·경직 저항 등은 `<Do at op="iframeOn">`처럼 시각 기능으로 씁니다.
 

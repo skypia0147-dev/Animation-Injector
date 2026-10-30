@@ -1,6 +1,7 @@
 #include "PCH.h"
 #include "runtime/ExtendedConditions.h"
 #include "runtime/ActionHistory.h"
+#include "runtime/HitHistory.h"
 #include "runtime/LyingSide.h"
 #include "runtime/PairedRig.h"
 #include "runtime/PairedSession.h"
@@ -22,6 +23,10 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
     if (!p.plugin.empty()) {
         auto* data = RE::TESDataHandler::GetSingleton();
         form = data ? data->LookupForm(p.form, p.plugin) : nullptr;
+        if (!form) return Value::kUnavailable;
+    } else if (!p.keyword.empty()) {
+        // Named by editor ID: the keyword ActionRegistry found once the game data was in.
+        form = p.keywordForm ? RE::TESForm::LookupByID(p.keywordForm) : nullptr;
         if (!form) return Value::kUnavailable;
     }
     const auto pairReady = [&] {
@@ -47,6 +52,17 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
         logger::debug("[FlowTest] actor={:08X} test=lying chest=({:.2f},{:.2f},{:.2f}) back={} expected={}",
             subject->GetFormID(), chest.x, chest.y, chest.z, back, p.option);
         return boolean(back == (p.option == "back"));
+    }
+    case Test::kHitReceived: {
+        // The last weapon hit the subject received (recorded only while such a check is loaded).
+        HitHistory::Hit hit;
+        float ago = 0.0f;
+        if (!HitHistory::LastOf(subject->GetHandle(), hit, ago)) return Value::kFalse;
+        logger::debug("[FlowTest] actor={:08X} test=hitReceived option={} ago={:.3f} power={} bash={} sneak={} "
+                      "blocked={}",
+            subject->GetFormID(), p.option, ago, hit.power, hit.bash, hit.sneak, hit.blocked);
+        if (p.within >= 0.0f && ago > p.within) return Value::kFalse;
+        return boolean(HitHistory::Matches(hit, p.option));
     }
     case Test::kPreviousAction: {
         // The last of our actions the subject finished (recorded only while such a check is loaded).

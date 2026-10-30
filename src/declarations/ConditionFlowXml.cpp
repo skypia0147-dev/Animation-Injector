@@ -29,8 +29,8 @@ void Shape(XML n, std::initializer_list<std::string_view> names, bool children =
 }
 // One <Check>, with its not (read by the card).
 Predicate ReadPredicate(XML n) {
-    Shape(n, {"kind", "not", "subject", "minimum", "distance", "direction", "maxRise", "maxDrop", "maxSlope", "radius",
-                 "plugin", "form", "equals", "hand", "type", "state", "option", "compare", "measure", "value", "upper",
+    Shape(n, {"kind", "not", "subject", "distance", "direction", "maxRise", "maxDrop", "maxSlope", "radius", "plugin",
+                 "form", "keyword", "equals", "hand", "type", "state", "option", "compare", "measure", "value", "upper",
                  "actions", "within", "ended"});
     Predicate predicate;
     const auto test = Required(n, "kind");
@@ -42,10 +42,6 @@ Predicate ReadPredicate(XML n) {
         predicate.test = Test::kCombat;
     else if (test == "alive")
         predicate.test = Test::kAlive;
-    else if (test == "stamina")
-        predicate.test = Test::kStamina;
-    else if (test == "magicka")
-        predicate.test = Test::kMagicka;
     else if (test == "space")
         predicate.test = Test::kSpace;
     else if (test == "ground")
@@ -134,13 +130,16 @@ Predicate ReadPredicate(XML n) {
         predicate.test = Test::kGameHour;
     else if (test == "weather")
         predicate.test = Test::kWeather;
+    else if (test == "hitReceived")
+        predicate.test = Test::kHitReceived;
     else
         Fail(n, "unsupported condition " + test);
     const auto oneOf = [&](const std::string& s, std::initializer_list<std::string_view> choices) {
         return std::find(choices.begin(), choices.end(), s) != choices.end();
     };
-    const bool option = oneOf(test, {"rig", "actorType", "resource", "actorStatus", "relationship", "equippedKeyword",
-                                        "movementDirection", "lying", "falling", "slope", "actorValue", "weather"});
+    const bool option =
+        oneOf(test, {"rig", "actorType", "resource", "actorStatus", "relationship", "equippedKeyword",
+                        "movementDirection", "lying", "falling", "slope", "actorValue", "weather", "hitReceived"});
     if (option) {
         predicate.option = Required(n, "option");
         bool valid = false;
@@ -166,6 +165,7 @@ Predicate ReadPredicate(XML n) {
                     "HeavyArmor", "LightArmor", "Pickpocket", "Lockpicking", "Sneak", "Alchemy", "Speechcraft",
                     "Alteration", "Conjuration", "Destruction", "Illusion", "Restoration", "Enchanting"});
         if (test == "weather") valid = oneOf(predicate.option, {"pleasant", "cloudy", "rainy", "snow"});
+        if (test == "hitReceived") valid = oneOf(predicate.option, {"normal", "power", "bash", "sneak", "blocked"});
         if (!valid) Fail(n, "invalid option");
     } else if (n.attribute("option"))
         Fail(n, "option is not supported by this condition");
@@ -228,6 +228,14 @@ Predicate ReadPredicate(XML n) {
         }
         predicate.ended = n.attribute("ended").as_string("any");
         if (!oneOf(predicate.ended, {"any", "completed", "cancelled"})) Fail(n, "invalid previousAction ended");
+    } else if (test == "hitReceived") {
+        // The last weapon hit the subject received: how long ago it may be.
+        if (n.attribute("within")) {
+            predicate.within = n.attribute("within").as_float(-1.0f);
+            if (!std::isfinite(predicate.within) || predicate.within < 0 || predicate.within > 600)
+                Fail(n, "hitReceived within is 0~600 seconds");
+        }
+        if (n.attribute("actions") || n.attribute("ended")) Fail(n, "actions/ended require previousAction");
     } else if (n.attribute("actions") || n.attribute("within") || n.attribute("ended"))
         Fail(n, "actions/within/ended require previousAction");
     if (predicate.test == Test::kEquippedType) {
@@ -262,8 +270,18 @@ Predicate ReadPredicate(XML n) {
     if (predicate.subject != Subject::kSelf &&
         oneOf(test, {"chance", "gameHour", "weather", "global", "movementDirection", "space", "ground"}))
         Fail(n, test + " has no subject");
-    if (oneOf(test, {"magicEffect", "global", "race", "faction", "equippedKeyword", "wornKeyword", "keyword", "perk",
-                        "spell", "location"})) {
+    // A keyword check names its keyword by editor ID or by plugin and form, one or the other.
+    const bool keywordTest = oneOf(test, {"equippedKeyword", "wornKeyword", "keyword"});
+    if (n.attribute("keyword") && !keywordTest) Fail(n, "keyword requires a keyword condition");
+    if (keywordTest && n.attribute("keyword")) {
+        if (n.attribute("plugin") || n.attribute("form")) Fail(n, "keyword takes keyword or plugin and form, not both");
+        predicate.keyword = Required(n, "keyword");
+        if (predicate.keyword.size() > 512 ||
+            std::any_of(predicate.keyword.begin(), predicate.keyword.end(),
+                [](char c) { return static_cast<unsigned char>(c) <= ' ' || static_cast<unsigned char>(c) >= 0x7F; }))
+            Fail(n, "invalid keyword editor id");
+    } else if (oneOf(test, {"magicEffect", "global", "race", "faction", "equippedKeyword", "wornKeyword", "keyword",
+                               "perk", "spell", "location"})) {
         predicate.plugin = Required(n, "plugin");
         if (predicate.plugin.find_first_of("/\\\r\n") != std::string::npos) Fail(n, "plugin must be a filename");
         const auto number = Required(n, "form");
@@ -280,14 +298,6 @@ Predicate ReadPredicate(XML n) {
             Fail(n, "invalid global comparison");
     } else if (n.attribute("equals"))
         Fail(n, "equals requires global condition");
-    if (predicate.test == Test::kStamina || predicate.test == Test::kMagicka) {
-        const auto number = Required(n, "minimum");
-        const auto [end, ec] = std::from_chars(number.data(), number.data() + number.size(), predicate.minimum);
-        if (ec != std::errc{} || end != number.data() + number.size() || !std::isfinite(predicate.minimum) ||
-            predicate.minimum < 0 || predicate.minimum > 1000000)
-            Fail(n, "invalid minimum");
-    } else if (n.attribute("minimum"))
-        Fail(n, "minimum requires a resource condition");
     if (predicate.test == Test::kSpace || predicate.test == Test::kGround) {
         const auto number = Required(n, "distance");
         const auto [end, ec] = std::from_chars(number.data(), number.data() + number.size(), predicate.distance);
@@ -345,7 +355,7 @@ const char* MultiValueKey(std::string_view kind) {
     if (kind == "equippedType") return "type";
     if (kind == "attackState") return "state";
     for (std::string_view k :
-        {"movementDirection", "lying", "rig", "actorType", "actorStatus", "relationship", "weather"})
+        {"movementDirection", "lying", "rig", "actorType", "actorStatus", "relationship", "weather", "hitReceived"})
         if (kind == k) return "option";
     return nullptr;
 }

@@ -9,6 +9,10 @@ struct SuppressSpec {
 };
 struct ActionSpec {
     SuppressSpec suppress;
+    struct Trigger {
+        std::string onEvent;
+        bool onEventNpc = true;
+    } trigger;
 };
 struct ActionRunner {
     bool active = false;

@@ -106,8 +106,8 @@ std::string snapshot(const ActionSpec& a) {
     }
     for (int i : tests) {
         const auto& p = a.flow.predicates[i];
-        d.add(static_cast<int>(p.test), static_cast<int>(p.subject), p.minimum, p.distance, p.direction, p.ground.rise,
-            p.ground.drop, p.ground.slope, p.ground.radius, p.plugin, p.form, p.equals);
+        d.add(static_cast<int>(p.test), static_cast<int>(p.subject), p.distance, p.direction, p.ground.rise,
+            p.ground.drop, p.ground.slope, p.ground.radius, p.plugin, p.form, p.keyword, p.equals);
         d.add(p.leftHand, static_cast<int>(p.equippedType), static_cast<int>(p.attackState));
         d.add(p.option, p.compare, p.measure, p.value, p.upper);
     }
@@ -211,8 +211,8 @@ const ActionSpec* find(const Specs& all, const std::string& id) {
 }
 std::string predicate(const ActionSpec&, const ConditionFlowXml::Predicate& p) {
     Digest d;
-    d.add(static_cast<int>(p.test), static_cast<int>(p.subject), p.minimum, p.distance, p.direction, p.ground.rise,
-        p.ground.drop, p.ground.slope, p.ground.radius, p.plugin, p.form, p.equals);
+    d.add(static_cast<int>(p.test), static_cast<int>(p.subject), p.distance, p.direction, p.ground.rise, p.ground.drop,
+        p.ground.slope, p.ground.radius, p.plugin, p.form, p.keyword, p.equals);
     d.add(p.leftHand, static_cast<int>(p.equippedType), static_cast<int>(p.attackState));
     d.add(p.option, p.compare, p.measure, p.value, p.upper);
     return d.out.str();

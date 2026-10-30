@@ -120,6 +120,25 @@ int main() {
         Check(pr.test == ConditionFlowXml::Test::kPreviousAction && pr.actionNames.size() == 3 &&
               pr.actionNames[0] == "A" && pr.within == 1.5f && pr.ended == "cancelled");
     }
+    // 10-29: the last weapon hit received, of a kind, optionally within some seconds; the subject or its partner.
+    for (const char* option : {"normal", "power", "bash", "sneak", "blocked"})
+        Check(Read(std::string("kind='hitReceived' option='") + option + "'"));
+    Check(Read("kind='hitReceived' option='power' within='0.5' subject='partner'"));
+    Check(!Read("kind='hitReceived'"));
+    Check(!Read("kind='hitReceived' option='heavy'"));
+    Check(!Read("kind='hitReceived' option='power' within='700'"));
+    Check(!Read("kind='hitReceived' option='power' ended='completed'"));
+    Check(!Read("kind='hitReceived' option='power' value='1'"));
+    Check(!Read("kind='weather' option='rainy' within='1'"));
+    {
+        pugi::xml_document doc;
+        doc.load_string("<Check kind='hitReceived' option='power,bash' within='0.4'/>");
+        std::vector<ConditionFlowXml::Predicate> read;
+        std::string error;
+        Check(ConditionFlowXml::ReadChecks(doc.document_element(), read, error));
+        Check(read.size() == 2 && read[0].test == ConditionFlowXml::Test::kHitReceived && read[0].option == "power" &&
+              read[1].option == "bash" && read[1].within == 0.4f);
+    }
     Check(Read("kind='falling' option='falling'"));
     Check(Read("kind='falling' option='rising'"));
     Check(Read("kind='falling' option='falling' compare='ge' value='200'"));

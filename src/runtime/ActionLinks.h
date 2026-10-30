@@ -13,6 +13,10 @@ struct InputResult {
     bool claimed = false, taken = false;
 };
 InputResult Input(std::uint32_t code, bool gamepad, GameControl control = GameControl::kNone, bool down = true);
+// An event a running action of `actor` has a transition on (10-29), as Input claims a key: its window open, not open
+// yet or closed, or that transition's destination still waiting. An event start ignores it then: the transition
+// takes the event (a closed window turns it into no new start either). Any thread.
+bool ClaimsEvent(RE::ActorHandle actor, const RE::BSFixedString& event);
 void Update(float delta);
 void ResetOnLoad();
 // Main thread (ViewGuard): drops the actor's link windows and pending transitions, as a partner too.

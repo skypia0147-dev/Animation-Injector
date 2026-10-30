@@ -20,6 +20,7 @@ namespace RE {
 struct BSFixedString {
     std::string value;
     BSFixedString(const char* s = "") : value(s) {}
+    bool empty() const { return value.empty(); }
     bool operator==(const BSFixedString&) const = default;
 };
 struct Actor;
@@ -62,6 +63,7 @@ struct InputResult {
     bool claimed = false, taken = false;
 };
 InputResult Input(std::uint32_t, bool, GameControl = GameControl::kNone, bool = true);
+bool ClaimsEvent(RE::ActorHandle, const RE::BSFixedString&);
 void Update(float);
 void ResetOnLoad();
 bool HasPendingTransition(RE::ActorHandle);

@@ -205,6 +205,26 @@ int main() {
     ActionLinks::End({2}, 0);
     ActionLinks::Update(0.21f);
     assert(runners[2][1].starts == 1 && runners[1][2].starts == 1);  // Roles are independent of player identity.
+    // 10-29: an event a running action has a transition on is that transition's, as a key is (an event start on it
+    // is ignored), for the actor playing it and its pair partner, until the action ends; a key transition claims none.
+    Setup("", false);
+    specs[0].links[0].key = 0;
+    specs[0].links[0].event = "blockHitStart";
+    assert(!ActionLinks::ClaimsEvent({1}, RE::BSFixedString("blockHitStart")));
+    ActionLinks::Begin({1}, 0, false, true);
+    assert(ActionLinks::ClaimsEvent({1}, RE::BSFixedString("blockHitStart")));
+    assert(!ActionLinks::ClaimsEvent({1}, RE::BSFixedString("other")));
+    assert(!ActionLinks::ClaimsEvent({2}, RE::BSFixedString("blockHitStart")));
+    assert(!ActionLinks::ClaimsEvent({1}, RE::BSFixedString("")));
+    ActionLinks::End({1}, 0);
+    assert(!ActionLinks::ClaimsEvent({1}, RE::BSFixedString("blockHitStart")));
+    Setup();
+    specs[0].links[0].event = "PartnerBranch";
+    ActionLinks::Begin({1}, 0, true, true, {2});
+    assert(ActionLinks::ClaimsEvent({2}, RE::BSFixedString("PartnerBranch")));
+    Setup("", false);
+    ActionLinks::Begin({1}, 0, false, true);
+    assert(!ActionLinks::ClaimsEvent({1}, RE::BSFixedString("blockHitStart")));
     // The actual dispatcher bypasses ExitForLink for eligible ordinary nodes.
     Setup("", false);
     specs[0].clips = {0};

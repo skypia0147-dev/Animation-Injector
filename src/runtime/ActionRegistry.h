@@ -12,6 +12,9 @@ namespace Actions {
 // Starts loading the declarations in the background (plugin load). Every function below that reads
 // them waits for that load on its first call.
 void Load();
+// The game data is in (kDataLoaded): keyword checks named by editor ID find their keywords, now or when the
+// declarations are published.
+void OnDataLoaded();
 int Count();
 bool HasChance(int action);
 int SelectStart(

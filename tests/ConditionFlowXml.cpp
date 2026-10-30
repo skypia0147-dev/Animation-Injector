@@ -26,7 +26,9 @@ int main() {
         Check(p.subject == (std::string_view(subject) == "self" ? ConditionFlowXml::Subject::kSelf
                                                                 : ConditionFlowXml::Subject::kPartner));
     }
-    Check(Read("<Check kind='stamina' minimum='10'/>", p) && p.minimum == 10);
+    // At least 10 stamina is a resource check (10-29: the stamina and magicka kinds went, it covers them).
+    Check(Read("<Check kind='resource' option='stamina' measure='current' compare='ge' value='10'/>", p) &&
+          p.test == ConditionFlowXml::Test::kResource && p.option == "stamina" && p.compare == "ge" && p.value == 10);
     Check(Read("<Check kind='combat' subject='partner'/>", p) && p.subject == ConditionFlowXml::Subject::kPartner);
     // Room and ground (0.12.299): measured where the actor stands, from its own heading; no candidate, no partner.
     for (const auto& [name, angle] : std::initializer_list<std::pair<const char*, float>>{{"selfForward", 0.0f},
@@ -43,6 +45,19 @@ int main() {
           p.subject == ConditionFlowXml::Subject::kPartner);
     Check(Read("<Check kind='global' plugin='FH_Grapple.esp' form='803' equals='1'/>", p));
     Check(p.test == ConditionFlowXml::Test::kGlobal && p.equals == 1);
+    // A keyword check names its keyword by editor ID or by plugin and form.
+    Check(Read("<Check kind='equippedKeyword' option='right' keyword='WeapTypeClaw'/>", p));
+    Check(p.test == ConditionFlowXml::Test::kEquippedKeyword && p.keyword == "WeapTypeClaw" && p.plugin.empty() &&
+          p.form == 0 && p.keywordForm == 0);
+    Check(Read("<Check kind='wornKeyword' keyword='ArmorHeavy'/>", p) && p.keyword == "ArmorHeavy");
+    Check(Read("<Check kind='keyword' subject='partner' plugin='Skyrim.esm' form='13794'/>", p) && p.keyword.empty() &&
+          p.form == 0x13794);
+    for (const char* bad : {"<Check kind='equippedKeyword' option='right' keyword='WeapTypeClaw' plugin='Skyrim.esm' "
+                            "form='13794'/>",
+             "<Check kind='keyword' keyword='WeapTypeClaw' form='13794'/>", "<Check kind='keyword' keyword=''/>",
+             "<Check kind='keyword' keyword='Weap Type'/>", "<Check kind='perk' keyword='WeapTypeClaw'/>",
+             "<Check kind='alive' keyword='WeapTypeClaw'/>"})
+        Check(!Read(bad, p));
     for (const char* bad : {"<Check kind='magicEffect' plugin='FH_Grapple.esp' form='FF00082C'/>",
              "<Check kind='magicEffect' plugin='FH_Grapple.esp' form='0'/>",
              "<Check kind='magicEffect' plugin='FH_Grapple.esp' form='82C' equals='1'/>",
@@ -60,7 +75,9 @@ int main() {
              "<Check kind='space' direction='partnerBack' distance='250'/>",
              "<Check kind='space' subject='partner' direction='selfForward' distance='250'/>",
              "<Check kind='space' candidate='A' direction='selfForward' distance='250'/>",
-             "<Check kind='alive' direction='selfForward'/>", "<Check kind='stamina' minimum='NaN'/>",
+             "<Check kind='alive' direction='selfForward'/>", "<Check kind='stamina' minimum='10'/>",
+             "<Check kind='magicka' minimum='10'/>",
+             "<Check kind='resource' option='stamina' measure='current' compare='ge' value='10' minimum='10'/>",
              "<Check kind='alive' subject='other'/>", "<Check kind='alive' minimum='1'/>",
              "<Check kind='unarmedRight'/>", "<Check kind='alive' pass='A'/>"}) {
         Check(!Read(bad, p));
