@@ -2,7 +2,7 @@
 
 **Version 1.0.0** · [한국어](README.md)
 
-An SKSE framework that adds new actions to Skyrim: actions done alone and paired actions done by two people together. Adding or changing actions does not require re-running Nemesis or Pandora. Keep the behavior patches your other mods require.
+An SKSE framework that plays new animations in Skyrim, started by keys, game controls (jump, sprint and more) or animation events. Actions can be done alone or as paired actions by two people together. A condition such as the weapon, the movement direction or the hit just taken picks the action, and during it effects like i-frames, strikes, arrows, ragdoll and QTEs run. Adding or changing actions does not require re-running Nemesis or Pandora (keep the behavior patches your other mods require). Actions are defined in XML files, written by hand or made in the companion editor.
 
 This mod does nothing by itself. Install it together with action mods made for Animation Injector.
 
@@ -35,7 +35,7 @@ Pairs and carrying work in third person only.
 
 ## Making an action mod
 
-Use Animation Injector Editor. Place HKX files as cards and connect them; it writes the XML the game reads and the mod folder.
+Actions are defined in XML files, written by hand or made in Animation Injector Editor. In the editor, place HKX files as cards and connect them; it writes the XML the game reads and the mod folder.
 
 - Use only English letters, digits and common symbols in the file and folder names of HKX paths. The game cannot find files under non-English paths.
 - Restart the game fully after changing an XML or HKX file.
