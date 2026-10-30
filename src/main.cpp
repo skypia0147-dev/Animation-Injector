@@ -32,6 +32,7 @@
 #include "runtime/ActionRegistry.h"
 #include "runtime/MainThread.h"
 #include "runtime/InputSink.h"
+#include "runtime/TdmMovement.h"
 #include "runtime/PairedSession.h"
 #include "runtime/Carry.h"
 #include "runtime/CarryHold.h"
@@ -133,6 +134,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
         switch (msg->type) {
         case SKSE::MessagingInterface::kDataLoaded:
             Actions::OnDataLoaded();
+            TdmMovement::Load();  // Optional: the movement condition follows TDM's directional mode.
             PairedClipBinding::Install();
             LoadingMenu::Register();
             QteMenu::Register();

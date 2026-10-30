@@ -127,7 +127,7 @@ Common conditions:
 | `resource` | `option="health\|stamina\|magicka"` `measure="current\|percent"` `compare` `value` | the value compares so |
 | `equippedType` | `hand="left\|right"` `type` | that kind in that hand: `sword` `dagger` `axe` `mace` `greatsword` `battleaxe` `warhammer` `bow` `crossbow` `staff` `shield` `spell` `torch` `unarmed` |
 | `attackState` | `state` | the attack stage: `none` `draw` `swing` `hit` `bowDraw` `bowDrawn` `bowReleased` and more |
-| `movementDirection` | `option="forward\|back\|left\|right\|none"` | the movement key direction |
+| `movementDirection` | `option="forward\|back\|left\|right\|none"` | the movement key direction. In True Directional Movement's directional mode the character turns toward the input and runs forward, so any held movement key reads `forward` (without TDM or in its other modes, the keys as pressed) |
 | `chance` | `value` (0~100) | with that chance |
 | `magicEffect` `perk` `spell` `race` `faction` `keyword` | `plugin="Mod.esp"` `form="hex ID"` | it has that |
 | `keyword` `wornKeyword` `equippedKeyword` | `keyword="WeapTypeClaw"` (editor ID) instead of `plugin` `form`. `equippedKeyword` takes `option="left\|right\|either"` | it has that keyword (itself, the gear it wears, the gear in that hand). Names match without case; when two plugins use one name, the later loaded wins. An unknown name logs a warning and the check is unavailable |

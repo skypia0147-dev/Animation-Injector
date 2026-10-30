@@ -127,7 +127,7 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `resource` | `option="health\|stamina\|magicka"` `measure="current\|percent"` `compare` `value` | 값 비교 |
 | `equippedType` | `hand="left\|right"` `type` | 그 손에 그 종류: `sword` `dagger` `axe` `mace` `greatsword` `battleaxe` `warhammer` `bow` `crossbow` `staff` `shield` `spell` `torch` `unarmed` |
 | `attackState` | `state` | 공격 단계: `none` `draw` `swing` `hit` `bowDraw` `bowDrawn` `bowReleased` 등 |
-| `movementDirection` | `option="forward\|back\|left\|right\|none"` | 이동 키 방향 |
+| `movementDirection` | `option="forward\|back\|left\|right\|none"` | 이동 키 방향. True Directional Movement의 방향성 모드에서는 캐릭터가 입력 쪽으로 돌아 앞으로 달리므로, 이동 키를 누르고 있으면 항상 `forward`입니다(TDM이 없거나 다른 모드면 키 그대로) |
 | `chance` | `value`(0~100) | 그 확률로 |
 | `magicEffect` `perk` `spell` `race` `faction` `keyword` | `plugin="모드.esp"` `form="16진수 ID"` | 그것을 가졌을 때 |
 | `keyword` `wornKeyword` `equippedKeyword` | `keyword="WeapTypeClaw"`(Editor ID) — `plugin` `form` 대신. `equippedKeyword`는 `option="left\|right\|either"` | 그 키워드를 가졌을 때(본인·착용한 장비·그 손의 장비). 이름은 대소문자를 가리지 않고, 두 플러그인이 같은 이름을 쓰면 나중에 로드된 쪽. 없는 이름이면 로그에 경고하고 검사 불능 |

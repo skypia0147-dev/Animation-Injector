@@ -32,6 +32,7 @@
 #include "runtime/AnnotationCommands.h"
 #include "runtime/ActionHistory.h"
 #include "runtime/HitHistory.h"
+#include "runtime/TdmMovement.h"
 #include <atomic>
 #include <future>
 #include <shared_mutex>
@@ -92,9 +93,14 @@ int ResolveFlow(
     ConditionValues::Request localRequest;
     auto& random = request ? *request : localRequest;
     if (!random.movementCaptured) {
+        // As the character moves: forward in TDM's directional mode (runtime/TdmMovement.h).
         auto* player = RE::PlayerCharacter::GetSingleton();
-        random.CaptureMovement(
-            player && player->Is3DLoaded() ? static_cast<int>(InputSink::Get()->CurrentMoveDir(MoveDir::kNone)) : -1);
+        const int keys =
+            player && player->Is3DLoaded() ? static_cast<int>(InputSink::Get()->CurrentMoveDir(MoveDir::kNone)) : -1;
+        const int moving = TdmMovement::ForCharacter(keys, TdmMovement::Current());
+        if (moving != keys)
+            logger::debug("[TDM] '{}': movement keys {} read as forward (directional mode)", spec.id, keys);
+        random.CaptureMovement(moving);
     }
     const auto result = ConditionFlow::Select(
         spec.flow.nodes, spec.flow.entry, spec.flow.predicates.size(), spec.flowActions.size(), [&](int index) {
