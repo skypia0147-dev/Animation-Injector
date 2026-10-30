@@ -24,7 +24,7 @@ Action mods combine these features into actions.
 |---|---|
 | Starting | Keyboard and gamepad keys, game controls (Jump, Sprint, ...; they follow your key bindings), animation events. For the player and NPCs |
 | Chaining | Move on to the next action on a key press or an event; cancel by moving or by another action |
-| Conditions | Play a different action by weapon, movement direction, being in the air, stamina, equipment, race, the previous action, weather and more |
+| Conditions | Play a different action by weapon, movement direction, being in the air, stamina, equipment, race, the previous action, the hit just taken (normal, power attack, blocked and more), weather and more |
 | During an action | Invulnerability, stagger resistance, turning, stamina and magicka costs, strikes, firing arrows, spells, ragdoll, sounds, camera shake and more |
 | Pairs | Actions two people do together. Both are lined up in position and facing when it starts, and their positions are corrected when it ends |
 | Carrying | Lift someone, carry them and put them down |
@@ -59,7 +59,7 @@ The main entries of `SKSE/Plugins/AnimationInjector.ini`. See the INI's notes fo
 
 - Tested with OAR, AMR, Precision and MCO/BFCO. Not every combination of mods is guaranteed.
 - A pair ends if the partner dies or falls during it.
-- If two action mods add an action with the same name, the one in the file that sorts later by name is used.
+- Action names belong to their XML file (its AnimationSet ID), so two action mods using the same name do not overwrite each other. If two XML files use the same AnimationSet ID, the later file is loaded on its own and the log warns.
 
 ## Reporting a problem
 
