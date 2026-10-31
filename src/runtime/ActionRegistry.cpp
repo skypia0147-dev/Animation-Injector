@@ -89,17 +89,11 @@ namespace {
 // Whether the player's weapon was drawn outside our actions (runtime/TdmMovement.h picks TDM's setting by it):
 // refreshed every frame none of ours plays, kept while one does (the game reports the weapon sheathed in our states).
 std::atomic_bool g_freeWeaponDrawn{false};
-struct Directions {
-    int keys = -1, moving = -1;
-    TdmMovement::Mode mode = TdmMovement::Mode::kAbsent;
-    bool drawn = false;
-};
-// The keys' direction, and the one a movement condition reads: forward in TDM's directional setting.
-Directions ReadDirections(bool refresh = false) {
-    Directions d;
+// The direction a movement condition reads: the keys', forward in TDM's directional setting; -1 unloaded.
+int ReadDirection(bool refresh = false) {
     auto* player = RE::PlayerCharacter::GetSingleton();
-    if (!player || !player->Is3DLoaded()) return d;
-    d.keys = static_cast<int>(InputSink::Get()->CurrentMoveDir(MoveDir::kNone));
+    if (!player || !player->Is3DLoaded()) return -1;
+    const int keys = static_cast<int>(InputSink::Get()->CurrentMoveDir(MoveDir::kNone));
     const bool ours =
         FindRunner(player, [](int, ActionRunner& r) { return r.GetState() != ActionRunner::State::kIdle; });
     if (!ours) {
@@ -111,23 +105,17 @@ Directions ReadDirections(bool refresh = false) {
             if (std::hypot(v.quad.m128_f32[0], v.quad.m128_f32[1]) > 0.5f) ActionRunner::ResetPlayerSteer();
         }
     }
-    d.drawn = g_freeWeaponDrawn.load();
-    d.mode = TdmMovement::Current(d.drawn, refresh);
-    d.moving = TdmMovement::ForCharacter(d.keys, d.mode);
-    return d;
+    return TdmMovement::ForCharacter(keys, TdmMovement::Current(g_freeWeaponDrawn.load(), refresh));
 }
 }
 
-int MoveDirection() { return ReadDirections().moving; }
+int MoveDirection() { return ReadDirection(); }
 
 TdmMovement::Mode TdmMode() { return TdmMovement::Current(g_freeWeaponDrawn.load()); }
 
 void CaptureMovement(ConditionValues::Request& request) {
     if (request.movementCaptured) return;
-    const auto d = ReadDirections(true);
-    logger::debug("[TDM] movement keys {} -> {} (weapon {}, TDM {})", d.keys, d.moving, d.drawn ? "drawn" : "sheathed",
-        static_cast<int>(d.mode));
-    request.CaptureMovement(d.moving);
+    request.CaptureMovement(ReadDirection(true));
 }
 
 void CaptureHeld(ConditionValues::Request& request) {
