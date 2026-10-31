@@ -18,6 +18,12 @@ InputResult Input(std::uint32_t code, bool gamepad, GameControl control = GameCo
 // takes the event (a closed window turns it into no new start either). Any thread.
 bool ClaimsEvent(RE::ActorHandle actor, const RE::BSFixedString& event);
 void Update(float delta);
+// Charge (10-30). The runner of `action` reached its Exit point: an on="end" transition goes instead (true), else
+// false and the runner exits as usual. Main thread.
+bool ReachedEnd(RE::ActorHandle actor, int action);
+// A loop's maxHold passed (an NPC's, or a player still holding): its key counts as released, so an on="release"
+// transition goes (true); false when it has none, and the runner exits. Main thread.
+bool ForceRelease(RE::ActorHandle actor, int action);
 void ResetOnLoad();
 // Main thread (ViewGuard): drops the actor's link windows and pending transitions, as a partner too.
 void Cancel(RE::ActorHandle actor);

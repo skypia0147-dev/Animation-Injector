@@ -33,6 +33,7 @@
 #include "runtime/ActionHistory.h"
 #include "runtime/HitHistory.h"
 #include "runtime/TdmMovement.h"
+#include "runtime/HeldKeys.h"
 #include <atomic>
 #include <future>
 #include <shared_mutex>
@@ -84,6 +85,56 @@ RE::ActorHandle CaptureTarget(RE::Actor* actor, int action, RE::ActorHandle part
     return actor->GetActorRuntimeData().currentCombatTarget;
 }
 
+namespace {
+// Whether the player's weapon was drawn outside our actions (runtime/TdmMovement.h picks TDM's setting by it):
+// refreshed every frame none of ours plays, kept while one does (the game reports the weapon sheathed in our states).
+std::atomic_bool g_freeWeaponDrawn{false};
+struct Directions {
+    int keys = -1, moving = -1;
+    TdmMovement::Mode mode = TdmMovement::Mode::kAbsent;
+    bool drawn = false;
+};
+// The keys' direction, and the one a movement condition reads: forward in TDM's directional setting.
+Directions ReadDirections(bool refresh = false) {
+    Directions d;
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    if (!player || !player->Is3DLoaded()) return d;
+    d.keys = static_cast<int>(InputSink::Get()->CurrentMoveDir(MoveDir::kNone));
+    const bool ours =
+        FindRunner(player, [](int, ActionRunner& r) { return r.GetState() != ActionRunner::State::kIdle; });
+    if (!ours) {
+        g_freeWeaponDrawn = player->AsActorState()->IsWeaponDrawn();
+        // Walking outside our actions brings the engine's motion heading to the body's (runtime/TdmTurn.h).
+        if (auto* cc = player->GetCharController()) {
+            RE::hkVector4 v;
+            cc->GetLinearVelocityImpl(v);
+            if (std::hypot(v.quad.m128_f32[0], v.quad.m128_f32[1]) > 0.5f) ActionRunner::ResetPlayerSteer();
+        }
+    }
+    d.drawn = g_freeWeaponDrawn.load();
+    d.mode = TdmMovement::Current(d.drawn, refresh);
+    d.moving = TdmMovement::ForCharacter(d.keys, d.mode);
+    return d;
+}
+}
+
+int MoveDirection() { return ReadDirections().moving; }
+
+TdmMovement::Mode TdmMode() { return TdmMovement::Current(g_freeWeaponDrawn.load()); }
+
+void CaptureMovement(ConditionValues::Request& request) {
+    if (request.movementCaptured) return;
+    const auto d = ReadDirections(true);
+    logger::debug("[TDM] movement keys {} -> {} (weapon {}, TDM {})", d.keys, d.moving, d.drawn ? "drawn" : "sheathed",
+        static_cast<int>(d.mode));
+    request.CaptureMovement(d.moving);
+}
+
+void CaptureHeld(ConditionValues::Request& request) {
+    if (request.heldCaptured) return;
+    request.CaptureHeld(HeldKeys::Get().ChainHeldTime(InputSink::Get()->Now()));
+}
+
 int ResolveFlow(
     RE::Actor* actor, int action, RE::ActorHandle partner, bool requireAvailable, ConditionValues::Request* request) {
     if (action < 0 || action >= Count() || !actor || !actor->Is3DLoaded()) return -1;
@@ -92,16 +143,8 @@ int ResolveFlow(
     auto other = partner.get();
     ConditionValues::Request localRequest;
     auto& random = request ? *request : localRequest;
-    if (!random.movementCaptured) {
-        // As the character moves: forward in TDM's directional mode (runtime/TdmMovement.h).
-        auto* player = RE::PlayerCharacter::GetSingleton();
-        const int keys =
-            player && player->Is3DLoaded() ? static_cast<int>(InputSink::Get()->CurrentMoveDir(MoveDir::kNone)) : -1;
-        const int moving = TdmMovement::ForCharacter(keys, TdmMovement::Current());
-        if (moving != keys)
-            logger::debug("[TDM] '{}': movement keys {} read as forward (directional mode)", spec.id, keys);
-        random.CaptureMovement(moving);
-    }
+    CaptureMovement(random);
+    CaptureHeld(random);
     const auto result = ConditionFlow::Select(
         spec.flow.nodes, spec.flow.entry, spec.flow.predicates.size(), spec.flowActions.size(), [&](int index) {
             using Value = ConditionFlow::Value;
@@ -672,6 +715,8 @@ struct
         static float ensureTimer = 0.0f;  // NPC 프로젝트 DB 에 이벤트 이름 등록 (외부 진입 이벤트가 오기 전에)
         Qte::Update(a_delta);
         GetUpHandoff::Update(a_delta);
+        InputSink::Get()->Tick(a_delta);                    // press kinds: a wait ends, a late game press goes out
+        HeldKeys::Get().SetMoveDirection(MoveDirection());  // on="move" transitions
         ActionLinks::Update(a_delta);
         Carry::Update(a_delta);
         PairRootRuntime::Sample(a_delta, true);

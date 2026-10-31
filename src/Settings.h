@@ -16,11 +16,16 @@ struct FrameworkSettings {
     // [Preload] (core/AnimationPreloader.h)
     bool preloadOrdinary = true;      // ordinary action animations too, not only paired ones
     int preloadOrdinaryBudgetMB = 0;  // their file size per project; 0 = no limit
+    // [Input] Press kinds of starts (runtime/PressKinds.h), in seconds.
+    float pressHoldTime = 0.2f;
+    float pressDoubleWindow = 0.25f;
     // [Camera]
     float switchZoom = 0.5f;  // third-person zoom of a first-person start before any zoom of the player's was seen
     // [Compatibility]
     int nativePairAlignment = 2;  // 0 off, 1 Animation Injector pairs only, 2 every native paired scene
     int pairEndPosition = 2;  // end position (core/NativePairEnd.h): 0 off, 1 Animation Injector pairs, 2 every pair
+    bool followTdm =
+        true;  // movement conditions and the Rotate-window turn follow TDM's settings (runtime/TdmMovement.h, TdmTurn.h); false: the keys, no turn
     // [Debug]
     bool debug = false;
     bool spaceProbe = false;

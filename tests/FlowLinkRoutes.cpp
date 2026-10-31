@@ -35,10 +35,11 @@ int main() {
     specs[3].paired.enabled = true;
     specs[4].clips.push_back(1);
     ExpandFlowLinkRoutes(specs);
-    if (specs[0].links.size() != 3)
+    // The source itself is a destination too (10-31: a transition into the same action restarts it).
+    if (specs[0].links.size() != 4)
         throw std::runtime_error("deduplication or unsupported destination filtering failed");
-    for (int i = 1; i <= 2; ++i) {
-        const auto& route = specs[0].links[i];
+    for (int i = 0; i <= 2; ++i) {
+        const auto& route = specs[0].links[i + 1];
         if (route.action != "A" + std::to_string(i) || route.flowParent != 0 || route.blend != .7f ||
             route.enterEvent != "Link_Candidate" + std::to_string(i) || route.airEnterEvent != route.enterEvent + "Air")
             throw std::runtime_error("candidate transition binding failed");

@@ -26,8 +26,7 @@ void ExpandFlowLinkRoutes(Specs& actions) {
                 if (std::find(visited.begin(), visited.end(), name) != visited.end()) continue;
                 visited.push_back(name);
                 auto dest = std::find_if(actions.begin(), actions.end(), [&](const auto& s) { return s.id == name; });
-                if (dest == actions.end() || dest->paired.enabled || dest->clips.size() != 1 || dest->id == source.id)
-                    continue;
+                if (dest == actions.end() || dest->paired.enabled || dest->clips.size() != 1) continue;
                 auto route = original;
                 route.action = name;
                 route.flowParent = static_cast<int>(j);

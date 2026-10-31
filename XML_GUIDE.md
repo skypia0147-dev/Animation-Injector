@@ -66,15 +66,20 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | 요소 | 뜻 |
 |---|---|
 | `<Transition to key from until>` | `from`~`until` 사이에 키를 누르면 `to` 동작으로 넘어갑니다. 키 대신 `event="이름"`도 됩니다 |
+| `<Transition to on="end" blend>` | 이 동작이 끝나는 순간(종료 지점) 끝내는 대신 `to`로 넘어갑니다. 동작마다 하나, 키·`from`·`until` 없음. 시각으로 끝나는 동작에서만(`<Exit at="event:…">`과 함께 쓸 수 없음) |
+| `<Transition to on="release" from until>` | 구간 안에서 키가 떼져 있으면 넘어갑니다. "뗀 순간"이 아니라 상태라 구간 전에 뗐으면 구간이 열리는 순간 넘어갑니다. 키는 `key`·`gamepad`·`control`로 정하고, 쓰지 않으면 이 동작을 시작한 키(시작 키나 키 전환의 키, 끝나면·키를 떼면으로 이어지는 동안 유지). NPC는 반복 동작의 `maxHold`에서만 뗀 것으로 봅니다 |
+| `<Transition to on="move" from until buffer>` | **차지 중**(이 동작을 시작한 키를 누르고 있는 동안)에 이동키를 누르면 넘어갑니다. 차지 키를 떼면 이동키는 아무것도 하지 않고 선입력도 버립니다(그때는 `on="release"`). 닷지처럼 키를 짧게 누르는 동작은 이동키+닷지 키를 쓰는 키 전환(`<Transition condition="방향 카드" key=…>`)으로 잇습니다. 키 전환과 같아서 구간 안에서 누르면 바로, 구간이 열리기 전에 누른 것도 선입력으로 받아 열리는 순간 넘어갑니다(`buffer="false"`면 선입력 없음). 구간이 열릴 때 이동키를 누르고 있는 것도 선입력으로 칩니다 — 누르고 있는 동안 한 번씩 이어 재생되고, 떼면 재생 중인 동작은 끝까지 재생하고 끝납니다. 조건 카드는 누르고 있는 방향(이미 뗐으면 누른 방향)으로 고릅니다(이동 방향 조건과 같은 판정, TDM 반영). 키·이벤트 없음, 플레이어만. 같은 동작으로 가면 그 동작을 처음부터 다시 재생하고, 반복 동작이 같은 동작을 고르면 끊지 않고 이어 재생합니다(차지는 그대로 유지). 방향별 대시를 조건 카드(`movementDirection`)로 고르는 데 씁니다 |
 | `<MoveCancel at blend>` | `at` 이후 이동 키를 누르면 동작을 끊고 걷기·달리기로 돌아갑니다. 전투 중인 NPC는 `at`부터 AI에게 이동을 돌려주고, AI가 움직이거나 공격하려 하면 끊습니다(가만히 있으면 끝까지 재생) |
 | `<Vanilla to from until>` | 그 사이에 게임의 원래 행동으로 끊을 수 있습니다. `to`: `Attack` `PowerAttack` `Block` `Bash` `Sprint` `Jump` `Sneak`. `until`은 끝 기준(`end`, `end-0.2`)으로 씁니다 |
 | `<IFrame from until>` | 그 사이 무적 |
 | `<HyperArmor from until>` | 그 사이 경직 저항 |
-| `<Rotate from until>` | 그 사이 방향을 돌릴 수 있음 |
+| `<Rotate from until>` | 그 사이 방향을 돌릴 수 있음. True Directional Movement는 동작 중 이동 입력을 받지 않으므로, 그 사이 이동 키를 누르고 있으면 런타임이 TDM 설정대로 돌립니다(바닐라 스타일: 카메라 정면, 방향성: 카메라 기준 누른 키 방향) |
 | `<Cost stamina magicka at>` | 스태미나·매지카 소모 |
 | `<Exit at blend>` | 언제 끝내고 몇 초 동안 섞을지. `at`을 쓰지 않으면 클립 끝 0.05초 전 |
 
-`<Action>`의 속성: `enter`(들어갈 때 블렌드 초), `air="both"`(땅·공중 모두) / `"only"`(공중에서만, 쓰지 않으면 땅에서만), `view="first"`·`"both"`(1인칭 동작, 1인칭 HKX는 `_1stPerson` 아래 같은 경로).
+`<Action>`의 속성: `enter`(들어갈 때 블렌드 초), `air="both"`(땅·공중 모두) / `"only"`(공중에서만, 쓰지 않으면 땅에서만), `view="first"`·`"both"`(1인칭 동작, 1인칭 HKX는 `_1stPerson` 아래 같은 경로), `loop="true" maxHold="3"`(반복 재생: 클립을 끝없이 이어 재생하고, `maxHold`초(기본 3)가 지나면 키를 뗀 것으로 봅니다(차지를 시작한 키를 아직 누르고 있으면 그 키를 누른 순간부터 세어, 방향별 반복 동작을 오가도 시계는 하나). 키를 떼면 전환이 없으면 그때 끝냅니다. 일반 동작만, `<Exit at>`·끝나면 전환은 쓸 수 없습니다. 무적·회전 같은 기능 시각은 동작 시작부터 세고 `end-…`를 쓸 수 없습니다. 전환의 감지 구간(`from`·`until`)은 **바퀴마다** 다시 열리고 닫히며 `until="end"`·`end-…`는 그 바퀴의 끝입니다. HKX 주석 이벤트는 바퀴마다 다시 옵니다).
+
+**차지 예시**: `<Start control="rightAttack" press="hold" to="ChargeStart"/>` → ChargeStart의 `<Transition to="ChargeLoop" on="end"/>`와 `<Transition condition="ChargeLevel" on="release" from="0.2"/>` → `<Action id="ChargeLoop" loop="true" maxHold="3">`의 `<Transition condition="ChargeLevel" on="release"/>` → 조건 카드 ChargeLevel에서 `<Check kind="heldTime" compare="ge" value="1.5"/>`로 강·약 발동.
 
 **시각 쓰는 법**: `0.4`(클립 시작부터 초), `end`(클립 끝), `end-0.1`(끝 0.1초 전), `event:이름`(HKX 주석 이벤트가 오는 순간).
 
@@ -136,6 +141,7 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `weather` | `option="pleasant\|cloudy\|rainy\|snow"` | 그 날씨 |
 | `hitReceived` | `option="normal\|power\|bash\|sneak\|blocked"` `within="초"` | 마지막으로 맞은 무기 공격이 일반(파워어택·방패 밀치기 아님)·파워어택·방패 밀치기·기습·막음일 때. 마법은 세지 않음. 막았을 때 `<Start event="blockHitStart">`에 `within="0.5"`로 씁니다 |
 | `gameHour` | `compare` `value` | 게임 시각 비교 |
+| `heldTime` | `compare` `value` | 이 동작을 시작한 키를 누르고 있던 시간(초). 키를 떼면 전환이 고를 때는 누른 순간부터 뗀 순간까지. 플레이어만(NPC는 판정 불가) |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | 그 방향에 그만큼 빈 공간이 있을 때 |
 
 `compare`는 `lt`(작다) `le`(작거나 같다) `eq`(같다) `ge`(크거나 같다) `gt`(크다) `range`(`value`~`upper` 사이)입니다.
@@ -248,7 +254,22 @@ HKX에 넣은 주석 이벤트가 오면 기능을 실행합니다. 이벤트와
 - 게임패드(`gamepad`): `A` `B` `X` `Y` `LB` `RB` `LT` `RT` `LS` `RS` `Start` `Back` `Up` `Down` `Left` `Right`
 - 게임 동작(`control`, `key`·`gamepad` 대신): `jump` `sprint` `sneak` `activate` `readyWeapon` `shout` `rightAttack` `leftAttack` `togglePOV` `run` `toggleRun` `autoMove` `wait` `favorites` `tweenMenu`. 플레이어의 키 설정을 따라가고, 그 키로 동작이 시작되면 게임의 원래 행동(실제 점프 등)은 일어나지 않습니다.
 
-키 이름은 물리 키 기준이라 한/영 입력 상태와 상관없습니다. 키를 떼는 순간 시작하려면 `<Start onKeyUp="true">`를 씁니다.
+키 이름은 물리 키 기준이라 한/영 입력 상태와 상관없습니다.
+
+### 누름 종류 (`<Start press>`)
+
+| `press` | 시작하는 순간 |
+|---|---|
+| `down` (기본) | 누르는 순간. 기다리지 않습니다 |
+| `tap` | 짧게 눌렀다 뗀 순간. 같은 키에 `double`도 있으면 두 번째 누름을 기다리는 시간이 지난 뒤 |
+| `double` | 빠르게 두 번 누를 때, 두 번째로 누르는 순간. 두 번째를 길게 눌러도 `double`입니다 |
+| `hold` | 누른 채 기준 시간을 넘기는 순간. 떼기를 기다리지 않습니다 |
+
+- 기준 시간은 `AnimationInjector.ini`의 `[Input]`: `fPressHoldTime`(이보다 짧으면 `tap`, 길면 `hold`, 기본 0.2초), `fPressDoubleWindow`(첫 누름을 뗀 뒤 두 번째 누름까지, 기본 0.25초).
+- 키는 그 키에 걸린 종류만큼만 기다립니다. 누르는 순간 조건(이동 방향 등)을 읽어, 시작할 수 있는 종류가 없으면 기다리지 않습니다. 이동 방향은 처음 누른 순간의 값입니다.
+- 같은 키의 `down` 시작을 먼저 시도하고, 그 동작이 시작되면 그 누름은 거기서 끝납니다.
+- 게임 동작(`control`)의 누름 가운데 어떤 시작도 가져가지 않은 것은 게임에 돌려줍니다. 기다린 만큼 늦게 일어납니다. 예: `<Start control="jump" press="tap" to="Dodge"/>`는 짧게 누르면 닷지, 길게 누르면 원래 점프.
+- 메뉴를 여는 게임 동작(`wait` `favorites` `tweenMenu`)은 누르는 순간 메뉴가 열려 `down`만 씁니다.
 
 ## 검사하기
 

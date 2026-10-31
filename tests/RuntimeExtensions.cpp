@@ -61,7 +61,44 @@ int wmain(int argc, wchar_t** argv) {
         for (const auto& bad : {"event='E' block='A' blockWhen='always'", "event='E' blockWhen='active'"})
             Check(!Valid(Start(bad)), "invalid extension rejected");
         Check(Valid(Start("event='E' block='A'")), "a start's block defaults to while it can start");
+        // Press kinds (10-30, runtime/PressKinds.h): keys and game controls; a menu control only down.
+        for (const auto& ok : {"key='G' press='tap'", "key='G' press='double'", "control='jump' press='hold'",
+                 "control='wait' press='down'", "key='G' press='down'"})
+            Check(Valid(Start(ok)), "press kind accepted");
+        for (const auto& bad : {"key='G' press='long'", "event='E' press='tap'", "control='wait' press='tap'",
+                 "control='favorites' press='hold'", "control='tweenMenu' press='double'", "key='G' onKeyUp='true'"})
+            Check(!Valid(Start(bad)), "press kind rejected");
         Check(!Valid(Wrap("<Suppress events='A'/>")), "no Suppress element (a block is an attribute)");
+        // Charge (10-30): a loop, on="end" and on="release" transitions, the held time condition.
+        const auto two = [](const std::string& first, const std::string& content, const std::string& attrs = "") {
+            return "<AnimationSet version='6' id='Test'><Action id='A' clip='a.hkx' " + attrs + ">" + content +
+                   "</Action><Action id='B' clip='b.hkx' " + first + "/></AnimationSet>";
+        };
+        for (const auto& ok : {two("loop='true'", "<Transition to='B' on='end' blend='0.1'/>"),
+                 two("loop='true' maxHold='5'", "<Transition to='B' on='release' from='0.2'/>"),
+                 two("", "<Transition to='B' on='release' key='G'/><Transition to='B' key='G'/>"),
+                 two("", "<Transition to='B' on='release' until='1'/><Transition to='B' on='release' from='1'/>"),
+                 two("", "<Exit at='end-0.2'/><Transition to='B' on='end'/>"),
+                 two("", "<Transition to='B' on='release'/><HyperArmor/>", "loop='true'"),
+                 two("loop='true'", "<Transition to='B' on='move'/><Transition to='B' on='release'/>", "loop='true'"),
+                 two("", "<Transition to='B' on='move' from='0.3' until='1'/>"),
+                 two("", "<Transition to='B' on='move' from='0.3' until='end-0.1'/>", "loop='true'"),
+                 two("", "<Transition to='B' on='move'/>", "loop='true'")})
+            Check(Valid(ok), "charge accepted");
+        for (const auto& bad :
+            {two("", "<Transition to='B' on='end' key='G'/>"), two("", "<Transition to='B' on='end' from='0.2'/>"),
+                two("", "<Transition to='B' on='end'/><Transition to='B' on='end'/>"),
+                two("", "<Transition to='B' on='end'/>", "loop='true'"),
+                two("", "<Exit at='event:Done'/><Transition to='B' on='end'/>"),
+                two("", "<Transition to='B' on='release' event='E'/>"),
+                two("", "<Transition to='B' on='release' buffer='false'/>"), two("", "<Transition to='B' on='press'/>"),
+                two("", "", "maxHold='3'"), two("", "<Exit at='end-0.1'/>", "loop='true'"),
+                two("", "<Transition to='B' on='move' key='G'/>"), two("", "<Transition to='B' on='move' event='E'/>"),
+                two("", "<HyperArmor until='end-0.2'/>", "loop='true'"), two("", "", "align='camera'")})
+            Check(!Valid(bad), "charge rejected");
+        Check(Valid(Start("key='G'", "<Check kind='heldTime' compare='ge' value='1.5'/>")), "held time accepted");
+        Check(!Valid(Start("key='G'", "<Check kind='heldTime' subject='partner' compare='ge' value='1.5'/>")),
+            "held time has no subject");
         Check(Valid("<AnimationSet version='6' id='Test'><Action id='A' clip='a.hkx' block='A'/></AnimationSet>"),
             "an action keeps its while-playing block");
         // Motion is the HKX's AMR annotations only (0.12.231): there is no motion syntax.

@@ -132,6 +132,8 @@ Predicate ReadPredicate(XML n) {
         predicate.test = Test::kWeather;
     else if (test == "hitReceived")
         predicate.test = Test::kHitReceived;
+    else if (test == "heldTime")
+        predicate.test = Test::kHeldTime;
     else
         Fail(n, "unsupported condition " + test);
     const auto oneOf = [&](const std::string& s, std::initializer_list<std::string_view> choices) {
@@ -171,7 +173,7 @@ Predicate ReadPredicate(XML n) {
         Fail(n, "option is not supported by this condition");
     // A fall's distance is optional: a falling check without a value only asks rising or falling.
     const bool numeric = oneOf(test, {"resource", "distance", "relativeAngle", "heightDifference", "scale",
-                                         "scaleRatio", "height", "slope", "actorValue", "gameHour"}) ||
+                                         "scaleRatio", "height", "slope", "actorValue", "gameHour", "heldTime"}) ||
                          (test == "falling" && n.attribute("value"));
     const auto number = [&](const char* key) {
         const auto s = Required(n, key);
@@ -268,7 +270,7 @@ Predicate ReadPredicate(XML n) {
     // A roll, the world's hour, weather or global, the player's own movement keys, or the room where the actor
     // stands: the same whoever is asked, so a partner subject would only fail when there is no partner.
     if (predicate.subject != Subject::kSelf &&
-        oneOf(test, {"chance", "gameHour", "weather", "global", "movementDirection", "space", "ground"}))
+        oneOf(test, {"chance", "gameHour", "weather", "global", "movementDirection", "space", "ground", "heldTime"}))
         Fail(n, test + " has no subject");
     // A keyword check names its keyword by editor ID or by plugin and form, one or the other.
     const bool keywordTest = oneOf(test, {"equippedKeyword", "wornKeyword", "keyword"});

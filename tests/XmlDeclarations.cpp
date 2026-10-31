@@ -117,8 +117,8 @@ std::string snapshot(const ActionSpec& a) {
         d.strings(w.vanillaMatches);
     }
     auto& t = a.trigger;
-    d.add(t.key, t.gamepad, t.onKeyUp, t.onEvent, t.onEventPlayer, t.onEventNpc, t.combatTarget, t.frontTarget,
-        t.targetRange, t.targetAngle);
+    d.add(t.key, t.gamepad, static_cast<int>(t.press), t.onEvent, t.onEventPlayer, t.onEventNpc, t.combatTarget,
+        t.frontTarget, t.targetRange, t.targetAngle);
     auto& c = a.condition;
     d.add(c.inAir, c.cooldown);
     auto& r = a.recovery;
@@ -251,8 +251,8 @@ std::vector<std::string> of(const Specs& all) {
         const auto& t = a.trigger;
         if (t.key || t.gamepad || !t.onEvent.empty()) {
             Digest d;
-            d.add("start", t.key, t.gamepad, t.onKeyUp, t.onEvent, t.onEventPlayer, t.onEventNpc, t.combatTarget,
-                t.frontTarget, t.targetRange, t.targetAngle);
+            d.add("start", t.key, t.gamepad, static_cast<int>(t.press), t.onEvent, t.onEventPlayer, t.onEventNpc,
+                t.combatTarget, t.frontTarget, t.targetRange, t.targetAngle);
             // The start's block: while it can start (format 4's startable, or both's half).
             d.add(a.condition.cooldown);
             d.strings(a.suppress.when != SuppressSpec::When::kActive ? a.suppress.events : std::vector<std::string>{});

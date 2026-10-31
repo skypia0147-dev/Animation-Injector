@@ -66,15 +66,20 @@ With a weapon drawn, G does slash 1; pressing G again during it leads on to slas
 | Element | Meaning |
 |---|---|
 | `<Transition to key from until>` | A key press between `from` and `until` moves on to the `to` action. `event="Name"` works in place of a key |
+| `<Transition to on="end" blend>` | When this action ends (its Exit point) it moves on to `to` instead of ending. One per action, no key, `from` or `until`. Only in an action that ends at a time (not with `<Exit at="event:…">`) |
+| `<Transition to on="release" from until>` | Moves on while the key is up inside the window. A state, not a moment: let go before the window opens, it moves on as it opens. `key`, `gamepad` or `control` name the key; without them, the key that started this action (a start's or a key transition's, kept through on="end" and on="release"). An NPC counts as releasing only at a loop's `maxHold` |
+| `<Transition to on="move" from until buffer>` | Moves on when a movement key is pressed **in a charge** (while the key that started this action is down). With the charge key up a movement key does nothing and a buffered one is dropped (`on="release"` goes then). An action on a tapped key, such as a dodge, chains by a key transition on its key with a direction card (`<Transition condition="…" key=…>`). As a key transition: a press inside the window goes at once, one made before it opens is buffered and goes as it opens (`buffer="false"`: no buffer). A movement key held as the window opens counts as buffered too — held, the action plays once after another; let go, the one playing plays to its end. The card picks by the direction held (or the one pressed if it is already up), read as a movement condition reads it, TDM included. No key or event, the player only. Into the same action it plays that action again from the start; a loop choosing itself plays on (a charge keeps going). For directional dashes picked by a `movementDirection` card |
 | `<MoveCancel at blend>` | After `at`, a movement key cancels the action back to walking or running. An NPC in combat gets movement back from `at` and leaves as soon as its AI moves or attacks (or plays on if it stays) |
 | `<Vanilla to from until>` | In that window, the game's own action can cancel it. `to`: `Attack` `PowerAttack` `Block` `Bash` `Sprint` `Jump` `Sneak`. `until` is counted from the end (`end`, `end-0.2`) |
 | `<IFrame from until>` | Invulnerable in that window |
 | `<HyperArmor from until>` | Stagger resistance in that window |
-| `<Rotate from until>` | Can turn in that window |
+| `<Rotate from until>` | Can turn in that window. True Directional Movement takes no movement input during an action, so while a movement key is held there the runtime turns the player as TDM's setting would (vanilla style: the camera's front; directional: the keys' way from the camera) |
 | `<Cost stamina magicka at>` | Stamina and magicka cost |
 | `<Exit at blend>` | When it ends and how many seconds it blends. Without `at`, 0.05 seconds before the clip's end |
 
-`<Action>` attributes: `enter` (blend seconds going in), `air="both"` (ground and air) / `"only"` (air only; without it, ground only), `view="first"` or `"both"` (a first-person action; first-person HKX files go at the same path under `_1stPerson`).
+`<Action>` attributes: `enter` (blend seconds going in), `air="both"` (ground and air) / `"only"` (air only; without it, ground only), `view="first"` or `"both"` (a first-person action; first-person HKX files go at the same path under `_1stPerson`), `loop="true" maxHold="3"` (a loop: the clip plays over and over, and after `maxHold` seconds (default 3) the key counts as released, counted from the press of the key that started the charge while it is still down, so directional loops share one clock; without an on="release" transition it ends then. Ordinary actions only; no `<Exit at>` or on="end" transition. Feature times (i-frames, rotation…) count from the action's start and take no `end-…`; transition windows (`from`, `until`) open and close again **every cycle**, `until="end"` and `end-…` meaning that cycle's end; HKX annotation events come again every cycle).
+
+**Charge example**: `<Start control="rightAttack" press="hold" to="ChargeStart"/>` → ChargeStart's `<Transition to="ChargeLoop" on="end"/>` and `<Transition condition="ChargeLevel" on="release" from="0.2"/>` → `<Action id="ChargeLoop" loop="true" maxHold="3">` with `<Transition condition="ChargeLevel" on="release"/>` → the ChargeLevel card picks the strong or weak release by `<Check kind="heldTime" compare="ge" value="1.5"/>`.
 
 **Writing times**: `0.4` (seconds from the clip's start), `end` (the clip's end), `end-0.1` (0.1 seconds before the end), `event:Name` (the moment that HKX annotation event comes).
 
@@ -136,6 +141,7 @@ Common conditions:
 | `weather` | `option="pleasant\|cloudy\|rainy\|snow"` | that weather |
 | `hitReceived` | `option="normal\|power\|bash\|sneak\|blocked"` `within="seconds"` | the last weapon hit it took was normal (no power attack, no bash), a power attack, a bash, a sneak attack or blocked. Spells do not count. On a block, use it in `<Start event="blockHitStart">` with `within="0.5"` |
 | `gameHour` | `compare` `value` | the game hour compares so |
+| `heldTime` | `compare` `value` | how long the key that started this action was held, in seconds; when an on="release" transition chooses, from the press to the release. The player only (unknown for an NPC) |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | there is that much open space that way |
 
 `compare` is `lt` (less) `le` (less or equal) `eq` (equal) `ge` (greater or equal) `gt` (greater) `range` (between `value` and `upper`).
@@ -248,7 +254,22 @@ A QTE shows on screen during an action, and the result leads to a different acti
 - Gamepad (`gamepad`): `A` `B` `X` `Y` `LB` `RB` `LT` `RT` `LS` `RS` `Start` `Back` `Up` `Down` `Left` `Right`
 - Game controls (`control`, in place of `key` and `gamepad`): `jump` `sprint` `sneak` `activate` `readyWeapon` `shout` `rightAttack` `leftAttack` `togglePOV` `run` `toggleRun` `autoMove` `wait` `favorites` `tweenMenu`. They follow the player's key bindings, and when such a press starts an action, the game's own action (the actual jump and so on) does not happen.
 
-Key names are physical keys, whatever the keyboard input language. To start when the key is released, write `<Start onKeyUp="true">`.
+Key names are physical keys, whatever the keyboard input language.
+
+### Press kinds (`<Start press>`)
+
+| `press` | Starts |
+|---|---|
+| `down` (default) | the moment it goes down, without waiting |
+| `tap` | the moment a short press comes up; when the same key also has a `double`, once the wait for a second press is over |
+| `double` | at the second of two quick presses, the moment it goes down. A held second press is still a `double` |
+| `hold` | the moment it has been held past the hold time, without waiting for the release |
+
+- The times are in `AnimationInjector.ini` under `[Input]`: `fPressHoldTime` (shorter is a `tap`, longer a `hold`; default 0.2 s) and `fPressDoubleWindow` (from the first release to the second press; default 0.25 s).
+- A key waits only for the kinds it has. The conditions (movement direction and the rest) are read when it goes down; when no kind could start then, it does not wait. The movement direction is the one of the first press.
+- The same key's `down` starts are tried first; one that starts takes the press whole.
+- A game control's press that no start takes goes back to the game, late by the wait. Example: `<Start control="jump" press="tap" to="Dodge"/>` dodges on a short press and still jumps on a long one.
+- Game controls that open a menu (`wait` `favorites` `tweenMenu`) open it the moment they go down, so they take `down` only.
 
 ## Checking a file
 

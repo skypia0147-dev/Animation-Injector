@@ -10,6 +10,7 @@
 #include "core/MotionHook.h"
 #include "Settings.h"
 #include "runtime/InputSink.h"
+#include "runtime/TdmTurn.h"
 #include "core/EventMaps.h"
 #include "runtime/PairedSession.h"
 #include "runtime/Carry.h"
@@ -26,6 +27,10 @@
 #include "runtime/ViewGuard.h"
 
 namespace AnimationInjector {
+namespace {
+// The player's steer for root motion (runtime/TdmTurn.h): the body's heading minus the engine's motion heading.
+std::atomic<float> g_playerSteer{0.0f};
+}
 
 namespace {
 // 매 프레임 문자열 생성 금지 — 이벤트 이름은 액션·변형마다 한 번만 해싱
@@ -117,6 +122,30 @@ bool ActionRunner::RequestLinked(ActionRunner& source, const RE::BSFixedString& 
     const bool accepted = RequestImpl(&ground, &air);
     if (!accepted) AbortLinkedRequest();
     return accepted;
+}
+
+bool ActionRunner::RestartLinked(const RE::BSFixedString& ground, const RE::BSFixedString& air) {
+    auto* p = Owner();
+    if (_state != State::kActive || _exitSent || _linkSource >= 0 || _linkTarget >= 0 || Spec().paired.enabled ||
+        Spec().clips.size() != 1 || !p || !p->Is3DLoaded() || p->IsDead())
+        return false;
+    // The engine restarts the clip without deactivating or activating it (in-game 10-31): the run starts over here.
+    if (!p->NotifyAnimationGraph(_startedInAir ? air : ground)) {
+        logger::debug("[{}] SelfLink: notify refused; plays on", Spec().id);
+        return false;
+    }
+    RestoreSlots();
+    _elapsed = 0.0f;
+    _carryReleaseDue = false;
+    _endReached = _releaseForced = false;
+    _seenTags.clear();
+    ResetPlaybackFlags();
+    _clipTime = -1.0f;
+    _clipSpeed.store(0.0f);
+    ActionLinks::Begin(_owner, _idx, false, _isPlayer);
+    SetupPlayback();
+    logger::debug("[{}] SelfLink: restarted event='{}'", Spec().id, (_startedInAir ? air : ground).c_str());
+    return true;
 }
 
 void ActionRunner::AbortLinkedRequest() {
@@ -227,6 +256,7 @@ bool ActionRunner::RequestImpl(const RE::BSFixedString* ground, const RE::BSFixe
     _elapsed = 0.0f;
     _carryReleaseDue = false;
     _exitSent = false;
+    _endReached = _releaseForced = false;
     _clipDuration = 0.0f;
     _exitingTime = 0.0f;
     _seenTags.clear();
@@ -483,6 +513,7 @@ void ActionRunner::Adopt(int a_variant) {
     _elapsed = 0.0f;
     _carryReleaseDue = false;
     _exitSent = false;
+    _endReached = _releaseForced = false;
     _clipDuration = 0.0f;
     _exitingTime = 0.0f;
     _seenTags.clear();
@@ -661,7 +692,8 @@ void ActionRunner::RestoreSlots() {
 void ActionRunner::SlotUpdate() {
     if (_state != State::kActive) return;
     const auto& spec = Spec();
-    const float dur = _clipDuration > 0.05f ? _clipDuration : spec.safetyDuration;
+    // A loop has no end: "until end" stays on (charge, 10-30).
+    const float dur = spec.loop.enabled ? 1.0e9f : _clipDuration > 0.05f ? _clipDuration : spec.safetyDuration;
     const SlotWindow* wins[3] = {&spec.rotate, &spec.iframe, &spec.hyperArmor};
     for (int k = 0; k < 3; ++k) {
         const auto& w = *wins[k];
@@ -882,6 +914,8 @@ void ActionRunner::OnClipActivated(int a_variant, float a_duration, bool a_moves
     }
     _motionTraceNext = 0;
     _motionTraceCount = 0;
+    _clipTime = -1.0f;
+    _clipSpeed.store(0.0f);
     ActionLinks::Begin(_owner, _idx, false, _isPlayer);
     if (a_duration > 0.05f) {
         _clipDuration = a_duration;
@@ -912,6 +946,8 @@ void ActionRunner::OnClipActivated(int a_variant, float a_duration, bool a_moves
 }
 
 float ActionRunner::SafetyTime() const noexcept {
+    // A loop ends by its maxHold (charge, 10-30); the safety exit is only a backstop past it.
+    if (Spec().loop.enabled) return Spec().loop.maxHold + 1.0f;
     return _clipDuration > 0.05f ? _clipDuration + 0.15f : Spec().safetyDuration;
 }
 
@@ -1160,7 +1196,9 @@ void ActionRunner::Update(float a_delta) {
     if (_state == State::kIdle) return;
     _elapsed += a_delta;
     if (_state == State::kActive) {
-        ActionLinks::ObserveTime(_owner, _idx, _elapsed, _clipDuration);
+        // A loop's transition windows count each cycle's own time (moving charge, 10-30).
+        const bool cycles = Spec().loop.enabled && _clipDuration > 0.05f;
+        ActionLinks::ObserveTime(_owner, _idx, cycles ? std::fmod(_elapsed, _clipDuration) : _elapsed, _clipDuration);
         Qte::ObserveTime(_owner, _idx, _elapsed);
     }
     if (_startedInAir && FrameworkSettings::Get().debug) {
@@ -1174,6 +1212,11 @@ void ActionRunner::Update(float a_delta) {
     RecoveryClock();
     UpdateNativeCancel();
     SlotUpdate();
+    if (_isPlayer && _state == State::kActive) {
+        // A turning frame would mix two steers: measure only while the turn holds still.
+        const bool turned = _rotateOn && TurnLikeTdm(a_delta);
+        if (!turned && Actions::TdmMode() != TdmMovement::Mode::kAbsent) MeasureSteer();
+    }
     if (_state == State::kExiting) {
         _exitingTime += a_delta;
         if (_exitingTime > _exitTimeout) {
@@ -1182,12 +1225,58 @@ void ActionRunner::Update(float a_delta) {
             return;
         }
     }
+    // Charge (10-30): an on="end" transition goes at the Exit point instead of the exit; a loop's maxHold counts as
+    // its key's release. Neither going (no such transition): the action exits as it would have.
+    if (_state == State::kActive && !_exitSent) {
+        const auto& spec = Spec();
+        if (spec.endLinkAt >= 0.0f && !_endReached && _clipDuration > 0.05f &&
+            _elapsed >= _clipDuration - spec.endLinkAt) {
+            _endReached = true;
+            if (!ActionLinks::ReachedEnd(_owner, _idx)) ExitForLink();
+        }
+        // maxHold counts from the press of the key that started the charge while it is down (a moving charge keeps
+        // one clock from loop to loop), else from this action's start.
+        const auto& held = HeldKeys::Get();
+        const float holding = _isPlayer && held.ChainHeld() ? held.ChainHeldTime(InputSink::Get()->Now()) : _elapsed;
+        if (spec.loop.enabled && !_releaseForced && holding >= spec.loop.maxHold) {
+            _releaseForced = true;
+            logger::debug("[{}] loop maxHold {:.2f}s: released", spec.id, spec.loop.maxHold);
+            if (!ActionLinks::ForceRelease(_owner, _idx)) ExitForLink();
+        }
+    }
     if (_state == State::kActive && !_exitSent && _elapsed >= SafetyTime()) {
         PrepareExit(Spec().exitBlend);
         if (auto* p = Owner()) p->NotifyAnimationGraph(Fixed(Spec().events.exit));
         if (_state == State::kExiting) SetAnimationDriven(false);
         logger::debug("[{}] 보험 Exit at {:.2f}s", Spec().id, _elapsed);
     }
+}
+
+// TDM turns nobody while our action drives the player (runtime/TdmTurn.h): in the action's Rotate window the player
+// turns as TDM's setting would, while a movement key is held; the camera keeps looking where it did, as TDM keeps it.
+bool ActionRunner::TurnLikeTdm(float a_delta) {
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    auto* camera = RE::PlayerCamera::GetSingleton();
+    if (!player || !player->Is3DLoaded() || !camera || !camera->currentState ||
+        camera->currentState->id != RE::CameraStates::kThirdPerson)
+        return false;
+    // TDM's free camera: without it the camera is the body's, and the game turns the body by the mouse.
+    auto* third = static_cast<RE::ThirdPersonState*>(camera->currentState.get());
+    if (!third->freeRotationEnabled || !std::isfinite(third->freeRotation.x)) return false;
+    float x = 0.0f, y = 0.0f;
+    if (!InputSink::Get()->MoveVector(x, y)) return false;
+    const float body = player->GetAngleZ(), cameraYaw = body + third->freeRotation.x;
+    const float target = TdmTurn::Target(Actions::TdmMode(), cameraYaw, x, y);
+    if (!std::isfinite(target)) return false;
+    const float turn = TdmTurn::Step(TdmTurn::Wrap(target - body), a_delta);
+    if (std::fabs(turn) < 1e-5f) return false;
+    // As TDM turns the player (DirectionalMovementHandler::UpdateRotation): the heading, then the free rotation by
+    // the same amount.
+    player->SetHeading(body + turn);
+    // The engine's motion heading stays: the steer turns as the body does.
+    g_playerSteer.store(TdmTurn::Wrap(g_playerSteer.load() + turn));
+    third->freeRotation.x = TdmTurn::Wrap(third->freeRotation.x - turn);
+    return true;
 }
 
 void ActionRunner::OnAnimEvent(const RE::BSFixedString& a_tag) {
@@ -1215,6 +1304,50 @@ void ActionRunner::OnAnimEvent(const RE::BSFixedString& a_tag) {
         SetAnimationDriven(false);
     }
 }
+
+void ActionRunner::SteerMotion(float a_time, RE::NiPoint3& a_translation) {
+    if (!_isPlayer) return;
+    const float steer = g_playerSteer.load();
+    // The clip's way since the last later sample (the engine may ask a time twice; a loop wraps back).
+    if (std::fabs(a_time - _clipTime) > 0.004f) {
+        const float dt = a_time - _clipTime;
+        if (_clipTime >= 0.0f && dt > 0.0f && dt < 0.2f) {
+            float x = a_translation.x - _clipX, y = a_translation.y - _clipY;
+            const float speed = std::hypot(x, y) / dt;
+            TdmTurn::Steer(steer, x, y);
+            _clipYaw.store(std::atan2(x, y));
+            _clipSpeed.store(speed);
+            _clipSamples.fetch_add(1);
+        }
+        _clipTime = a_time;
+        _clipX = a_translation.x;
+        _clipY = a_translation.y;
+    }
+    if (steer != 0.0f) TdmTurn::Steer(steer, a_translation.x, a_translation.y);
+}
+
+// The engine's motion heading from what it moved for the clip's last sample.
+void ActionRunner::MeasureSteer() {
+    const unsigned samples = _clipSamples.load();
+    if (samples == _clipSamplesMeasured) return;
+    _clipSamplesMeasured = samples;
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    auto* cc = player ? player->GetCharController() : nullptr;
+    if (!cc) return;
+    RE::hkVector4 v;
+    cc->GetLinearVelocityImpl(v);
+    const auto& q = v.quad.m128_f32;
+    const float inverse = RE::bhkWorld::GetWorldScaleInverse();
+    const float speed = std::hypot(q[0], q[1]) * inverse;
+    if (!TdmTurn::Comparable(speed, _clipSpeed.load())) return;
+    const float steer = TdmTurn::SteerFor(player->GetAngleZ(), std::atan2(q[0], q[1]), _clipYaw.load());
+    if (std::fabs(TdmTurn::Wrap(steer - g_playerSteer.load())) > 0.05f)
+        logger::debug("[TdmTurn] steer {:.3f} -> {:.3f} (heading {:.3f}, moving {:.3f})", g_playerSteer.load(), steer,
+            player->GetAngleZ(), std::atan2(q[0], q[1]));
+    g_playerSteer.store(steer);
+}
+
+void ActionRunner::ResetPlayerSteer() { g_playerSteer.store(0.0f); }
 
 void ActionRunner::TraceMotionOutput(float time, const RE::NiPoint3& translation) {
     if (!FrameworkSettings::Get().debug || _state != State::kActive || _motionTraceCount >= 32 ||

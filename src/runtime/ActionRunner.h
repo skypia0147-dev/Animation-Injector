@@ -46,6 +46,9 @@ public:
     bool ExitForLink();
     // Direct ordinary handoff; source slots transfer only on destination activation.
     bool RequestLinked(ActionRunner& source, const RE::BSFixedString& groundEvent, const RE::BSFixedString& airEvent);
+    // A transition into this same action (10-31): the graph's self-transition restarts the clip with the link's blend
+    // and the run starts over (its timed features, cost and windows) without leaving the action. Main thread.
+    bool RestartLinked(const RE::BSFixedString& groundEvent, const RE::BSFixedString& airEvent);
 
     // Validate destination conditions before interrupting the source action.
     bool CanRequestLink() const { return Conditions(Owner(), true); }
@@ -66,6 +69,11 @@ public:
     // 이동 입력 변화 (InputSink): kind 0 = 이동키/스틱, 1 = 스프린트, 2 = 점프. Recovery 가 열려 있으면 이동으로 나간다
     void OnMoveInput(int a_kind);
     void TraceMotionOutput(float time, const RE::NiPoint3& translation);
+    // The player's clip root motion turned to move along the heading (runtime/TdmTurn.h), and the clip's way it was
+    // given noted for the measurement. Called on animation threads (core/MotionHook).
+    void SteerMotion(float a_time, RE::NiPoint3& a_translation);
+    // Outside our actions, walking brings the engine's motion heading to the body's (runtime/ActionRegistry).
+    static void ResetPlayerSteer();
 
     bool IFrameActive() const noexcept { return _iframeOn; }
     bool HyperArmorActive() const noexcept { return _hyperOn; }
@@ -138,6 +146,15 @@ private:
     bool _idleSettled = false;  // an idle update ran since the runner last left idle (Update skips then)
     bool _exitSent = false;
     float _clipDuration = 0.0f;
+    bool _endReached = false, _releaseForced = false;  // charge (10-30): ReachedEnd / ForceRelease asked this run
+    // In its Rotate window the player turns as TDM's setting would (runtime/TdmTurn.h); true when it turned.
+    bool TurnLikeTdm(float a_delta);
+    void MeasureSteer();
+    // The clip translation the hook last saw (animation thread), and the way and speed it gave (read in Update).
+    float _clipTime = -1.0f, _clipX = 0.0f, _clipY = 0.0f;
+    std::atomic<float> _clipYaw{0.0f}, _clipSpeed{0.0f};
+    std::atomic<unsigned> _clipSamples{0};
+    unsigned _clipSamplesMeasured = 0;
     float _exitingTime = 0.0f;    // kExiting 경과 (클립 비활성이 안 오면 강제 Finish)
     bool _animDrivenSet = false;  // Retain ownership through the exit blend for the final release.
     bool _startedInAir = false;

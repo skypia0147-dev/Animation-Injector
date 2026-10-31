@@ -134,7 +134,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
         switch (msg->type) {
         case SKSE::MessagingInterface::kDataLoaded:
             Actions::OnDataLoaded();
-            TdmMovement::Load();  // Optional: the movement condition follows TDM's directional mode.
+            TdmMovement::Load();  // Optional: movement conditions and the Rotate-window turn follow TDM's settings.
             PairedClipBinding::Install();
             LoadingMenu::Register();
             QteMenu::Register();
@@ -161,6 +161,8 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
             AnimData::TryRegister("kDataLoaded");
             // Observe release input before the ordinary sink can start a carry.
             Carry::Register();
+            InputSink::Get()->SetPressTiming(
+                {FrameworkSettings::Get().pressHoldTime, FrameworkSettings::Get().pressDoubleWindow});
             InputSink::Register();
             HitDispatch::Register();  // Gameplay hit dispatch and optional diagnostics
             break;

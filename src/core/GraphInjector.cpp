@@ -1353,6 +1353,7 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
         const std::string* name;  // the enter event, for the shared entry
         float blend;              // seconds the shared entry blends in
         bool link;
+        bool self = false;  // a transition of this action into itself: only inside, as a self-transition
     };
     std::vector<PendingEntry> entries;
     std::vector<StateInfoLayout*> states;
@@ -1375,6 +1376,7 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
         }
         auto* clip = MakeClip(c.clipName.c_str(), c.file.c_str(), binding[i], MakeTriggerArray(triggers),
             nativeIdle->generator, FrameworkSettings::Get().convertAnnotations);
+        if (spec.loop.enabled) clip->mode = RE::hkbClipGenerator::kModeLooping;  // charge (10-30): plays on
         states.push_back(MakeState(("AI_" + spec.id + "_State" + c.tag).c_str(), base + i, clip, transitions));
         addExit(exitEvent, base + i, exitEffect);
         const auto& recovery = spec.recovery;
@@ -1393,13 +1395,14 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
     if (n == 1)
         for (const auto& [from, linkIndex] : Actions::IncomingLinks(action)) {
             const auto& src = Actions::Spec(from);
-            if (src.paired.enabled || src.clips.size() != 1 || from == action) continue;
+            if (src.paired.enabled || src.clips.size() != 1) continue;
             const auto& link = src.links[linkIndex];
             const int event = InjectEvent(graph, link.enterEvent.c_str());
             const float seconds = link.blend >= 0 ? link.blend : spec.enterBlend >= 0 ? spec.enterBlend : 0.0f;
             auto* eff = MakeBlendEffect(entry.transition, (link.enterEvent + "_FullBody").c_str(), seconds, 1);
             if (event >= 0 && eff) {
                 addEntry(event, base, eff, link.enterEvent, seconds, true);
+                entries.back().self = from == action;
                 logger::debug(
                     "[FullBodyLink] '{}' -> '{}' event='{}' innerState={}", src.id, spec.id, link.enterEvent, base);
             }
@@ -1419,25 +1422,31 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
         if (t.eventId == body.idleStop) body.exit = t;
     }
     for (const auto& pending : entries) {
-        if (g_currentFirstPerson) {
-            // Outside FullBody in first person, the original event (the hook forwards it) enters the parent
-            // and selects this nested destination, as every view did before 0.12.209.
-            auto t = entry;
-            t.eventId = pending.event;
-            t.toNestedStateId = pending.state;
-            t.transition = pending.effect;
-            AddRef(t.transition);
-            AddRef(t.condition);
-            wild->transitions.push_back(t);
-        } else
-            // Outside FullBody, the shared entry (the NotifyAnimationGraph hook sends it for this event)
-            // enters the parent and selects this nested destination.
-            FullBodyEntry::Register(pending.name->c_str(), pending.state, pending.blend, pending.link);
+        // A transition of an action into itself is only ever sent inside FullBody: no way in from outside.
+        if (!pending.self) {
+            if (g_currentFirstPerson) {
+                // Outside FullBody in first person, the original event (the hook forwards it) enters the parent
+                // and selects this nested destination, as every view did before 0.12.209.
+                auto t = entry;
+                t.eventId = pending.event;
+                t.toNestedStateId = pending.state;
+                t.transition = pending.effect;
+                AddRef(t.transition);
+                AddRef(t.condition);
+                wild->transitions.push_back(t);
+            } else
+                // Outside FullBody, the shared entry (the NotifyAnimationGraph hook sends it for this event)
+                // enters the parent and selects this nested destination.
+                FullBodyEntry::Register(pending.name->c_str(), pending.state, pending.blend, pending.link);
+        }
         // Inside FullBody, change children directly. Re-entering the active
-        // parent is a self-transition and may be rejected by the native graph.
+        // parent is a self-transition and may be rejected by the native graph. An action's transition into itself
+        // restarts its clip, the effect blending from the pose it leaves (10-31).
         TransitionInfo inner{};
         FillTransition(inner, pending.event, pending.state, pending.effect,
-            static_cast<std::int16_t>(TransitionInfo::kIsLocalWildcard | TransitionInfo::kDisableCondition),
+            static_cast<std::int16_t>(
+                TransitionInfo::kIsLocalWildcard | TransitionInfo::kDisableCondition |
+                (pending.self ? TransitionInfo::kAllowSelfTransitionByTransitionFromAnyState : 0)),
             entry.priority);
         innerWild->transitions.push_back(inner);
     }
@@ -1625,6 +1634,7 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
         }
         auto* clip =
             MakeClip(c.clipName.c_str(), c.file.c_str(), bind[i], MakeTriggerArray(trig), tmpl, fw.convertAnnotations);
+        if (spec.loop.enabled) clip->mode = RE::hkbClipGenerator::kModeLooping;  // charge (10-30): plays on
 
         // 전이 배열: [Exit] + [Recovery] + [상속 캔슬 아웃]
         const auto& recovery = spec.recovery;
@@ -1696,7 +1706,7 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
     if (!spec.paired.enabled && n == 1)
         for (const auto& [source, linkIndex] : Actions::IncomingLinks(a_actionIdx)) {
             const auto& from = Actions::Spec(source);
-            if (from.paired.enabled || from.clips.size() != 1 || from.id == spec.id) continue;
+            if (from.paired.enabled || from.clips.size() != 1) continue;
             const auto& link = from.links[linkIndex];
             const auto& name = a_airRoute ? link.airEnterEvent : link.enterEvent;
             const int event = InjectEvent(a_graph, name.c_str());
@@ -1706,9 +1716,13 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
                 effect = MakeBlendEffect(eff.enter, name.c_str(), link.blend, 1);
                 if (!effect) continue;
             }
+            // A transition into itself restarts the clip (10-31).
             TransitionInfo edge{};
             FillTransition(edge, event, base, effect,
-                static_cast<std::int16_t>(TransitionInfo::kIsLocalWildcard | TransitionInfo::kDisableCondition), prio);
+                static_cast<std::int16_t>(
+                    TransitionInfo::kIsLocalWildcard | TransitionInfo::kDisableCondition |
+                    (source == a_actionIdx ? TransitionInfo::kAllowSelfTransitionByTransitionFromAnyState : 0)),
+                prio);
             wild->transitions.push_back(edge);
         }
     res.injected = true;

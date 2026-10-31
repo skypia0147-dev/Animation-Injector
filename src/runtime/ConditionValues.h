@@ -32,6 +32,15 @@ struct Request {
         movementDirection = direction;
         movementCaptured = true;
     }
+    // Charge (10-30): how long the key that started the player's action was held (HeldKeys::ChainHeldTime), once
+    // per request; <0 without one (an NPC, an event start).
+    float heldTime = -1.0f;
+    bool heldCaptured = false;
+    void CaptureHeld(float seconds) {
+        if (heldCaptured) return;
+        heldTime = seconds;
+        heldCaptured = true;
+    }
     // An event trigger's actor as it was when the event arrived: the engine sends SprintStop
     // while the sprint flag is still set and clears it before the queued request is resolved.
     bool sprinting = false;

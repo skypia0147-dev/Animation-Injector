@@ -18,6 +18,13 @@ struct ActionLinkSpec {
     float openAt = 0, closeAt = -1;
     bool buffered = true;
     bool closeRelativeToEnd = false;
+    // Charge (10-30): on="end" goes at the source's end (its Exit point) instead of exiting; on="release" goes once
+    // its key is up while the window is open (key, gamepad, control; none: the key that started the action).
+    bool onEnd = false, onRelease = false;
+    // on="move" (10-31): goes on a movement key's press as a key transition on its key's, buffered too; a movement
+    // key held as the window opens counts as buffered. In a charge only (the key that started the action still
+    // down), the player only.
+    bool onMove = false;
 };
 struct PairFeatureSpec {
     bool enabled = false;

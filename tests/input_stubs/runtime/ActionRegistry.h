@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include "runtime/ActionRunner.h"
+#include "runtime/ConditionValues.h"
 namespace AnimationInjector::Actions {
 inline ActionRunner runner;
 inline int Count() { return 1; }
@@ -9,8 +10,19 @@ inline ActionRunner& Runner(int) { return runner; }
 inline ActionRunner* RunnerFor(RE::PlayerCharacter*, int, bool) { return &runner; }
 inline const ActionSpec& Spec(int) { return runner.spec; }
 inline int CaptureTarget(RE::PlayerCharacter*, int) { return 0; }
-inline int SelectStart(RE::PlayerCharacter*, int a, int = 0) { return a; }
-inline int SelectPairedStart(RE::PlayerCharacter*, int a, int) { return a; }
+// A start whose conditions say no: `startable` false (the runner's `accept` says whether a request starts it).
+inline bool startable = true;
+inline int SelectStart(RE::PlayerCharacter*, int a, int = 0, ConditionValues::Request* = nullptr) {
+    return startable ? a : -1;
+}
+inline int SelectPairedStart(RE::PlayerCharacter*, int a, int, ConditionValues::Request* = nullptr) {
+    return startable ? a : -1;
+}
+inline int captures = 0;  // movement snapshots taken by presses
+inline void CaptureMovement(ConditionValues::Request& request) {
+    ++captures;
+    request.CaptureMovement(0);
+}
 // The one stub action, indexed like the registry does from its trigger.
 inline std::vector<int> keyed;
 inline const std::vector<int>& ActionsForKey(std::uint32_t code) {

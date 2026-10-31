@@ -65,7 +65,10 @@ enum class Test {
     kWeather,
     // 10-29. The last weapon hit the subject received (runtime/HitHistory.h): option normal|power|bash|sneak|blocked,
     // within (seconds since, absent = any time).
-    kHitReceived
+    kHitReceived,
+    // 10-30, charge. How long the key that started the player's action was held, in seconds (compare, value):
+    // ConditionValues::Request::heldTime. The player only, like movementDirection.
+    kHeldTime
 };
 enum class EquippedType {
     kBow,

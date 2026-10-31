@@ -2,6 +2,7 @@
 #include "PCH.h"
 #include "runtime/QteSpec.h"
 #include "runtime/GameControls.h"
+#include "runtime/PressKinds.h"
 #include <optional>
 #include "runtime/PairedRig.h"
 #include "runtime/CarrySpec.h"
@@ -68,12 +69,12 @@ struct InputDef {
     GameControl control = GameControl::kNone;  // a game control instead of a key (0.12.292)
 };
 
-struct TriggerSpec {                           // 액션 시작 입력
-    std::string inputId;                       // <Inputs> 참조 (있으면 Finalize 가 key/gamepad 를 채운다)
-    std::uint32_t key = 0x38;                  // DXScanCode (마우스는 +256)
-    std::uint32_t gamepad = 0;                 // 패드 버튼 마스크 (0 = 없음)
-    GameControl control = GameControl::kNone;  // a game control instead of a key (0.12.292)
-    bool onKeyUp = false;
+struct TriggerSpec {                                     // 액션 시작 입력
+    std::string inputId;                                 // <Inputs> 참조 (있으면 Finalize 가 key/gamepad 를 채운다)
+    std::uint32_t key = 0x38;                            // DXScanCode (마우스는 +256)
+    std::uint32_t gamepad = 0;                           // 패드 버튼 마스크 (0 = 없음)
+    GameControl control = GameControl::kNone;            // a game control instead of a key (0.12.292)
+    PressKinds::Press press = PressKinds::Press::kDown;  // how the key or control is pressed (10-30)
     // 이벤트 발화 (NPC/플레이어 공통): 액터의 그래프가 이 이벤트를 쏘면 시작. actor = "player" | "npc" | "both"
     std::string onEvent;
     bool onEventPlayer = false, onEventNpc = true;
@@ -141,6 +142,16 @@ struct ConditionSpec {
     float cooldown = 0.0f;  // 끝난 뒤 다시 시작할 수 있을 때까지(초)
 };
 
+// Charge (10-30): <Action loop="true" maxHold="3">. The clip plays over and over (hkbClipGenerator looping) and the
+// action has no end: it leaves by a transition, a move cancel or a vanilla transition. At maxHold seconds the key
+// counts as released (an NPC has none and holds until then); without a release transition the action exits.
+// maxHold counts from the press of the key that started the charge while it is still down (a moving charge goes
+// from loop to loop by on="move" and keeps one clock), else from this action's own start.
+struct LoopSpec {
+    bool enabled = false;
+    float maxHold = 3.0f;
+};
+
 struct SuppressSpec {
     enum class When { kStartable, kActive, kBoth };
     When when = When::kStartable;
@@ -175,11 +186,15 @@ struct ActionSpec {
     std::vector<ActionLinkSpec> links;
     TriggerSpec trigger;
     ConditionSpec condition;
+    LoopSpec loop;
     float safetyDuration = 3.0f;         // 클립 길이를 모를 때의 보험 타이머 (페어 기본은 파서가 30)
     float exitTriggerBeforeEnd = 0.05f;  // 클립 끝 몇 초 전에 exit 발화. <0 = 트리거를 만들지 않음(HKX 주석이 공급)
-    float enterBlend = -1.0f;            // 진입 블렌드(초). <0 = 기존 효과 재사용
-    float exitBlend = -1.0f;             // 퇴장 블렌드(초). <0 = 기존 효과 재사용
-    std::string source;                  // 선언 출처 (파일 경로)
+    // Charge (10-30): an on="end" transition takes the Exit point (seconds before the clip's end) from the exit
+    // trigger, which is then not made: the runner calls ActionLinks::ReachedEnd there. <0 = none.
+    float endLinkAt = -1.0f;
+    float enterBlend = -1.0f;  // 진입 블렌드(초). <0 = 기존 효과 재사용
+    float exitBlend = -1.0f;   // 퇴장 블렌드(초). <0 = 기존 효과 재사용
+    std::string source;        // 선언 출처 (파일 경로)
 
     // 이름 기본값 채우기 (선언 로드 직후 한 번)
     void Finalize() {

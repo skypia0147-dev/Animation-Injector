@@ -133,6 +133,12 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
                                                  : Flag::kSnow;
         return boolean(weather->data.flags.any(flag));
     }
+    case Test::kHeldTime: {
+        // How long the key that started the player's action was held (charge, 10-30): the player only.
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player || subject != player || !request.heldCaptured || request.heldTime < 0) return Value::kUnavailable;
+        return numeric(request.heldTime);
+    }
     case Test::kMovementDirection: {
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (!player || subject != player || !request.movementCaptured || request.movementDirection < 0)

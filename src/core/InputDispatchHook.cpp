@@ -1,6 +1,7 @@
 #include "PCH.h"
 #include "core/InputDispatchHook.h"
 #include "runtime/InputSink.h"
+#include "core/GameInputReplay.h"
 #include "runtime/Qte.h"
 #include "runtime/Carry.h"
 #include "runtime/EventSuppression.h"
@@ -12,6 +13,8 @@ using Result = RE::BSEventNotifyControl;
 using Source = RE::BSTEventSource<RE::InputEvent*>;
 struct Dispatch {
     static Result Thunk(RE::BSTEventSink<RE::InputEvent*>* self, RE::InputEvent* const* events, Source* source) {
+        // A press handed to the game late (core/GameInputReplay.h) is the game's: nothing here takes it.
+        if (GameInputReplay::Replaying()) return original(self, events, source);
         EventSuppression::BeginInput();
         struct Scope {
             ~Scope() { EventSuppression::EndInput(); }

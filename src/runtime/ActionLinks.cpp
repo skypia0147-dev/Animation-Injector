@@ -3,6 +3,7 @@
 #include "runtime/ActionRunner.h"
 #include "runtime/PairedSession.h"
 #include "core/PairRootRuntime.h"
+#include "runtime/HeldKeys.h"
 #include <mutex>
 
 namespace AnimationInjector::ActionLinks {
@@ -18,12 +19,18 @@ struct Window {
     ActionLinkSpec spec;
     RE::BSFixedString event, open, close, enter, airEnter;
     bool opened = false, closed = false, pressed = false;
+    // on="move" (10-31): a movement press kept for the window (buffered), and the direction it goes with.
+    int moveBuffered = -1, moveDirection = -1;
 };
 struct Entry {
     RE::ActorHandle actor;
     int action;
     bool paired, player;
     float time = 0, duration = 0;
+    // Charge (10-30): the runner reached its Exit point (an on="end" transition goes), or a loop's maxHold made its
+    // key count as released (an on="release" one goes, an NPC's too).
+    bool ended = false, released = false;
+    int moveSeen = -1;  // the player's movement direction last frame (a new press is a change to a direction)
     std::vector<Window> windows;
     RE::ActorHandle partner;
 };
@@ -42,6 +49,10 @@ struct Pending {
     RE::BSFixedString event;  // an event transition's event, claimed while its destination waits (ClaimsEvent)
     int flow = -1;
     bool explicitBlend = false;
+    // Charge: an on="end" transition, or a forced release, whose destination cannot start leaves its source as an
+    // exit would (it has no other end).
+    bool exitOnFail = false;
+    bool onMove = false;
     ConditionValues::Request conditionRequest;
     std::vector<RouteEvent> routes;
 };
@@ -56,6 +67,19 @@ const RE::BSFixedString& Driven() {
     static RE::BSFixedString name("bAnimationDriven");
     return name;
 }
+// Whether an on="release" transition's key is still down (runtime/HeldKeys.h): its own key, pad button or game
+// control, else the key that started the player's action. No key at all counts as released.
+bool KeyHeld(const ActionLinkSpec& spec) {
+    using HeldKeys::Source;
+    auto& held = HeldKeys::Get();
+    if (spec.key || spec.gamepad || spec.control != GameControl::kNone)
+        return (spec.key && held.Held({Source::kKey, spec.key})) ||
+               (spec.gamepad && held.Held({Source::kPad, spec.gamepad})) ||
+               (spec.control != GameControl::kNone &&
+                   held.Held({Source::kControl, static_cast<std::uint32_t>(spec.control)}));
+    const auto chain = held.Chain();
+    return chain && held.Held(*chain);
+}
 }
 void Begin(RE::ActorHandle actor, int action, bool paired, bool player, RE::ActorHandle partner) {
     std::lock_guard lock(mutex);
@@ -63,6 +87,9 @@ void Begin(RE::ActorHandle actor, int action, bool paired, bool player, RE::Acto
     const auto& links = Actions::Spec(action).links;
     if (links.empty()) return;
     Entry entry{actor, action, paired, player};
+    // A movement key already down is held, not pressed: it goes as a buffered press would (on="move").
+    const int direction = HeldKeys::Get().MoveDirection();
+    entry.moveSeen = direction >= 0 && direction < 4 ? direction : -1;
     entry.partner = paired ? partner : RE::ActorHandle{};
     for (const auto& spec : links) {
         if (spec.flowParent >= 0) continue;
@@ -77,7 +104,7 @@ void Begin(RE::ActorHandle actor, int action, bool paired, bool player, RE::Acto
         }
         if (spec.blend >= 0 &&
             (paired || Actions::Spec(action).clips.size() != 1 || Actions::Spec(w.target).paired.enabled ||
-                Actions::Spec(w.target).clips.size() != 1 || action == w.target)) {
+                Actions::Spec(w.target).clips.size() != 1)) {
             logger::warn("[Connect] explicit blend requires distinct single ordinary actions; link ignored");
             continue;
         }
@@ -142,6 +169,13 @@ void ObserveTime(RE::ActorHandle actor, int action, float time, float duration) 
     std::lock_guard lock(mutex);
     for (auto& e : entries)
         if (e.actor == actor && e.action == action) {
+            // A loop's clip time went back to its start (moving charge, 10-30): its windows open and close again.
+            if (time + 1e-4f < e.time)
+                for (auto& w : e.windows) {
+                    w.closed = w.pressed = false;
+                    w.opened = w.spec.openEvent.empty() && w.spec.openAt <= 0;
+                    w.moveBuffered = -1;
+                }
             e.time = time;
             if (std::isfinite(duration) && duration > 0) e.duration = duration;
         }
@@ -180,7 +214,10 @@ InputResult Input(std::uint32_t code, bool gamepad, GameControl control, bool do
     for (auto& e : entries)
         if (e.player)
             for (auto& w : e.windows) {
-                if (!matches(w.spec.key, w.spec.gamepad, w.spec.control)) continue;
+                // An end or release transition's key is not pressed into it (runtime/HeldKeys.h reads it).
+                if (w.spec.onEnd || w.spec.onRelease || w.spec.onMove ||
+                    !matches(w.spec.key, w.spec.gamepad, w.spec.control))
+                    continue;
                 // A closed window rejects the press; it must not turn into a new start.
                 result.claimed = true;
                 if (down && !w.closed && (w.opened || w.spec.buffered)) {
@@ -202,6 +239,9 @@ void Update(float delta) {
         for (auto& e : entries) {
             if (std::any_of(pending.begin(), pending.end(), [&](const Pending& p) { return p.actor == e.actor; }))
                 continue;
+            // The player's movement direction now (MoveDir 0..3), -1 with no movement key (MoveDir::kNone 4).
+            const int direction = HeldKeys::Get().MoveDirection();
+            const int moving = direction >= 0 && direction < 4 ? direction : -1;
             for (auto& w : e.windows) {
                 const float close = w.spec.closeRelativeToEnd
                                         ? (e.duration > 0 ? std::max(0.0f, e.duration - w.spec.closeAt) : -1.0f)
@@ -211,8 +251,31 @@ void Update(float delta) {
                     w.pressed = false;
                 }
                 if (w.spec.openAt >= 0 && e.time >= w.spec.openAt && !w.closed) w.opened = true;
+                // Charge (10-30): the end reached, or the key up while the window is open. "Up" is a state, not a
+                // moment: a key let go before the window opened goes the moment it opens.
+                if (w.opened && !w.closed && !w.pressed &&
+                    ((w.spec.onEnd && e.ended) || (w.spec.onRelease && (e.released || (e.player && !KeyHeld(w.spec))))))
+                    w.pressed = true;
+                // on="move" (user request 10-31): a movement key's press as a key transition takes its key's, buffered
+                // before the window as a key is; a key held as the window opens counts as buffered too. Its card
+                // reads the direction held now, else the one pressed (a tap may be up by then). Only in a charge: while
+                // the key that started the action is down (user decision 10-31; a dodge chains on its own key).
+                if (w.spec.onMove && e.player && !w.closed && !w.pressed && !HeldKeys::Get().ChainHeld())
+                    w.moveBuffered = -1;
+                else if (w.spec.onMove && e.player && !w.closed && !w.pressed) {
+                    if (moving >= 0 && moving != e.moveSeen && (w.opened || w.spec.buffered)) w.moveBuffered = moving;
+                    const int held = moving >= 0 && w.spec.buffered ? moving : -1;
+                    if (w.opened && (w.moveBuffered >= 0 || held >= 0)) {
+                        w.moveDirection = held >= 0 ? held : w.moveBuffered;
+                        w.moveBuffered = -1;
+                        w.pressed = true;
+                    }
+                }
                 if (w.opened && !w.closed && w.pressed) {
                     Pending item{e.actor, e.action, w.target, e.paired};
+                    item.exitOnFail = w.spec.onEnd || (w.spec.onRelease && e.released);
+                    item.onMove = w.spec.onMove;
+                    if (w.spec.onMove) item.conditionRequest.CaptureMovement(w.moveDirection);
                     item.partnerTarget = w.partnerTarget;
                     item.player = e.player;
                     item.key = w.spec.key;
@@ -228,6 +291,7 @@ void Update(float delta) {
                     break;
                 }
             }
+            e.moveSeen = moving;
         }
         waiting.swap(pending);
         starts.insert(starts.end(), requested.begin(), requested.end());
@@ -235,6 +299,19 @@ void Update(float delta) {
     }
     for (auto item : starts)
         if (auto actor = item.actor.get(); actor && actor->Is3DLoaded()) {
+            // An end or forced-release transition that does not go ends its source (runtime/HeldKeys.h).
+            bool handled = false;
+            struct ExitOnFail {
+                const Pending& item;
+                RE::Actor* actor;
+                const bool& handled;
+                ~ExitOnFail() {
+                    if (!item.exitOnFail || handled) return;
+                    if (auto* source = Actions::RunnerFor(actor, item.source, false)) source->ExitForLink();
+                    logger::debug("[Connect] '{}' end/release transition did not go; source exits",
+                        Actions::Spec(item.source).id);
+                }
+            } exitOnFail{item, actor.get(), handled};
             if (item.paired) {
                 if (!PairedSession::TryGetTicket(item.actor, item.ticket)) continue;
                 const auto participants = PairedSession::ReadStatus();
@@ -287,6 +364,16 @@ void Update(float delta) {
                 if (item.enter != RE::BSFixedString{} || item.airEnter != RE::BSFixedString{}) continue;
                 item.target = selected;
             }
+            // The same action again (10-31): its clip restarts through the graph's self-transition. A loop moving the
+            // same way plays on (a moving charge keeps its cycle).
+            if (!item.paired && item.target == item.source) {
+                auto* runner = Actions::RunnerFor(actor.get(), item.source, false);
+                if (item.onMove && Actions::Spec(item.source).loop.enabled)
+                    handled = true;
+                else
+                    handled = runner && runner->RestartLinked(item.enter, item.airEnter);
+                continue;
+            }
             auto* destination = Actions::RunnerFor(actor.get(), item.target, true);
             if (Actions::Spec(item.target).paired.enabled &&
                 (item.partnerTarget >= 0 || !destination || !destination->CanRequestPairLink(item.partner)))
@@ -301,6 +388,7 @@ void Update(float delta) {
                 const bool accepted = source && destination->RequestLinked(*source, item.enter, item.airEnter);
                 logger::debug("[DirectLink] actor={:08X} from={} to={} requested={}", actor->GetFormID(), item.source,
                     item.target, accepted);
+                handled = accepted;
                 continue;
             }
             {
@@ -329,6 +417,7 @@ void Update(float delta) {
                 const bool actorAccepted = conditions && (!partnerRunner || partnerAccepted) && destination->Request();
                 if (partnerAccepted && !actorAccepted) partnerRunner->ExitForLink();
                 PairedSession::CompleteOrdinaryHandoff(item.ticket, item.actor, actorAccepted, partnerAccepted);
+                handled = actorAccepted;
                 logger::debug(
                     "[Connect] immediate pair->ordinary actor={:08X} to='{}' accepted={} partnerTo={} accepted={} idleWait=0",
                     actor->GetFormID(), Actions::Spec(item.target).id, actorAccepted, item.partnerTarget,
@@ -343,6 +432,7 @@ void Update(float delta) {
                 accepted = runner->ExitForLink();
             logger::debug("[Connect] actor={:08X} '{}' -> '{}' transitionRequested={}", actor->GetFormID(),
                 Actions::Spec(item.source).id, Actions::Spec(item.target).id, accepted);
+            handled = accepted;
             if (accepted) waiting.push_back(item);
         }
     std::vector<Pending> remaining;
@@ -402,6 +492,28 @@ void Update(float delta) {
         std::lock_guard lock(mutex);
         pending.insert(pending.end(), remaining.begin(), remaining.end());
     }
+}
+bool ReachedEnd(RE::ActorHandle actor, int action) {
+    std::lock_guard lock(mutex);
+    for (auto& e : entries)
+        if (e.actor == actor && e.action == action &&
+            std::any_of(
+                e.windows.begin(), e.windows.end(), [](const Window& w) { return w.spec.onEnd && !w.closed; })) {
+            e.ended = true;
+            return true;
+        }
+    return false;
+}
+bool ForceRelease(RE::ActorHandle actor, int action) {
+    std::lock_guard lock(mutex);
+    for (auto& e : entries)
+        if (e.actor == actor && e.action == action &&
+            std::any_of(
+                e.windows.begin(), e.windows.end(), [](const Window& w) { return w.spec.onRelease && !w.closed; })) {
+            e.released = true;
+            return true;
+        }
+    return false;
 }
 void ResetOnLoad() {
     std::lock_guard lock(mutex);

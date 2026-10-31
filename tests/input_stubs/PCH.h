@@ -4,8 +4,11 @@
 #include <string>
 namespace logger {
 inline void info(const char*) {}
+template<class... A>
+void debug(A&&...) {}
 }
 namespace RE {
+using BSFixedString = std::string;
 enum class INPUT_EVENT_TYPE { kButton, kThumbstick, kDeviceConnect };
 enum class INPUT_DEVICE { kKeyboard, kMouse, kGamepad };
 enum class BSEventNotifyControl { kContinue };

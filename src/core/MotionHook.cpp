@@ -33,7 +33,10 @@ void ProcessTranslation(RE::MotionDataContainer* a_container, float a_motionTime
         // A single action's clip moves by its HKX: the next in the chain (AMR reads the annotations).
     }
     if (a_chain) a_chain(&a_container->translationDataPtr, a_motionTime, a_translation, a_clipName, a_character);
-    if (runner) runner->TraceMotionOutput(a_motionTime, a_translation);
+    if (runner) {
+        runner->SteerMotion(a_motionTime, a_translation);
+        runner->TraceMotionOutput(a_motionTime, a_translation);
+    }
 }
 
 void ProcessRotation(RE::MotionDataContainer* a_container, float a_motionTime, RE::NiQuaternion& a_rotation,

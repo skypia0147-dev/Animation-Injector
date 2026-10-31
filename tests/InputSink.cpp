@@ -2,6 +2,7 @@
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionLinks.h"
 #include "runtime/Carry.h"
+#include "core/GameInputReplay.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -83,16 +84,55 @@ int main() {
     button("Left", true);
     sink->Reset();
     assert(!sink->AnyMoveInput());
+    // Press kinds (10-30, runtime/PressKinds.h) on a key: tap at the release, hold at the hold time, double at the
+    // second press; a menu drops a wait.
     ui = {};
+    sink->Reset();
+    sink->SetPressTiming({0.2f, 0.25f});
     Actions::runner = {};
-    Actions::runner.spec.trigger.onKeyUp = true;
+    Actions::runner.spec.trigger.press = PressKinds::Press::kTap;
     button("", true, 34);
     assert(Actions::runner.requests == 0);
+    sink->Tick(0.1f);
     button("", false, 34);
     assert(Actions::runner.requests == 1);
+    button("", true, 34);
+    sink->Tick(0.3f);
+    button("", false, 34);
+    assert(Actions::runner.requests == 1);  // too long for a tap
+    Actions::runner = {};
+    Actions::runner.spec.trigger.press = PressKinds::Press::kHold;
+    button("", true, 34);
+    sink->Tick(0.19f);
+    assert(Actions::runner.requests == 0);
+    sink->Tick(0.02f);
+    assert(Actions::runner.requests == 1);  // at the hold time, still down
+    button("", false, 34);
+    assert(Actions::runner.requests == 1);
+    Actions::runner = {};
+    Actions::runner.spec.trigger.press = PressKinds::Press::kDouble;
+    button("", true, 34);
+    button("", false, 34);
+    sink->Tick(0.1f);
+    button("", true, 34);
+    assert(Actions::runner.requests == 1);  // at the second press
+    sink->Tick(1.0f);
+    button("", false, 34);
+    assert(Actions::runner.requests == 1);  // a held second press is still the double
+    Actions::runner = {};
+    Actions::runner.spec.trigger.press = PressKinds::Press::kTap;
+    button("", true, 34);
     ui.console = true;
     button("", false, 34);
-    assert(Actions::runner.requests == 1);
+    ui = {};
+    sink->Tick(1.0f);
+    assert(Actions::runner.requests == 0);
+    // Nothing could start when it went down: no wait, nothing later.
+    Actions::startable = false;
+    button("", true, 34);
+    Actions::startable = true;
+    button("", false, 34);
+    assert(Actions::runner.requests == 0);
     ui = {};
     sink->Reset();
     Actions::runner = {};
@@ -164,6 +204,59 @@ int main() {
     ready.pressed = ready.down = false;
     send(ready);
     assert(sink->Taken(&ready));  // the release of a kept press, after the action ended
-    std::cout << "InputSink menu, console, missing UI, held input, device disconnect, batch origin, reset and game "
-                 "control and ready weapon checks passed\n";
+    // A game control's tap (10-30): the press waits, kept from the game. A tap starts the action; a long press is
+    // the game's, handed to it at the hold time with its release going through; a tap whose action then says no is
+    // handed to the game whole.
+    sink->Reset();
+    sink->SetPressTiming({0.2f, 0.25f});
+    Actions::runner = {};
+    Actions::runner.spec.trigger.key = 0;
+    Actions::runner.spec.trigger.gamepad = 0;
+    Actions::runner.spec.trigger.control = GameControl::kJump;
+    Actions::runner.spec.trigger.press = PressKinds::Press::kTap;
+    GameInputReplay::sent.clear();
+    jump.pressed = jump.down = true;
+    send(jump);
+    assert(sink->Taken(&jump) && Actions::runner.requests == 0);
+    sink->Tick(0.1f);
+    jump.pressed = jump.down = false;
+    send(jump);
+    assert(sink->Taken(&jump) && Actions::runner.requests == 1 && GameInputReplay::sent.empty());
+    jump.pressed = jump.down = true;
+    send(jump);
+    assert(sink->Taken(&jump));
+    jump.down = false;  // a held repeat while it waits: kept from the game too
+    send(jump);
+    assert(sink->Taken(&jump));
+    sink->Tick(0.25f);  // the hold time passes: the game's press, sent on the next tick
+    sink->Tick(0.01f);
+    assert(GameInputReplay::sent.size() == 1 && GameInputReplay::sent[0].userEvent == "Jump" &&
+           !GameInputReplay::sent[0].tap);
+    send(jump);
+    assert(!sink->Taken(&jump));  // held repeats are the game's once it has the press
+    jump.pressed = jump.down = false;
+    send(jump);
+    assert(!sink->Taken(&jump) && Actions::runner.requests == 1);  // its release goes to the game
+    Actions::runner.accept = false;
+    jump.pressed = jump.down = true;
+    send(jump);
+    sink->Tick(0.1f);
+    jump.pressed = jump.down = false;
+    send(jump);
+    assert(sink->Taken(&jump) && Actions::runner.requests == 2);  // the tap was tried and said no
+    sink->Tick(0.01f);
+    assert(GameInputReplay::sent.size() == 2 && GameInputReplay::sent[1].tap);  // the game gets it whole
+    // A jump press when nothing could start goes to the game at once, without a wait.
+    Actions::startable = false;
+    jump.pressed = jump.down = true;
+    send(jump);
+    assert(!sink->Taken(&jump));
+    jump.pressed = jump.down = false;
+    send(jump);
+    assert(!sink->Taken(&jump));
+    Actions::startable = true;
+    sink->Tick(1.0f);
+    assert(GameInputReplay::sent.size() == 2 && Actions::runner.requests == 2);
+    std::cout << "InputSink menu, console, missing UI, held input, device disconnect, batch origin, reset, game "
+                 "control, ready weapon and press kind checks passed\n";
 }

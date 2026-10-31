@@ -2,6 +2,7 @@
 #include "runtime/ConditionValues.h"
 #include "PCH.h"
 #include "runtime/ActionSpec.h"
+#include "runtime/TdmMovement.h"
 
 // 로드된 액션 선언과 실행기의 목록. 1층(삽입·훅)과 3층(실행기)이 여기서 서로를 찾는다.
 namespace AnimationInjector {
@@ -21,6 +22,14 @@ int SelectStart(
     RE::Actor* actor, int source, RE::ActorHandle partner = {}, ConditionValues::Request* request = nullptr);
 int ResolveFlow(RE::Actor* actor, int action, RE::ActorHandle partner = {}, bool requireAvailable = false,
     ConditionValues::Request* request = nullptr);
+// The player's movement direction for a request's conditions, once (as the character moves: runtime/TdmMovement.h).
+void CaptureMovement(ConditionValues::Request& request);
+// That direction now (the keys, or forward while TDM's directional mode turns the player to them); -1 unloaded.
+int MoveDirection();
+// TDM's setting for the player now (runtime/TdmMovement.h; the weapon state seen outside our actions).
+TdmMovement::Mode TdmMode();
+// The held time of the key that started the player's action, once per request (runtime/HeldKeys.h).
+void CaptureHeld(ConditionValues::Request& request);
 // A pair started by its key or event. When its flow picks the destination, the pair's own conditions
 // (Require, view) gate every branch first, as SelectStart does for an action (0.12.239); the destination
 // pair checks its own when it is requested.

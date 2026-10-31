@@ -61,6 +61,12 @@ add_executable(AnimationInjectorDrivenTests EXCLUDE_FROM_ALL tests/DrivenCleanup
 add_executable(AnimationInjectorExitBlendTests EXCLUDE_FROM_ALL tests/ExitBlendMovement.cpp)
 add_executable(AnimationInjectorNpcMoveCancelTests EXCLUDE_FROM_ALL tests/NpcMoveCancel.cpp)
 add_executable(AnimationInjectorTdmMovementTests EXCLUDE_FROM_ALL tests/TdmMovement.cpp)
+add_executable(AnimationInjectorTdmTurnTests EXCLUDE_FROM_ALL tests/TdmTurn.cpp)
+target_include_directories(AnimationInjectorTdmTurnTests PRIVATE src)
+add_executable(AnimationInjectorPressKindsTests EXCLUDE_FROM_ALL tests/PressKinds.cpp src/runtime/PressKinds.cpp)
+add_executable(AnimationInjectorHeldKeysTests EXCLUDE_FROM_ALL tests/HeldKeys.cpp src/runtime/HeldKeys.cpp)
+target_include_directories(AnimationInjectorHeldKeysTests PRIVATE src)
+target_include_directories(AnimationInjectorPressKindsTests PRIVATE src)
 target_include_directories(AnimationInjectorTdmMovementTests PRIVATE src)
 target_include_directories(AnimationInjectorNpcMoveCancelTests PRIVATE src)
 target_include_directories(AnimationInjectorExitBlendTests PRIVATE src)
@@ -79,7 +85,7 @@ add_executable(AnimationInjectorPairedRigTests EXCLUDE_FROM_ALL tests/PairedRigC
 target_include_directories(AnimationInjectorPairedRigTests PRIVATE src)
 
 # Compile the real link state machine against deterministic actor/engine doubles.
-add_executable(AnimationInjectorLinkTests EXCLUDE_FROM_ALL tests/ActionLinks.cpp src/runtime/ActionLinks.cpp)
+add_executable(AnimationInjectorLinkTests EXCLUDE_FROM_ALL tests/ActionLinks.cpp src/runtime/ActionLinks.cpp src/runtime/HeldKeys.cpp)
 target_include_directories(AnimationInjectorLinkTests PRIVATE tests/link_stubs src)
 
 option(CommonLibSSE_POSH_GENERATION "Generate .posh.d.ts type definition file" OFF)
@@ -341,7 +347,7 @@ add_executable(AnimationInjectorFlowLinkRoutesTests EXCLUDE_FROM_ALL tests/FlowL
 target_include_directories(AnimationInjectorFlowLinkRoutesTests PRIVATE src)
 
 # Exercise the actual input dispatcher with menu and device event doubles.
-add_executable(AnimationInjectorInputTests EXCLUDE_FROM_ALL tests/InputSink.cpp src/runtime/InputSink.cpp)
+add_executable(AnimationInjectorInputTests EXCLUDE_FROM_ALL tests/InputSink.cpp src/runtime/InputSink.cpp src/runtime/PressKinds.cpp src/runtime/HeldKeys.cpp)
 add_executable(AnimationInjectorSuppressionTests EXCLUDE_FROM_ALL tests/EventSuppression.cpp src/runtime/EventSuppression.cpp)
 target_include_directories(AnimationInjectorSuppressionTests PRIVATE tests/suppression_stubs src)
 target_include_directories(AnimationInjectorInputTests PRIVATE tests/input_stubs src)

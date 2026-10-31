@@ -68,12 +68,14 @@ void Update(float);
 void ResetOnLoad();
 bool HasPendingTransition(RE::ActorHandle);
 bool RequestHandoff(RE::ActorHandle, int, int);
+bool ReachedEnd(RE::ActorHandle, int);
+bool ForceRelease(RE::ActorHandle, int);
 }
 struct HarnessSpec {
     std::string id;
     struct {
         bool enabled = false;
-    } paired;
+    } paired, loop;
     std::vector<int> clips;
     std::vector<ActionLinkSpec> links;
 };
@@ -81,7 +83,7 @@ inline std::array<HarnessSpec, 4> specs;
 class ActionRunner {
 public:
     enum class State { kIdle, kActive };
-    int index = 0, starts = 0, exits = 0;
+    int index = 0, starts = 0, exits = 0, restarts = 0;
     bool preflight = true, condition = true, accept = true;
     State state = State::kIdle;
     bool CanRequestLink() const { return preflight; }
@@ -94,6 +96,10 @@ public:
         return accept;
     }
     bool RequestLinked(ActionRunner&, const RE::BSFixedString&, const RE::BSFixedString&) { return Request(0); }
+    bool RestartLinked(const RE::BSFixedString&, const RE::BSFixedString&) {
+        ++restarts;
+        return accept;
+    }
     RE::ActorHandle pairedTarget;
     bool pairTargetValid = true;
     bool ValidPairedTarget(RE::ActorHandle target) const { return pairTargetValid && static_cast<bool>(target); }
@@ -115,9 +121,11 @@ inline RE::ActorHandle CaptureTarget(RE::Actor*, int, RE::ActorHandle partner = 
 }
 inline int flowSelection = -2;
 inline std::vector<std::uint64_t> requestSeeds;
+inline int resolvedMovement = -2;  // the movement direction the last request read
 inline int ResolveFlow(
     RE::Actor*, int action, RE::ActorHandle = {}, bool = false, ConditionValues::Request* request = nullptr) {
     if (request) {
+        resolvedMovement = request->movementCaptured ? request->movementDirection : -2;
         request->Chance(action, 0, 30);
         requestSeeds.push_back(request->seed);
     }

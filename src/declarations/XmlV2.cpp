@@ -505,6 +505,7 @@ struct LinkDeclaration {
     pugi::xml_attribute blend;
     std::string mode, open, close;
     bool timed = false;
+    bool onEnd = false, onRelease = false, onMove = false;  // charge (10-30): on="end" / "release" / "move"
 };
 // The window of a vanilla transition or a Transition: buffered/window/always and its open and close times. No
 // from, until or buffer = always (the whole clip).
@@ -977,7 +978,7 @@ struct Compiler {
         const bool pair = std::string_view(n.name()) == "Pair";
         shape(n,
             {"id", "clip", "view", "firstPerson", "air", "attack", "enter", "block", "safety", "lostBlend", "reorient",
-                "interruptOnHit"},
+                "interruptOnHit", "loop", "maxHold"},
             {"Exit", "Rotate", "IFrame", "HyperArmor", "Cost", "MoveCancel", "Vanilla", "Transition", "FindPartner",
                 "Carry", "QTE", "CarryRelease", "EventValues", "Do", "Camera"});
         if (!pair) {
@@ -1018,6 +1019,15 @@ struct Compiler {
             v.file = f;
             s.clips.push_back(std::move(v));
         }
+        // Charge (10-30): a loop plays on until a transition, a move cancel or its maxHold (ActionSpec.h LoopSpec).
+        boolean(n, "loop");
+        s.loop.enabled = n.attribute("loop").as_bool(false);
+        if (n.attribute("maxHold") && !s.loop.enabled) fail(n, "maxHold는 loop=\"true\"와 함께 씁니다");
+        if (s.loop.enabled) {
+            if (pair || putdownActions.contains(s.id)) fail(n, "반복(loop)은 일반 동작에만 씁니다");
+            num(n, "maxHold", 600, 0.1);
+            s.loop.maxHold = n.attribute("maxHold").as_float(s.loop.maxHold);
+        }
         // Every root input is declared on every action, without changing its ID.
         for (const auto& [id, info] : inputs)
             s.inputs.push_back({id, info.hasKey ? info.key : 0, info.gamepad, info.control});
@@ -1043,6 +1053,8 @@ struct Compiler {
             std::string at = "@end-0.05", event;
             if (auto e = one(n, "Exit")) {
                 shape(e, {"at", "blend"});
+                // A loop has no end to exit before: it ends by a transition, a move cancel or its maxHold.
+                if (s.loop.enabled && e.attribute("at")) fail(e, "반복 동작에는 끝이 없어 Exit at을 쓸 수 없습니다");
                 num(e, "blend", 5);
                 auto t = time(e, "at", Basis::End, "end-0.05");
                 if (t.starts_with("@"))
@@ -1060,6 +1072,7 @@ struct Compiler {
                 s.events.exit = event;
                 s.exitTriggerBeforeEnd = -1.0f;
             }
+            if (s.loop.enabled) s.exitTriggerBeforeEnd = -1.0f;  // no exit trigger in a clip that plays on
         }
         for (auto name : {"Rotate", "IFrame", "HyperArmor"})
             if (auto slot = one(n, name)) {
@@ -1138,7 +1151,7 @@ struct Compiler {
             const bool link = kind == "Transition";
             shape(t,
                 link ? Names{"to", "condition", "partnerTo", "input", "key", "gamepad", "control", "event", "blend",
-                           "from", "until", "buffer"}
+                           "from", "until", "buffer", "on"}
                      : Names{"id", "to", "blend", "from", "until", "buffer"},
                 link ? kCardParts : Names{});
             LinkDeclaration connect;
@@ -1169,8 +1182,32 @@ struct Compiler {
                 }
                 connect.blend = t.attribute("blend");
                 key = keyRef(t);
-                if (key.given == static_cast<bool>(t.attribute("event")))
-                    fail(t, "Transition에는 키(input, key·gamepad 또는 control)와 event 중 하나가 필요합니다");
+                // Charge (10-30): on="end" goes at this action's end, on="release" once its key is up (its own key,
+                // or the key that started the action).
+                choice(t, "on", {"end", "release", "move"});
+                const auto on = get(t, "on");
+                if (on.empty()) {
+                    if (key.given == static_cast<bool>(t.attribute("event")))
+                        fail(t, "Transition에는 키(input, key·gamepad 또는 control)와 event 중 하나가 필요합니다");
+                } else {
+                    if (t.attribute("event")) fail(t, "on을 쓴 전환에는 event를 쓰지 않습니다");
+                    if (pair) fail(t, "on(끝나면·키를 떼면) 전환은 일반 동작에만 씁니다");
+                    if (t.attribute("buffer") && on != "move")
+                        fail(t, "끝나면·키를 떼면 전환에는 buffer를 쓰지 않습니다");
+                    if (on == "end") {
+                        if (key.given || t.attribute("from") || t.attribute("until"))
+                            fail(t, "끝나면(on=\"end\") 전환에는 키·from·until을 쓰지 않습니다");
+                        if (s.loop.enabled) fail(t, "반복 동작에는 끝이 없어 끝나면(on=\"end\") 전환을 쓸 수 없습니다");
+                        if (std::any_of(links.begin(), links.end(), [](const LinkDeclaration& l) { return l.onEnd; }))
+                            fail(t, "끝나면(on=\"end\") 전환은 동작마다 하나입니다");
+                        connect.onEnd = true;
+                    } else if (on == "move") {
+                        // A movement key's press (10-31), buffered as a key's: no key of its own.
+                        if (key.given) fail(t, "이동키를 누르면(on=\"move\") 전환에는 키를 쓰지 않습니다");
+                        connect.onMove = true;
+                    } else
+                        connect.onRelease = true;
+                }
                 if (t.attribute("event")) {
                     eventName(t, required(t, "event"));
                     connect.event = get(t, "event");
@@ -1201,7 +1238,8 @@ struct Compiler {
             if (t.attribute("event")) {
                 auto signature = "event:" + get(t, "event");
                 if (!bindings.insert(signature).second) fail(t, "같은 이벤트에 여러 연결이 있어 모호합니다");
-            } else if (key.given) {
+            } else if (key.given && !t.attribute("on")) {
+                // A key's press, once per key (a release transition reads the key's state, any number of windows).
                 std::vector<std::string> channels;
                 if (key.key) channels.push_back("key:" + std::to_string(key.key));
                 if (key.gamepad) channels.push_back("pad:" + std::to_string(key.gamepad));
@@ -1253,6 +1291,9 @@ struct Compiler {
             next.key = l.key;
             next.gamepad = l.gamepad;
             next.control = l.control;
+            next.onEnd = l.onEnd;
+            next.onRelease = l.onRelease;
+            next.onMove = l.onMove;
             next.buffered = (l.mode.empty() ? std::string("buffered") : l.mode) == "buffered";
             auto timing = [&](const std::string& text, bool close, std::string& event, float& at) {
                 float value;
@@ -1271,9 +1312,24 @@ struct Compiler {
                 timing(l.close, true, next.closeEvent, next.closeAt);
             }
             if (next.action.empty() ||
-                (next.event.empty() && !next.key && !next.gamepad && next.control == GameControl::kNone))
+                (next.event.empty() && !next.key && !next.gamepad && next.control == GameControl::kNone &&
+                    !next.onEnd && !next.onRelease && !next.onMove))
                 continue;
             s.links.push_back(std::move(next));
+        }
+        // Charge (10-30): an on="end" transition takes the Exit point; the exit trigger is not made (the runner asks
+        // ActionLinks::ReachedEnd there instead).
+        if (std::any_of(s.links.begin(), s.links.end(), [](const ActionLinkSpec& l) { return l.onEnd; })) {
+            if (s.exitTriggerBeforeEnd < 0)
+                fail(n, "끝나면(on=\"end\") 전환은 시각으로 끝나는 동작(Exit at=\"end-…\")에만 씁니다");
+            s.endLinkAt = s.exitTriggerBeforeEnd;
+            s.exitTriggerBeforeEnd = -1.0f;
+        }
+        // A loop has no end: nothing closes some seconds before it.
+        if (s.loop.enabled) {
+            for (const auto* w : {&s.rotate, &s.iframe, &s.hyperArmor})
+                if (w->enabled && w->offRel && w->offAt > 0)
+                    fail(n, "반복 동작에는 끝이 없어 end-… 시각을 쓸 수 없습니다");
         }
         return s;
     }
@@ -1348,7 +1404,7 @@ struct Compiler {
     void startShape(Node st) {
         shape(st,
             {"id", "to", "condition", "input", "key", "gamepad", "control", "event", "actor", "target", "range",
-                "angle", "onKeyUp", "cooldown", "block", "blockWhen"},
+                "angle", "press", "cooldown", "block", "blockWhen"},
             kCardParts);
         num(st, "cooldown");
         choice(st, "blockWhen", {"startable", "active", "both"});
@@ -1391,8 +1447,21 @@ struct Compiler {
         trigger.targetRange = st.attribute("range").as_float(trigger.targetRange);
         trigger.targetAngle = st.attribute("angle").as_float(trigger.targetAngle);
         if (trigger.targetRange <= 0.0f || trigger.targetAngle <= 0.0f) fail(st, "range·angle은 0보다 커야 합니다");
-        boolean(st, "onKeyUp");
-        trigger.onKeyUp = st.attribute("onKeyUp").as_bool(false);
+        // How the key is pressed (10-30, runtime/PressKinds.h). A menu control opens its menu the moment it goes
+        // down, before anything could wait: only down there.
+        choice(st, "press", {"down", "tap", "double", "hold"});
+        const auto press = get(st, "press", "down");
+        trigger.press = press == "tap"      ? PressKinds::Press::kTap
+                        : press == "double" ? PressKinds::Press::kDouble
+                        : press == "hold"   ? PressKinds::Press::kHold
+                                            : PressKinds::Press::kDown;
+        if (trigger.press != PressKinds::Press::kDown) {
+            if (!key.given) fail(st, "press는 키·패드 버튼·게임 동작 시작에서만 씁니다");
+            if (key.control == GameControl::kWait || key.control == GameControl::kFavorites ||
+                key.control == GameControl::kTweenMenu)
+                fail(st,
+                    "메뉴를 여는 게임 동작(wait·favorites·tweenMenu)은 누르는 순간 메뉴가 열려 press=\"down\"만 씁니다");
+        }
         if (!trigger.onEvent.empty()) {
             const std::string who = get(st, "actor", "both");
             trigger.onEventPlayer = who == "player" || who == "both";
