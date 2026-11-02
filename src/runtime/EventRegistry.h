@@ -24,6 +24,8 @@ void Build(const std::vector<EventRuleSpec>& rules, std::span<const ActionSpec> 
 const std::vector<std::string>& Names();
 // Registered event names, for logs and tests.
 std::size_t Count();
+// Whether some registered event runs `op` (a window's off function: its on function then waits for it).
+bool Registers(EventOp op);
 
 // Any thread (the animation event hook, every actor). One lookup; a registered event is copied into a
 // bounded queue with its sender. Nothing about the actor is changed here. Numbers an annotation carries

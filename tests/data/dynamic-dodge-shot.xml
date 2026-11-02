@@ -12,11 +12,11 @@
     </Event>
   </EventRegistry>
   <Start id="BowDodge" input="a1_i1" cooldown="0.2" block="blockStart,bashStart">
-    <Check kind="weaponDrawn"/>
+    <Check kind="actorStatus" option="weaponDrawn"/>
     <Check kind="equippedType" hand="left" type="bow"/>
     <Or><Check kind="attackState" state="bowAttached"/><Check kind="attackState" state="bowDrawn"/></Or>
     <True>
-      <Check kind="sneaking"/>
+      <Check kind="actorStatus" option="sneaking"/>
       <True>
         <Row to="SneakBowDodge_B1"><Check kind="movementDirection" option="back"/></Row>
         <Row to="SneakBowDodge_L1"><Check kind="movementDirection" option="left"/></Row>

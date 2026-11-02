@@ -45,7 +45,7 @@ With a weapon drawn, G does slash 1; pressing G again during it leads on to slas
 <?xml version="1.0" encoding="utf-8"?>
 <AnimationSet version="6" id="MyMod">
   <Start key="G" gamepad="RB" cooldown="0.3" to="Slash1">
-    <Check kind="weaponDrawn"/>
+    <Check kind="actorStatus" option="weaponDrawn"/>
   </Start>
   <Action id="Slash1" clip="Animations\MyMod\Slash1.hkx" enter="0.1">
     <IFrame from="0.1" until="0.4"/>
@@ -67,14 +67,15 @@ With a weapon drawn, G does slash 1; pressing G again during it leads on to slas
 |---|---|
 | `<Transition to key from until>` | A key press between `from` and `until` moves on to the `to` action. `event="Name"` works in place of a key |
 | `<Transition to on="end" blend>` | When this action ends (its Exit point) it moves on to `to` instead of ending. One per action, no key, `from` or `until`. Only in an action that ends at a time (not with `<Exit at="event:…">`) |
-| `<Transition to on="release" from until>` | Moves on while the key is up inside the window. A state, not a moment: let go before the window opens, it moves on as it opens. `key`, `gamepad` or `control` name the key; without them, the key that started this action (a start's or a key transition's, kept through on="end" and on="release"). An NPC counts as releasing only at a loop's `maxHold` |
-| `<Transition to on="move" from until buffer>` | Moves on when a movement key is pressed **in a charge** (while the key that started this action is down). With the charge key up a movement key does nothing and a buffered one is dropped (`on="release"` goes then). An action on a tapped key, such as a dodge, chains by a key transition on its key with a direction card (`<Transition condition="…" key=…>`). As a key transition: a press inside the window goes at once, one made before it opens is buffered and goes as it opens (`buffer="false"`: no buffer). A movement key held as the window opens counts as buffered too — held, the action plays once after another; let go, the one playing plays to its end. The card picks by the direction held (or the one pressed if it is already up), read as a movement condition reads it, TDM included. No key or event, the player only. Into the same action it plays that action again from the start; a loop choosing itself plays on (a charge keeps going). For directional dashes picked by a `movementDirection` card |
+| `<Transition to on="release" from until>` | Charge end: moves on while the key is up inside the window. A state, not a moment: let go before the window opens, it moves on as it opens. `key`, `gamepad` or `control` name the key; without them, the key that started this action (a start's or a key transition's, kept through on="end" and on="release"). An NPC counts as releasing only at a loop's `maxHold` |
+| `<Transition to on="move" from until buffer>` | Move transition: moves on when a movement key is pressed **in a charge** (while the key that started this action is down). With the charge key up a movement key does nothing and a buffered one is dropped (`on="release"` goes then). An action on a tapped key, such as a dodge, chains by a key transition on its key with a direction card (`<Transition condition="…" key=…>`). As a key transition: a press inside the window goes at once, one made before it opens is buffered and goes as it opens (`buffer="false"`: no buffer). A movement key held as the window opens counts as buffered too — held, the action plays once after another; let go, the one playing plays to its end. The card picks by the direction held (or the one pressed if it is already up), read as a movement condition reads it, TDM included. No key or event, the player only. Into the same action it plays that action again from the start; a loop choosing itself plays on (a charge keeps going). For directional dashes picked by a `movementDirection` card |
 | `<MoveCancel at blend>` | After `at`, a movement key cancels the action back to walking or running. An NPC in combat gets movement back from `at` and leaves as soon as its AI moves or attacks (or plays on if it stays) |
 | `<Vanilla to from until>` | In that window, the game's own action can cancel it. `to`: `Attack` `PowerAttack` `Block` `Bash` `Sprint` `Jump` `Sneak`. `until` is counted from the end (`end`, `end-0.2`) |
 | `<IFrame from until>` | Invulnerable in that window |
 | `<HyperArmor from until>` | Stagger resistance in that window |
+| `<TimeScale factor from until ease>` | The whole world's time scale in that window (only when the player plays it). `factor` 0.05~5 (0.5 is half speed); `ease` is the real seconds it takes to reach the factor, and back to normal speed at the window's end (0~2; left out, at once). Normal speed also comes back when the action is cut short |
 | `<Rotate from until>` | Can turn in that window. True Directional Movement takes no movement input during an action, so while a movement key is held there the runtime turns the player as TDM's setting would (vanilla style: the camera's front; directional: the keys' way from the camera) |
-| `<Cost stamina magicka at>` | Stamina and magicka cost |
+| `<Cost stamina magicka health measure at>` | Resource cost: stamina, magicka, health (health never its last point). `measure="percent"`: percent of each maximum (0~100); without it, the values as written |
 | `<Exit at blend>` | When it ends and how many seconds it blends. Without `at`, 0.05 seconds before the clip's end |
 
 `<Action>` attributes: `enter` (blend seconds going in), `air="both"` (ground and air) / `"only"` (air only; without it, ground only), `view="first"` or `"both"` (a first-person action; first-person HKX files go at the same path under `_1stPerson`), `loop="true" maxHold="3"` (a loop: the clip plays over and over, and after `maxHold` seconds (default 3) the key counts as released, counted from the press of the key that started the charge while it is still down, so directional loops share one clock; without an on="release" transition it ends then. Ordinary actions only; no `<Exit at>` or on="end" transition. Feature times (i-frames, rotation…) count from the action's start and take no `end-…`; transition windows (`from`, `until`) open and close again **every cycle**, `until="end"` and `end-…` meaning that cycle's end; HKX annotation events come again every cycle).
@@ -91,7 +92,7 @@ The sprint key does a different dodge for each movement direction, only with a w
 <?xml version="1.0" encoding="utf-8"?>
 <AnimationSet version="6" id="MyDodge">
   <Start control="sprint" cooldown="0.3">
-    <Check kind="weaponDrawn"/>
+    <Check kind="actorStatus" option="weaponDrawn"/>
     <Check kind="resource" option="stamina" measure="current" compare="ge" value="10"/>
     <Row to="DodgeBack"><Check kind="movementDirection" option="back"/></Row>
     <Row to="DodgeLeft"><Check kind="movementDirection" option="left"/></Row>
@@ -128,7 +129,10 @@ Common conditions:
 
 | `kind` | Also takes | Holds when |
 |---|---|---|
-| `weaponDrawn` `combat` `air` `sneaking` `blocking` `sprinting` `swimming` `mounted` `female` `interior` | nothing | in that state |
+| `actorStatus` | `option="weaponDrawn\|combat\|sneaking\|blocking\|sprinting\|swimming\|mounted\|staggered\|ragdoll\|recovering\|bleedingOut\|killmove\|paired"` (several, comma separated: any of them) | in that state |
+| `air` | `option="any\|falling\|rising"`; `falling` and `rising` also take `compare` `value` (the height fallen) | in the air (at all / falling / rising) |
+| `protection` | `option="essential\|protected"` | essential or protected |
+| `female` `interior` `child` | nothing | when so |
 | `resource` | `option="health\|stamina\|magicka"` `measure="current\|percent"` `compare` `value` | the value compares so |
 | `equippedType` | `hand="left\|right"` `type` | that kind in that hand: `sword` `dagger` `axe` `mace` `greatsword` `battleaxe` `warhammer` `bow` `crossbow` `staff` `shield` `spell` `torch` `unarmed` |
 | `attackState` | `state` | the attack stage: `none` `draw` `swing` `hit` `bowDraw` `bowDrawn` `bowReleased` and more |
@@ -183,14 +187,13 @@ A feature applies to the actor that sent the event (the one playing the action).
 | `op` | Does | Main values |
 |---|---|---|
 | `hide` / `show` | Hide weapon and shield / show them again | |
-| `spell` | Cast a spell once | `plugin` `form` |
-| `stateOn` / `stateOff` | Keep a spell's effect on / take it off | `plugin` `form` |
+| `magic` | Magic effect: `action="cast"` casts it once at the actor, `action="add"` keeps it on (a spell that is not an ability or a disease is cast instead), `action="remove"` takes it off (one the actor had too) | `action` `plugin` `form` |
 | `iframeOn` / `iframeOff` | Invulnerability on / off | |
 | `armorOn` / `armorOff` | Stagger resistance on / off | |
 | `rotateOn` / `rotateOff` | Allow turning / stop it | |
-| `cost` | Stamina and magicka cost | `stamina` `magicka` |
+| `cost` | Resource cost (health never its last point) | `stamina` `magicka` `health`; the registry's `measure="percent"`: percent of the maximum |
 | `shake` | Camera shake (player) | `strength` `duration` |
-| `timeOn` / `timeOff` | Change the time scale / set it back (player) | `factor` (0.05~5; 0.5 is half speed) |
+| `timeOn` / `timeOff` | Change the time scale / set it back (player). Not a clip-time feature of an ordinary action: use `<TimeScale>` | `factor` (0.05~5; 0.5 is half speed), `ease` (real seconds to reach it and to set it back, 0~2) |
 | `stopVelocity` | Stop sliding momentum | |
 | `strike` | Hit with weapon damage | target `pick="combatTarget\|partner\|crosshair\|area"`, reaction `reaction="none\|stagger\|push"`; values `ratio` (weapon damage multiplier) or `amount` (fixed damage), `strength` (stagger), `force` (push) |
 | `ragdoll` | Knock into ragdoll | `direction="down\|up\|forward\|backward\|left\|right"`; value `force` (0~20) |
@@ -199,7 +202,33 @@ A feature applies to the actor that sent the event (the one playing the action).
 | `globalSet` | Change a global's value | `plugin` `form` `restore="end"` (set back when it ends); value `value` |
 | `modEvent` | Send a mod event to Papyrus | `name` `text`; value `number` |
 
+A feature that stays on (hiding, invulnerability and such) ends when its pair (`show`, `iframeOff`, ...) comes or when the actions that follow have all ended. But `iframeOn`, `armorOn`, `rotateOn` and `timeOn` turned on by a registered event, while some event is registered with their pair, stay on until that event comes, even after the animation ends (they end on death, ragdoll or a load). But when the HKX that sent the on event also sends the off event later, it works as a range: it ends when the off event comes or when that HKX ends or is cut short. This holds for our actions and for any other mod's or vanilla HKX alike. A registered on function with a `duration` (seconds, 0~60) ends when that time is up; an off event before then ends it then, and it lasts its time even when the HKX ends or is cut short (real seconds for a time scale, game time for the others).
+
 A feature run by an event can be held back with a `delay` (seconds) value (not firing an arrow). In a pair's `<Do at>`, `target="initiator|receiver|both|player"` says whom it applies to.
+
+## HKX annotation commands (`AI.`)
+
+An HKX annotation `AI.Command|value|value` runs a feature at its time with no registration. The values are the ones written in the annotation, so it works the same in any other mod's or vanilla HKX. The command name ignores case, and every value must be written. The feature applies to the actor that sent the annotation.
+
+| Command | What it does |
+|---|---|
+| `AI.IFrameOn[\|span]` / `AI.IFrameOff` | Invulnerability on / off |
+| `AI.ArmorOn[\|span]` / `AI.ArmorOff` | Stagger resistance on / off |
+| `AI.RotateOn[\|span]` / `AI.RotateOff` | Allow turning on / off |
+| `AI.TimeOn\|factor\|ease[\|span]` / `AI.TimeOff` | Time scale (player). Factor 0.05~5, ease 0~2 real seconds |
+| `AI.Hide` / `AI.Show` | Hide / show the weapons |
+| `AI.MagicAdd\|plugin\|form` · `AI.MagicRemove\|…` · `AI.MagicCast\|…` | Add · remove · cast a magic effect |
+| `AI.Cost\|stamina\|magicka\|health` · `AI.CostPercent\|…` | Spend resources (amounts / percent of each maximum) |
+| `AI.CamShake\|strength\|duration` | Shake the camera (player) |
+| `AI.StopVelocity` | Stop the sliding speed |
+| `AI.Ragdoll\|direction\|force` | Ragdoll (direction down·up·forward·backward·left·right, force 0~20) |
+| `AI.FireArrow\|damage` | Fire an arrow (percent of a full draw's damage, player) |
+| `AI.Sound\|file\|bone\|volume` · `AI.SoundForm\|plugin\|form\|bone\|volume` | Play a sound (bone spine·head·rightHand·leftHand·root) |
+| `AI.GlobalSet\|plugin\|form\|value` | Change a global's value (not set back) |
+| `AI.ModEvent\|name\|text\|number` | Send a mod event to Papyrus |
+| `AI.CancelPair` | End the pair |
+
+A strike has no command for its many settings; register it on an event. An on command ends by the rules above; an off command can always be sent, so without one it stays on until death, ragdoll or a load. Commands and registered events are one feature (`AI.IFrameOff` also ends invulnerability a registered event turned on).
 
 ## Pairs
 
@@ -209,7 +238,7 @@ An action two people do together is a `<Pair>`. Its HKX is one paired HKX holdin
 <?xml version="1.0" encoding="utf-8"?>
 <AnimationSet version="6" id="MyGrab">
   <Start key="F" gamepad="LB" cooldown="1" to="Throw">
-    <Check kind="combat"/>
+    <Check kind="actorStatus" option="combat"/>
   </Start>
   <Pair id="Throw" clip="Animations\MyGrab\Throw.hkx">
     <FindPartner range="150" angle="60"/>

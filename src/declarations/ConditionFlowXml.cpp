@@ -36,10 +36,10 @@ Predicate ReadPredicate(XML n) {
     const auto test = Required(n, "kind");
     if (test == "air")
         predicate.test = Test::kAir;
-    else if (test == "weaponDrawn")
-        predicate.test = Test::kWeaponDrawn;
-    else if (test == "combat")
-        predicate.test = Test::kCombat;
+    else if (test == "protection")
+        predicate.test = Test::kEssential;
+    else if (test == "child")
+        predicate.test = Test::kActorStatus;
     else if (test == "alive")
         predicate.test = Test::kAlive;
     else if (test == "space")
@@ -54,8 +54,6 @@ Predicate ReadPredicate(XML n) {
         predicate.test = Test::kEquippedType;
     else if (test == "attackState")
         predicate.test = Test::kAttackState;
-    else if (test == "sneaking")
-        predicate.test = Test::kSneaking;
     else if (test == "female")
         predicate.test = Test::kFemale;
     else if (test == "rig")
@@ -66,10 +64,6 @@ Predicate ReadPredicate(XML n) {
         predicate.test = Test::kActorType;
     else if (test == "resource")
         predicate.test = Test::kResource;
-    else if (test == "essential")
-        predicate.test = Test::kEssential;
-    else if (test == "protected")
-        predicate.test = Test::kProtected;
     else if (test == "actorStatus")
         predicate.test = Test::kActorStatus;
     else if (test == "relationship")
@@ -82,14 +76,6 @@ Predicate ReadPredicate(XML n) {
         predicate.test = Test::kRelativeAngle;
     else if (test == "heightDifference")
         predicate.test = Test::kHeightDifference;
-    else if (test == "blocking")
-        predicate.test = Test::kBlocking;
-    else if (test == "sprinting")
-        predicate.test = Test::kSprinting;
-    else if (test == "swimming")
-        predicate.test = Test::kSwimming;
-    else if (test == "mounted")
-        predicate.test = Test::kMounted;
     else if (test == "lineOfSight")
         predicate.test = Test::kLineOfSight;
     else if (test == "scale")
@@ -120,8 +106,6 @@ Predicate ReadPredicate(XML n) {
         predicate.test = Test::kLying;
     else if (test == "previousAction")
         predicate.test = Test::kPreviousAction;
-    else if (test == "falling")
-        predicate.test = Test::kFalling;
     else if (test == "slope")
         predicate.test = Test::kSlope;
     else if (test == "actorValue")
@@ -139,9 +123,9 @@ Predicate ReadPredicate(XML n) {
     const auto oneOf = [&](const std::string& s, std::initializer_list<std::string_view> choices) {
         return std::find(choices.begin(), choices.end(), s) != choices.end();
     };
-    const bool option =
-        oneOf(test, {"rig", "actorType", "resource", "actorStatus", "relationship", "equippedKeyword",
-                        "movementDirection", "lying", "falling", "slope", "actorValue", "weather", "hitReceived"});
+    const bool option = oneOf(
+        test, {"air", "protection", "rig", "actorType", "resource", "actorStatus", "relationship", "equippedKeyword",
+                  "movementDirection", "lying", "slope", "actorValue", "weather", "hitReceived"});
     if (option) {
         predicate.option = Required(n, "option");
         bool valid = false;
@@ -152,29 +136,42 @@ Predicate ReadPredicate(XML n) {
             valid = oneOf(
                 predicate.option, {"player", "npc", "animal", "creature", "undead", "daedra", "dwarven", "dragon"});
         if (test == "resource") valid = oneOf(predicate.option, {"health", "stamina", "magicka"});
+        if (test == "air") valid = oneOf(predicate.option, {"any", "falling", "rising"});
+        if (test == "protection") valid = oneOf(predicate.option, {"essential", "protected"});
         if (test == "actorStatus")
-            valid = oneOf(
-                predicate.option, {"ragdoll", "recovering", "bleedingOut", "killmove", "paired", "staggered", "child"});
+            valid = oneOf(predicate.option,
+                {"ragdoll", "recovering", "bleedingOut", "killmove", "paired", "staggered", "blocking", "sprinting",
+                    "swimming", "mounted", "sneaking", "weaponDrawn", "combat"});
         if (test == "relationship") valid = oneOf(predicate.option, {"hostile", "teammate"});
         if (test == "equippedKeyword") valid = oneOf(predicate.option, {"left", "right", "either"});
         if (test == "movementDirection") valid = oneOf(predicate.option, {"forward", "back", "left", "right", "none"});
         if (test == "lying") valid = oneOf(predicate.option, {"back", "front"});
-        if (test == "falling") valid = oneOf(predicate.option, {"rising", "falling"});
         if (test == "slope") valid = oneOf(predicate.option, {"downhill", "uphill", "any"});
         if (test == "actorValue")
             valid = oneOf(predicate.option,
-                {"level", "Health", "Magicka", "Stamina", "OneHanded", "TwoHanded", "Marksman", "Block", "Smithing",
-                    "HeavyArmor", "LightArmor", "Pickpocket", "Lockpicking", "Sneak", "Alchemy", "Speechcraft",
-                    "Alteration", "Conjuration", "Destruction", "Illusion", "Restoration", "Enchanting"});
+                {"level", "OneHanded", "TwoHanded", "Marksman", "Block", "Smithing", "HeavyArmor", "LightArmor",
+                    "Pickpocket", "Lockpicking", "Sneak", "Alchemy", "Speechcraft", "Alteration", "Conjuration",
+                    "Destruction", "Illusion", "Restoration", "Enchanting"});
         if (test == "weather") valid = oneOf(predicate.option, {"pleasant", "cloudy", "rainy", "snow"});
         if (test == "hitReceived") valid = oneOf(predicate.option, {"normal", "power", "bash", "sneak", "blocked"});
         if (!valid) Fail(n, "invalid option");
+        // One kind, the engine's state it reads (the tests these options were before 11-01).
+        if (test == "air" && predicate.option != "any") predicate.test = Test::kFalling;
+        if (test == "protection" && predicate.option == "protected") predicate.test = Test::kProtected;
+        if (test == "actorStatus") {
+            static const std::pair<std::string_view, Test> kStates[] = {{"blocking", Test::kBlocking},
+                {"sprinting", Test::kSprinting}, {"swimming", Test::kSwimming}, {"mounted", Test::kMounted},
+                {"sneaking", Test::kSneaking}, {"weaponDrawn", Test::kWeaponDrawn}, {"combat", Test::kCombat}};
+            for (const auto& [name, state] : kStates)
+                if (predicate.option == name) predicate.test = state;
+        }
     } else if (n.attribute("option"))
         Fail(n, "option is not supported by this condition");
-    // A fall's distance is optional: a falling check without a value only asks rising or falling.
+    if (test == "child") predicate.option = "child";
+    // A fall's distance is optional: an air check without a value only asks in the air, falling or rising.
     const bool numeric = oneOf(test, {"resource", "distance", "relativeAngle", "heightDifference", "scale",
                                          "scaleRatio", "height", "slope", "actorValue", "gameHour", "heldTime"}) ||
-                         (test == "falling" && n.attribute("value"));
+                         (test == "air" && n.attribute("value"));
     const auto number = [&](const char* key) {
         const auto s = Required(n, key);
         float value = 0;
@@ -212,7 +209,9 @@ Predicate ReadPredicate(XML n) {
             Fail(n, "chance only takes value");
     } else if (n.attribute("value") || n.attribute("compare") || n.attribute("upper"))
         Fail(n, "numeric attributes require numeric condition");
-    if (test == "falling" && !numeric) predicate.compare.clear();  // rising or falling only
+    // A fall's distance is falling's or rising's: in the air at all has none.
+    if (test == "air" && numeric && predicate.option == "any") Fail(n, "air any takes no value");
+    if (test == "air" && !numeric) predicate.compare.clear();  // rising or falling only
     if (test != "resource" && test != "actorValue" && n.attribute("measure")) Fail(n, "measure requires resource");
     // The last of our actions the subject finished (0.12.296): ids, the seconds since and how it ended.
     if (test == "previousAction") {

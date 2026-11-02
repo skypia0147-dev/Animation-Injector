@@ -2,7 +2,7 @@
 <!-- Movement-key cancel (Recovery) as format 4 writes it: one per action (a combo's per-Step rule went with combos). -->
 <AnimationSet version="6" id="ClipRecovery">
   <Start id="BowDodgeBack_Start" to="BowDodgeBack" key="Mouse2" cooldown="0.2">
-    <Check kind="weaponDrawn"/>
+    <Check kind="actorStatus" option="weaponDrawn"/>
   </Start>
   <Action id="BowDodgeBack" clip="Animations\DynamicDodgeShot\BowDodgeBack.hkx" safety="2.5">
     <MoveCancel at="0.3" blend="0.1"/>

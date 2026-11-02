@@ -1,8 +1,11 @@
 #include "runtime/EventEffects.h"
 #include "runtime/ActionLinks.h"
+#include "runtime/EventRegistry.h"
 #include "runtime/ActionRegistry.h"
+#include "runtime/ResourceCost.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/ActorImmunity.h"
+#include "runtime/ClipWindows.h"
 #include "runtime/FireArrow.h"
 #include "runtime/PairEventRoles.h"
 #include "runtime/PairFeatures.h"
@@ -30,6 +33,10 @@ struct Hold {
     RE::FormID immunity = 0;     // kIFrame: the ActorImmunity lease
     RE::FormID global = 0;       // kGlobal: the global, its value before the first hold and the one set
     float prior = 0.0f, applied = 0.0f;
+    bool untilOff = false;   // a window waiting for its off event: the scope's end leaves it on
+    std::uint64_t clip = 0;  // a window the clip that turned it on turns off: it ends with that clip
+    bool timed = false;      // a window turned on for a span: `span` is the seconds left (a time scale's real ones)
+    float span = 0.0f;
 };
 struct OpenScope {
     RE::ActorHandle actor;
@@ -58,9 +65,15 @@ struct SavedGlobal {
 };
 std::vector<SavedGlobal> savedGlobals;  // globals held when saved: given back after the load if still as set
 Scope nextScope = 1;
+// The global time multiplier while we hold it (11-01: eased). `prior` is what it was before our first change and
+// comes back when the last time hold ends; `applied` is what we set last, so a change another mod makes in between
+// is seen and left alone. An ease moves `applied` toward `goal` at `rate` per real second.
 struct {
     bool owned = false;
-    float prior = 1.0f, applied = 1.0f;
+    bool restoring = false;  // easing back to `prior`, then let go
+    float prior = 1.0f, applied = 1.0f, goal = 1.0f;
+    float rate = 0.0f;  // multiplier per real second; 0 = no ease running
+    float ease = 0.0f;  // the last timeOn's real seconds, used again to give the time back
 } timeScale;
 std::array<std::atomic<std::uint32_t>, 16> armorSlots{};
 std::unordered_map<std::string, RE::FormID> formCache;  // "plugin|form" -> form id (0 = missing)
@@ -149,10 +162,53 @@ void PublishArmor() {
 bool Holds(RE::ActorHandle actor, Kind kind) {
     return std::any_of(holds.begin(), holds.end(), [&](const Hold& h) { return h.actor == actor && h.kind == kind; });
 }
-void RestoreTime() {
-    if (timeScale.owned && std::fabs(RE::BSTimer::QGlobalTimeMultiplierTarget() - timeScale.applied) < 0.0001f)
-        if (auto* timer = RE::BSTimer::GetSingleton()) timer->SetGlobalTimeMultiplier(timeScale.prior, false);
-    timeScale.owned = false;
+// Another mod set the multiplier since we last did: it is theirs now.
+bool TimeTaken() { return std::fabs(RE::BSTimer::QGlobalTimeMultiplierTarget() - timeScale.applied) >= 0.0001f; }
+void SetTime(float value) {
+    timeScale.applied = value;
+    if (auto* timer = RE::BSTimer::GetSingleton()) timer->SetGlobalTimeMultiplier(value, false);
+}
+void LetGoOfTime() {
+    timeScale.owned = timeScale.restoring = false;
+    timeScale.rate = 0.0f;
+}
+// Moves toward `goal` over `ease` real seconds (0 = at once).
+void HeadFor(float goal, float ease) {
+    timeScale.goal = goal;
+    timeScale.rate = 0.0f;
+    if (ease > 0.0f && std::fabs(goal - timeScale.applied) >= 0.0001f)
+        timeScale.rate = std::fabs(goal - timeScale.applied) / ease;
+    else
+        SetTime(goal);
+}
+// The last time hold ended: back to the value before our first change, eased as the last timeOn was (`instant`:
+// a load, where the old game's frames are gone).
+void RestoreTime(bool instant = false) {
+    if (!timeScale.owned) return;
+    if (TimeTaken()) {
+        LetGoOfTime();
+        return;
+    }
+    timeScale.restoring = true;
+    HeadFor(timeScale.prior, instant ? 0.0f : timeScale.ease);
+    if (timeScale.rate == 0.0f) LetGoOfTime();
+}
+// Every frame: one step of a running ease. `delta` is game time, so real time is it over the multiplier now.
+void EaseTime(float delta) {
+    if (!timeScale.owned || timeScale.rate == 0.0f) return;
+    if (TimeTaken()) {
+        LetGoOfTime();
+        return;
+    }
+    const float now = RE::BSTimer::QGlobalTimeMultiplier();
+    const float real = delta / std::max(now, 0.01f);
+    const float step = timeScale.rate * real, left = timeScale.goal - timeScale.applied;
+    if (std::fabs(left) <= step) {
+        SetTime(timeScale.goal);
+        timeScale.rate = 0.0f;
+        if (timeScale.restoring) LetGoOfTime();
+    } else
+        SetTime(timeScale.applied + (left > 0 ? step : -step));
 }
 // Ends one hold, already taken out of `holds`: the state it changed returns when no hold of its kind
 // is left there.
@@ -218,6 +274,23 @@ Hold* Find(RE::ActorHandle actor, Kind kind, Scope scope, RE::FormID spell = 0) 
         [&](const Hold& h) { return h.actor == actor && h.kind == kind && h.scope == scope && h.spell == spell; });
     return it == holds.end() ? nullptr : &*it;
 }
+// A window turned on for a span lasts that long whatever plays (11-02). Else one a registered event or an AI.
+// command turns on lasts as long as the clip that sent it when that clip turns it off later (11-02), or while its
+// off can come (an event registered to send it, an AI. command's always) until that off (11-01). The latest on
+// decides.
+void Bind(Hold& hold, const EventFunctionSpec& f, const Context& context, EventOp off) {
+    hold.timed = f.span > 0.0f;
+    hold.span = f.span;
+    hold.clip = f.span > 0.0f ? 0 : context.clip;
+    hold.untilOff =
+        f.span > 0.0f || (!context.clip && context.registered && (context.command || EventRegistry::Registers(off)));
+}
+// A window delayed past the end of the clip that owned it: that clip's window is over.
+bool Over(const EventFunctionSpec& f, const Context& context) {
+    if (f.span > 0.0f || !context.clip || ClipWindows::Known(context.clip)) return false;
+    logger::debug("[EventEffects] '{}' window skipped: its clip already ended", context.origin);
+    return true;
+}
 void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor, Scope scope) {
     const auto handle = actor->GetHandle();
     switch (f.op) {
@@ -234,14 +307,20 @@ void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor,
     case EventOp::kShow:
         Release([&](const Hold& h) { return h.actor == handle && h.kind == Kind::kHide; }, "show");
         break;
-    case EventOp::kSpell:
+    case EventOp::kMagicCast:
         if (auto* spell = SpellOf(f))
             if (auto* caster = actor->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant)) {
                 caster->CastSpellImmediate(spell, false, actor, 1.0f, false, 0.0f, actor);
             }
         break;
-    case EventOp::kStateOn:
-        if (auto* spell = SpellOf(f); spell && !Find(handle, Kind::kState, scope, spell->GetFormID())) {
+    case EventOp::kMagicAdd:
+        // Only an ability or a disease stays on an actor; any other spell added would be learned (the magic menu),
+        // so it is cast instead (user decision 11-01).
+        if (auto* spell = SpellOf(f); spell && spell->GetSpellType() != RE::MagicSystem::SpellType::kAbility &&
+                                      spell->GetSpellType() != RE::MagicSystem::SpellType::kDisease) {
+            if (auto* caster = actor->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant))
+                caster->CastSpellImmediate(spell, false, actor, 1.0f, false, 0.0f, actor);
+        } else if (spell && !Find(handle, Kind::kState, scope, spell->GetFormID())) {
             const bool had = actor->HasSpell(spell);
             const bool ours = std::any_of(addedSpells.begin(), addedSpells.end(),
                 [&](const AddedSpell& a) { return a.actor == handle && a.spell == spell->GetFormID(); });
@@ -249,19 +328,16 @@ void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor,
             if (!had || ours) holds.push_back({handle, Kind::kState, scope, spell->GetFormID()});
         }
         break;
-    case EventOp::kStateOff:
+    case EventOp::kMagicRemove:
         if (auto* spell = SpellOf(f)) {
             const auto id = spell->GetFormID();
             Release([&](const Hold& h) { return h.actor == handle && h.kind == Kind::kState && h.spell == id; },
-                "stateOff");
+                "magic remove");
+            // One the actor had before is removed too, as Payload Interpreter's @UNAPPLYSPELL does (11-01).
+            if (actor->HasSpell(spell)) actor->RemoveSpell(spell);
         }
         break;
-    case EventOp::kCost:
-        if (auto* values = actor->AsActorValueOwner()) {
-            values->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina, -f.stamina);
-            values->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka, -f.magicka);
-        }
-        break;
+    case EventOp::kCost: ResourceCost::Spend(actor, f.stamina, f.magicka, f.health, f.costPercent); break;
     case EventOp::kShake:
         if (actor->IsPlayerRef())
             RE::ShakeCamera(
@@ -271,21 +347,34 @@ void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor,
         if (auto* controller = actor->GetCharController()) controller->SetLinearVelocityImpl(RE::hkVector4(0, 0, 0, 0));
         break;
     case EventOp::kTimeOn:
-        if (actor->IsPlayerRef())
-            if (auto* timer = RE::BSTimer::GetSingleton()) {
-                if (!timeScale.owned) timeScale.prior = RE::BSTimer::QGlobalTimeMultiplierTarget();
-                timeScale.owned = true;
-                timeScale.applied = f.factor;
-                timer->SetGlobalTimeMultiplier(f.factor, false);
-                if (!Find(handle, Kind::kTime, scope)) holds.push_back({handle, Kind::kTime, scope});
+        if (actor->IsPlayerRef() && !Over(f, context))
+            if (RE::BSTimer::GetSingleton()) {
+                if (!timeScale.owned || TimeTaken()) {
+                    timeScale.prior = timeScale.applied = RE::BSTimer::QGlobalTimeMultiplierTarget();
+                    timeScale.owned = true;
+                }
+                timeScale.restoring = false;
+                timeScale.ease = f.ease;
+                HeadFor(f.factor, f.ease);
+                if (auto* h = Find(handle, Kind::kTime, scope))
+                    Bind(*h, f, context, EventOp::kTimeOff);
+                else {
+                    Hold hold{handle, Kind::kTime, scope};
+                    Bind(hold, f, context, EventOp::kTimeOff);
+                    holds.push_back(hold);
+                }
             }
         break;
     case EventOp::kTimeOff:
         if (actor->IsPlayerRef()) Release([](const Hold& h) { return h.kind == Kind::kTime; }, "timeOff");
         break;
     case EventOp::kIFrameOn:
-        if (!Find(handle, Kind::kIFrame, scope)) {
+        if (Over(f, context)) break;
+        if (auto* h = Find(handle, Kind::kIFrame, scope))
+            Bind(*h, f, context, EventOp::kIFrameOff);
+        else {
             Hold hold{handle, Kind::kIFrame, scope};
+            Bind(hold, f, context, EventOp::kIFrameOff);
             hold.immunity = ActorImmunity::Acquire(actor);
             if (hold.immunity) holds.push_back(hold);
         }
@@ -294,20 +383,34 @@ void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor,
         Release([&](const Hold& h) { return h.actor == handle && h.kind == Kind::kIFrame; }, "iframeOff");
         break;
     case EventOp::kArmorOn:
-        if (!Find(handle, Kind::kArmor, scope)) holds.push_back({handle, Kind::kArmor, scope});
+        if (Over(f, context)) break;
+        if (auto* h = Find(handle, Kind::kArmor, scope))
+            Bind(*h, f, context, EventOp::kArmorOff);
+        else {
+            Hold hold{handle, Kind::kArmor, scope};
+            Bind(hold, f, context, EventOp::kArmorOff);
+            holds.push_back(hold);
+        }
         PublishArmor();
         break;
     case EventOp::kArmorOff:
         Release([&](const Hold& h) { return h.actor == handle && h.kind == Kind::kArmor; }, "armorOff");
         break;
     case EventOp::kRotateOn:
+        if (Over(f, context)) break;
         if (std::none_of(rotations.begin(), rotations.end(), [&](const Rotation& r) { return r.actor == handle; })) {
             bool initial = false;
             if (!actor->GetGraphVariableBool(RotationVariable(), initial)) break;
             rotations.push_back({handle, initial});
         }
         actor->SetGraphVariableBool(RotationVariable(), true);
-        if (!Find(handle, Kind::kRotate, scope)) holds.push_back({handle, Kind::kRotate, scope});
+        if (auto* h = Find(handle, Kind::kRotate, scope))
+            Bind(*h, f, context, EventOp::kRotateOff);
+        else {
+            Hold hold{handle, Kind::kRotate, scope};
+            Bind(hold, f, context, EventOp::kRotateOff);
+            holds.push_back(hold);
+        }
         break;
     case EventOp::kRotateOff:
         Release([&](const Hold& h) { return h.actor == handle && h.kind == Kind::kRotate; }, "rotateOff");
@@ -430,9 +533,24 @@ void Run(const EventFunctionSpec& function, const Context& context) {
     RunFor(function, context, TargetsOf(function, context));
 }
 
+void EndClips(const std::vector<std::uint64_t>& clips) {
+    if (clips.empty()) return;
+    Release([&](const Hold& h) { return h.clip && std::find(clips.begin(), clips.end(), h.clip) != clips.end(); },
+        "clip-ended");
+}
 void Update(float delta) {
     if (!std::isfinite(delta) || delta < 0 || delta > 1.0f) delta = 0.0f;
     Strike::Update(delta);
+    // A span counts game time; a time scale's real time, as its ease (the game runs at the multiplier).
+    const float real = delta / std::max(RE::BSTimer::QGlobalTimeMultiplier(), 0.01f);
+    bool spent = false;
+    for (auto& h : holds)
+        if (h.timed) {
+            h.span -= h.kind == Kind::kTime ? real : delta;
+            spent = spent || h.span <= 0.0f;
+        }
+    if (spent) Release([](const Hold& h) { return h.timed && h.span <= 0.0f; }, "span");
+    EaseTime(delta);
     for (auto it = scopes.begin(); it != scopes.end();) {
         auto actor = it->actor.get();
         if (actor && actor->Is3DLoaded() && !actor->IsDead() && Running(actor.get()))
@@ -445,7 +563,7 @@ void Update(float delta) {
         }
         const auto id = it->id;
         it = scopes.erase(it);
-        Release([&](const Hold& h) { return h.scope == id; }, "scope-ended");
+        Release([&](const Hold& h) { return h.scope == id && !h.untilOff; }, "scope-ended");
         logger::debug("[EventEffects] scope {} closed", id);
     }
     std::vector<RE::ActorHandle> gone;
@@ -478,7 +596,7 @@ void ResetOnLoad() {
     addedSpells.clear();
     Strike::ResetOnLoad();
     rotations.clear();
-    RestoreTime();
+    RestoreTime(true);
     PublishArmor();
 }
 void SaveGlobals(SKSE::SerializationInterface* s) {

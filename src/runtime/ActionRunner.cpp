@@ -10,6 +10,7 @@
 #include "core/MotionHook.h"
 #include "Settings.h"
 #include "runtime/InputSink.h"
+#include "runtime/ResourceCost.h"
 #include "runtime/TdmTurn.h"
 #include "core/EventMaps.h"
 #include "runtime/PairedSession.h"
@@ -555,17 +556,30 @@ void ActionRunner::ApplyIFrame(bool a_on) {
     _iframeOn = a_on && _immunity != 0;
 }
 
+// TimeScale: the player's global time multiplier, as the timeOn / timeOff functions do (EventEffects keeps the one
+//   value, its ease and the value to give back). An NPC's window does nothing.
+void ActionRunner::ApplyTimeScale(bool a_on) {
+    if (_timeOn == a_on) return;
+    _timeOn = a_on;
+    auto* actor = Owner();
+    if (!actor || !actor->IsPlayerRef()) return;
+    EventFunctionSpec f;
+    f.op = a_on ? EventOp::kTimeOn : EventOp::kTimeOff;
+    f.factor = Spec().timeFactor;
+    f.ease = Spec().timeEase;
+    EventEffects::RunFor(f, EventEffects::ContextFor(actor, "action TimeScale"), {actor->GetHandle()});
+    logger::debug("[{}] TimeScale {} x{:.2f} at {:.2f}s", Spec().id, a_on ? "ON" : "OFF", f.factor, _elapsed);
+}
+
 void ActionRunner::ApplyCost() {
     if (_costDone) return;
     _costDone = true;
     const auto& c = Spec().cost;
     auto* p = Owner();
-    if (!p || !p->AsActorValueOwner()) return;
-    if (c.stamina > 0.0f)
-        p->AsActorValueOwner()->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina, -c.stamina);
-    if (c.magicka > 0.0f)
-        p->AsActorValueOwner()->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka, -c.magicka);
-    logger::debug("[{}] Cost stamina {:.0f} magicka {:.0f} at {:.2f}s", Spec().id, c.stamina, c.magicka, _elapsed);
+    if (!p) return;
+    ResourceCost::Spend(p, c.stamina, c.magicka, c.health, c.percent);
+    logger::debug("[{}] Cost stamina {:.0f} magicka {:.0f} health {:.0f}{} at {:.2f}s", Spec().id, c.stamina, c.magicka,
+        c.health, c.percent ? "%" : "", _elapsed);
 }
 
 // 공격 의미: 종족 BGSAttackDataMap 에서 이름으로 찾아 HighProcessData::attackData 에 넣는다.
@@ -682,6 +696,7 @@ void ActionRunner::RestoreSlots() {
     RestoreAttackData();
     ReleaseRotation();
     if (_iframeOn) ApplyIFrame(false);
+    if (_timeOn) ApplyTimeScale(false);
     if (_hyperOn) {
         _hyperOn = false;
         logger::debug("[{}] HyperArmor OFF (종료)", Spec().id);
@@ -694,8 +709,8 @@ void ActionRunner::SlotUpdate() {
     const auto& spec = Spec();
     // A loop has no end: "until end" stays on (charge, 10-30).
     const float dur = spec.loop.enabled ? 1.0e9f : _clipDuration > 0.05f ? _clipDuration : spec.safetyDuration;
-    const SlotWindow* wins[3] = {&spec.rotate, &spec.iframe, &spec.hyperArmor};
-    for (int k = 0; k < 3; ++k) {
+    const SlotWindow* wins[4] = {&spec.rotate, &spec.iframe, &spec.hyperArmor, &spec.timeScale};
+    for (int k = 0; k < 4; ++k) {
         const auto& w = *wins[k];
         auto& st = _slot[k];
         if (!w.enabled) continue;
@@ -723,19 +738,12 @@ void ActionRunner::SlotUpdate() {
                 logger::debug("[{}] HyperArmor {} at {:.2f}s", spec.id, on ? "ON" : "OFF", _elapsed);
             }
             break;
+        case 3: ApplyTimeScale(on); break;
         }
     }
     if (spec.cost.enabled && !_costDone && spec.cost.at >= 0.0f && _elapsed >= spec.cost.at) ApplyCost();
-    // An ordinary action's clip-time effects (0.12.274); a pair's run in PairFeatures.
-    if (const auto& timed = spec.pairFeatures.timed; !spec.paired.enabled && !timed.empty()) {
-        if (_timedFired.size() != timed.size()) _timedFired.assign(timed.size(), false);
-        for (std::size_t i = 0; i < timed.size(); ++i)
-            if (!_timedFired[i] && _elapsed >= timed[i].at) {
-                _timedFired[i] = true;
-                RunTimedEffect(timed[i].function);
-                if (_state != State::kActive) return;
-            }
-    }
+    RunTimedEffects(_elapsed);
+    if (_state != State::kActive) return;
     if (spec.carryRelease.enabled && !_carryReleaseDue && spec.carryRelease.at >= 0.0f &&
         _elapsed >= spec.carryRelease.at)
         ReachCarryRelease("time");
@@ -749,6 +757,20 @@ void ActionRunner::RunTimedEffect(const EventFunctionSpec& function) {
     logger::debug("[{}] clip-time effect op={} at {:.2f}s", Spec().id, static_cast<int>(function.op), _elapsed);
 }
 
+// An ordinary action's clip-time effects (0.12.274) whose time `upTo` reached, each once; a pair's run in
+// PairFeatures. One stops the run if the action leaves its active state.
+void ActionRunner::RunTimedEffects(float upTo) {
+    const auto& spec = Spec();
+    const auto& timed = spec.pairFeatures.timed;
+    if (spec.paired.enabled || timed.empty()) return;
+    if (_timedFired.size() != timed.size()) _timedFired.assign(timed.size(), false);
+    for (std::size_t i = 0; i < timed.size() && _state == State::kActive; ++i)
+        if (!_timedFired[i] && upTo >= timed[i].at) {
+            _timedFired[i] = true;
+            RunTimedEffect(timed[i].function);
+        }
+}
+
 void ActionRunner::ReachCarryRelease(const char* why) {
     _carryReleaseDue = true;
     logger::info("[{}] CarryRelease reached by {} at {:.2f}s", Spec().id, why, _elapsed);
@@ -758,8 +780,8 @@ const ActionRunner::EventTags& ActionRunner::Tags() {
     if (!_tags) {
         const auto& spec = Spec();
         auto tags = std::make_unique<EventTags>();
-        const SlotWindow* wins[3] = {&spec.rotate, &spec.iframe, &spec.hyperArmor};
-        for (std::size_t k = 0; k < 3; ++k) {
+        const SlotWindow* wins[4] = {&spec.rotate, &spec.iframe, &spec.hyperArmor, &spec.timeScale};
+        for (std::size_t k = 0; k < 4; ++k) {
             tags->slotOn[k] = RE::BSFixedString(wins[k]->onEvent.c_str());
             tags->slotOff[k] = RE::BSFixedString(wins[k]->offEvent.c_str());
         }
@@ -781,8 +803,8 @@ void ActionRunner::SlotEvent(const RE::BSFixedString& a_tag) {
     if (_state != State::kActive) return;
     const auto& spec = Spec();
     const auto& tags = Tags();
-    const SlotWindow* wins[3] = {&spec.rotate, &spec.iframe, &spec.hyperArmor};
-    for (int k = 0; k < 3; ++k) {
+    const SlotWindow* wins[4] = {&spec.rotate, &spec.iframe, &spec.hyperArmor, &spec.timeScale};
+    for (int k = 0; k < 4; ++k) {
         const auto& w = *wins[k];
         auto& st = _slot[k];
         if (!w.enabled) continue;
@@ -800,6 +822,7 @@ void ActionRunner::SlotEvent(const RE::BSFixedString& a_tag) {
             _hyperOn = on;
             logger::debug("[{}] HyperArmor {} (주석) at {:.2f}s", spec.id, on ? "ON" : "OFF", _elapsed);
             break;
+        case 3: ApplyTimeScale(on); break;
         }
     }
     if (spec.cost.enabled && !_costDone && a_tag == tags.cost) ApplyCost();
@@ -1034,6 +1057,7 @@ void ActionRunner::ResetPlaybackFlags() {
     // 새 재생이 시작되면 켜져 있던 슬롯은 새 재생의 창으로 다시 판정한다
     if (_rotateOn) ApplyRotate(false);
     if (_iframeOn) ApplyIFrame(false);
+    if (_timeOn) ApplyTimeScale(false);
     _hyperOn = false;
 }
 
@@ -1232,7 +1256,8 @@ void ActionRunner::Update(float a_delta) {
         if (spec.endLinkAt >= 0.0f && !_endReached && _clipDuration > 0.05f &&
             _elapsed >= _clipDuration - spec.endLinkAt) {
             _endReached = true;
-            if (!ActionLinks::ReachedEnd(_owner, _idx)) ExitForLink();
+            RunTimedEffects(std::numeric_limits<float>::infinity());
+            if (_state == State::kActive && !ActionLinks::ReachedEnd(_owner, _idx)) ExitForLink();
         }
         // maxHold counts from the press of the key that started the charge while it is down (a moving charge keeps
         // one clock from loop to loop), else from this action's start.
@@ -1245,6 +1270,8 @@ void ActionRunner::Update(float a_delta) {
         }
     }
     if (_state == State::kActive && !_exitSent && _elapsed >= SafetyTime()) {
+        RunTimedEffects(std::numeric_limits<float>::infinity());
+        if (_state != State::kActive) return;
         PrepareExit(Spec().exitBlend);
         if (auto* p = Owner()) p->NotifyAnimationGraph(Fixed(Spec().events.exit));
         if (_state == State::kExiting) SetAnimationDriven(false);
@@ -1300,6 +1327,7 @@ void ActionRunner::OnAnimEvent(const RE::BSFixedString& a_tag) {
     SlotEvent(a_tag);
     if (a_tag == tags.exit) {
         _exitSeen = true;
+        if (_state == State::kActive) RunTimedEffects(std::numeric_limits<float>::infinity());
         if (_state == State::kActive) PrepareExit(spec.exitBlend);
         SetAnimationDriven(false);
     }

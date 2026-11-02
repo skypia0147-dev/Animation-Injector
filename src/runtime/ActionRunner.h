@@ -181,15 +181,20 @@ private:
     struct SlotState {
         bool onSeen = false, offSeen = false;
     };
-    SlotState _slot[3];  // rotate, iframe, hyperArmor
+    SlotState _slot[4];    // rotate, iframe, hyperArmor, timeScale
+    bool _timeOn = false;  // this run holds the time scale (EventEffects)
     void ResetPlaybackFlags();
     void RecoveryClock();
     void SlotUpdate();  // 시각 기반 슬롯 적용
     void SlotEvent(const RE::BSFixedString& a_tag);
     void ApplyRotate(bool a_on);
-    void ApplyIFrame(bool a_on);  // 액터 베이스 kIsGhost|kInvulnerable (공격이 통과·피해 없음) + 피해 훅
+    void ApplyIFrame(bool a_on);     // 액터 베이스 kIsGhost|kInvulnerable (공격이 통과·피해 없음) + 피해 훅
+    void ApplyTimeScale(bool a_on);  // the player's time multiplier through EventEffects' time hold
     void ApplyCost();
     void RunTimedEffect(const EventFunctionSpec& function);
+    // The clip-time effects not yet run whose time `upTo` reached. The action's end passes infinity (11-01): one at
+    // the clip's end lies past the exit point (0.05 s before it).
+    void RunTimedEffects(float upTo);
     void ApplyAttackData();    // 공격 의미: 이 액션의 종족 공격 데이터를 attackData 에 넣는다
     void RestoreAttackData();  // 우리가 넣은 것이 아직 있으면 이전 값으로
     RE::NiPointer<RE::BGSAttackData> _attackSet, _attackPrev;  // 우리가 넣은 것 / 넣기 전 값
@@ -200,7 +205,7 @@ private:
     // The event names every animation event is compared with, interned once per runner (main thread): the
     // comparison used to hash each name again for every event (code review 2026-09-30 R-19).
     struct EventTags {
-        std::array<RE::BSFixedString, 3> slotOn, slotOff;  // rotate, iframe, hyperArmor
+        std::array<RE::BSFixedString, 4> slotOn, slotOff;  // rotate, iframe, hyperArmor, timeScale
         RE::BSFixedString cost, carryRelease, exit;
         std::vector<RE::BSFixedString> open, close;  // by window
         std::vector<RE::BSFixedString> recovery;     // by variant

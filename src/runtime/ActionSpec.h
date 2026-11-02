@@ -88,7 +88,7 @@ struct TriggerSpec {                                     // 액션 시작 입력
 // Recovery 슬롯 (계획서 §4-3): 이 이벤트(또는 시각) 이후에는 이동 입력만으로 액션을 끊고 이동으로 나간다.
 //   이미 누르고 있던 이동키도 인정(MCO 와 다른 점). 다른 창은 그대로 살아 있다.
 
-// 켜기/끄기 슬롯 창 (Rotate·IFrame·HyperArmor): on/off 각각 이벤트 또는 "@시각". 실행기가 처리(그래프 변경 없음).
+// 켜기/끄기 슬롯 창 (Rotate·IFrame·HyperArmor·TimeScale): on/off 각각 이벤트 또는 "@시각". 실행기가 처리(그래프 변경 없음).
 //   시각(@)은 실행기 타이머로 적용, 이벤트는 HKX 주석이 쏠 때만(0.12.278: 대체값 없음). off 는 "@end-초" 도 가능.
 struct SlotWindow {
     bool enabled = false;
@@ -129,9 +129,10 @@ struct CarryReleaseSpec {
 
 struct CostSpec {  // 자원 소모. at 생략 = 시작할 때
     bool enabled = false;
-    std::string event;  // 기본 AI_<id>_Cost
-    float at = -1.0f;   // "@초" 면 실행기 타이머
-    float stamina = 0.0f, magicka = 0.0f;
+    std::string event;                                    // 기본 AI_<id>_Cost
+    float at = -1.0f;                                     // "@초" 면 실행기 타이머
+    float stamina = 0.0f, magicka = 0.0f, health = 0.0f;  // health never takes the last point
+    bool percent = false;                                 // measure="percent": percent of each maximum
 };
 
 // 시작 제한 (0.12.276, docs/mockup-start-limits): the action's own nature, checked on every way into it (a key,
@@ -172,9 +173,11 @@ struct ActionSpec {
     std::vector<InputDef> inputs;
     RecoverySpec recovery;
     bool HasRecovery() const { return recovery.enabled; }
-    SlotWindow rotate;      // bAllowRotation (기본: 액션 중 false)
-    SlotWindow iframe;      // 체력 피해 무시 + 스태거 무시
-    SlotWindow hyperArmor;  // 스태거 무시
+    SlotWindow rotate;                         // bAllowRotation (기본: 액션 중 false)
+    SlotWindow iframe;                         // 체력 피해 무시 + 스태거 무시
+    SlotWindow hyperArmor;                     // 스태거 무시
+    SlotWindow timeScale;                      // the player's global time multiplier (11-01)
+    float timeFactor = 1.0f, timeEase = 0.0f;  // timeScale: the multiplier, and real seconds to reach it and back
     CostSpec cost;
     CarryReleaseSpec carryRelease;
     std::vector<QteSpec> qtes;
@@ -229,6 +232,7 @@ struct ActionSpec {
         slotNames(rotate, "Rotate");
         slotNames(iframe, "IFrame");
         slotNames(hyperArmor, "HyperArmor");
+        slotNames(timeScale, "TimeScale");
         if (cost.event.empty()) cost.event = "AI_" + id + "_Cost";
         if (carryRelease.enabled && carryRelease.at < 0 && carryRelease.event.empty())
             carryRelease.event = "AI_" + id + "_CarryRelease";

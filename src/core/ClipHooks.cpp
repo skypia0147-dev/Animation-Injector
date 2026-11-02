@@ -9,6 +9,7 @@
 #include "core/GraphInjector.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionRunner.h"
+#include "runtime/ClipWindows.h"
 #include "Settings.h"
 #include "runtime/PairedSession.h"
 #include "runtime/Carry.h"
@@ -94,6 +95,9 @@ struct Activate {
                 logger::warn("[Clip] '{}' 애니 이름을 animationNames 에 못 넣음", a_this->name.c_str());
         }
         func(a_this, a_ctx);
+        // Any clip that sends a registered window's on and off events owns that window (11-02).
+        if (auto* ac = a_this->animationControl.get(); ac && ac->binding && ac->binding->animation.get())
+            ClipWindows::Activated(a_this, ac->binding->animation.get(), ActorForContext(a_ctx));
         if (!ours || Actions::Spec(action).paired.enabled) return;
         float dur = 0.0f;
         bool moves = false;
@@ -134,6 +138,8 @@ void ObservePair(RE::BSSynchronizedClipGenerator* node, const RE::hkbContext& co
 struct SyncActivate {
     static void thunk(RE::BSSynchronizedClipGenerator* node, const RE::hkbContext& context) {
         func(node, context);
+        // The clip inside started in func: its windows are its actor's prefixed annotations (runtime/ClipWindows.h).
+        if (node && node->clipGenerator) ClipWindows::Synchronized(node->clipGenerator, node->syncAnimPrefix.c_str());
         ObservePair(node, context, false);
     }
     static inline REL::Relocation<decltype(thunk)> func;
@@ -141,6 +147,8 @@ struct SyncActivate {
 struct SyncUpdate {
     static void thunk(RE::BSSynchronizedClipGenerator* node, const RE::hkbContext& context, float delta) {
         func(node, context, delta);
+        // Also here, for a clip inside that starts after the synchronized clip did.
+        if (node && node->clipGenerator) ClipWindows::Synchronized(node->clipGenerator, node->syncAnimPrefix.c_str());
         ObservePair(node, context, false);
     }
     static inline REL::Relocation<decltype(thunk)> func;
@@ -157,6 +165,7 @@ struct SyncDeactivate {
 struct Deactivate {
     static void thunk(RE::hkbClipGenerator* a_this, const RE::hkbContext& a_ctx) {
         func(a_this, a_ctx);
+        ClipWindows::Deactivated(a_this);
         int action = -1, variant = -1;
         if (!Actions::FindClip(a_this->name.c_str(), action, variant)) return;
         if (Actions::Spec(action).paired.enabled) return;

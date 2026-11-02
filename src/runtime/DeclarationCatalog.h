@@ -58,7 +58,7 @@ struct DeclarationCatalog {
                 events.push_back(s.recovery.event);
                 events.push_back(s.recovery.recoverEvent);
             }
-            for (const SlotWindow* w : {&s.rotate, &s.iframe, &s.hyperArmor})
+            for (const SlotWindow* w : {&s.rotate, &s.iframe, &s.hyperArmor, &s.timeScale})
                 if (w->enabled) {
                     events.push_back(w->onEvent);
                     events.push_back(w->offEvent);

@@ -2,6 +2,7 @@
 #include "runtime/ExtendedConditions.h"
 #include "runtime/ActionHistory.h"
 #include "runtime/HitHistory.h"
+#include "runtime/ResourceCost.h"
 #include "runtime/LyingSide.h"
 #include "runtime/PairedRig.h"
 #include "runtime/PairedSession.h"
@@ -187,9 +188,8 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
         const double current = values->GetActorValue(av);
         if (!std::isfinite(current)) return Value::kUnavailable;
         if (p.measure == "current") return numeric(current);
-        const double maximum = values->GetPermanentActorValue(av) +
-                               subject->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kTemporary, av);
-        if (!std::isfinite(maximum) || maximum <= 0) return Value::kUnavailable;
+        const double maximum = ResourceCost::Maximum(subject, av);
+        if (maximum <= 0) return Value::kUnavailable;
         return numeric(std::clamp(current / maximum * 100.0, 0.0, 100.0));
     }
     case Test::kEssential: return boolean(subject->IsEssential());

@@ -128,12 +128,14 @@ int wmain(int argc, wchar_t** argv) {
         for (auto state : {"none", "draw", "swing", "hit", "nextAttack", "followThrough", "bash", "bowDraw",
                  "bowAttached", "bowDrawn", "bowReleasing", "bowReleased", "bowNextAttack", "bowFollowThrough"})
             Check(Valid(flow("kind='attackState' state='" + std::string(state) + "'")), "all attack states");
-        Check(Valid(flow("kind='sneaking' subject='partner'")), "sneaking accepts common attributes");
-        for (auto test :
-            {"kind='equippedType' type='bow'", "kind='equippedType' hand='left' type='7'",
-                "kind='attackState' state='7'", "kind='attackState'", "kind='sneaking' state='none'",
-                "kind='sneaking' minimum='1'", "kind='sneaking' hand='left'", "kind='sneaking' plugin='x.esp' form='1'",
-                "kind='attackState' state='none' equals='1'", "kind='alive' hand='left' type='bow'"})
+        Check(Valid(flow("kind='actorStatus' option='sneaking' subject='partner'")),
+            "sneaking accepts common attributes");
+        for (auto test : {"kind='equippedType' type='bow'", "kind='equippedType' hand='left' type='7'",
+                 "kind='attackState' state='7'", "kind='attackState'",
+                 "kind='actorStatus' option='sneaking' state='none'",
+                 "kind='actorStatus' option='sneaking' minimum='1'", "kind='actorStatus' option='sneaking' hand='left'",
+                 "kind='actorStatus' option='sneaking' plugin='x.esp' form='1'",
+                 "kind='attackState' state='none' equals='1'", "kind='alive' hand='left' type='bow'"})
             Check(!Valid(flow(test)), "invalid condition attributes rejected");
         InputAcceptance input;
         input.Begin(2);

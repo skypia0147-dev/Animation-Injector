@@ -1,8 +1,10 @@
 #include "runtime/AnnotationCommands.h"
+#include "runtime/ClipWindowsJudge.h"
 #include "Settings.h"
 #include "declarations/XmlV2.h"
 #include "runtime/EventRegistryMerge.h"
 #include "runtime/EventValuesMatch.h"
+#include "runtime/ResourceCost.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -38,7 +40,7 @@ int main() {
         // The registry: names, functions, defaults and an event registered only for the graphs.
         {
             const auto p = Parse(std::string(kAction) + R"(<EventRegistry>
-                <Event name="Grapple_Stom"><Do op="spell" plugin="FH_Grapple.esp" form="0x80B"/></Event>
+                <Event name="Grapple_Stom"><Do op="magic" action="cast" plugin="FH_Grapple.esp" form="0x80B"/></Event>
                 <Event name="Grapple_CamShake"><Do op="shake"/></Event>
                 <Event name="MCO_WinOpen"/>
                 <Event name="Hit"><Do op="hide"/><Do op="iframeOn"/></Event>
@@ -50,7 +52,7 @@ int main() {
             Check(stom.name == "Grapple_Stom" && stom.source == "test.xml" && stom.functions.size() == 1,
                 "name, source and function");
             const auto& spell = stom.functions[0];
-            Check(spell.op == EventOp::kSpell && spell.plugin == "FH_Grapple.esp" && spell.form == "80B" &&
+            Check(spell.op == EventOp::kMagicCast && spell.plugin == "FH_Grapple.esp" && spell.form == "80B" &&
                       spell.delay == 0.0f,
                 "spell settings, form without 0x");
             Check(spell.target == EventTarget::kSender, "an event function changes its sender");
@@ -72,8 +74,26 @@ int main() {
         }
         Check(Rejected("<EventRegistry><Event name='Same'/><Event name='same'/></EventRegistry>"),
             "one name twice in a file, ignoring case");
-        Check(Rejected("<EventRegistry><Event name='X'><Do op='spell'/></Event></EventRegistry>"),
+        Check(Rejected("<EventRegistry><Event name='X'><Do op='magic' action='cast'/></Event></EventRegistry>"),
             "a spell needs its plugin and form");
+        // 11-01: one magic function, its action says cast, add or remove; the old ops are gone.
+        {
+            const auto p = Parse(R"(<EventRegistry><Event name='M'>
+                <Do op='magic' action='add' plugin='a.esp' form='1'/>
+                <Do op='magic' action='remove' plugin='a.esp' form='1'/>
+                <Do op='magic' action='cast' plugin='a.esp' form='1'/>
+            </Event></EventRegistry>)");
+            Check(p.ok && p.events[0].functions.size() == 3 && p.events[0].functions[0].op == EventOp::kMagicAdd &&
+                      p.events[0].functions[1].op == EventOp::kMagicRemove &&
+                      p.events[0].functions[2].op == EventOp::kMagicCast,
+                "magic add, remove and cast");
+        }
+        for (const char* bad :
+            {"<Do op='magic' plugin='a.esp' form='1'/>", "<Do op='magic' action='learn' plugin='a.esp' form='1'/>",
+                "<Do op='hide' action='add'/>", "<Do op='spell' plugin='a.esp' form='1'/>",
+                "<Do op='stateOn' plugin='a.esp' form='1'/>", "<Do op='stateOff' plugin='a.esp' form='1'/>"})
+            Check(Rejected(std::string("<EventRegistry><Event name='X'>") + bad + "</Event></EventRegistry>"),
+                (std::string("rejected: ") + bad).c_str());
         Check(
             Rejected("<EventRegistry><Event name='X'><Do op='hide' plugin='a.esp' form='1'/></Event></EventRegistry>"),
             "plugin and form only where a spell is used");
@@ -142,7 +162,7 @@ int main() {
                 "an ordinary action's clip-time ragdoll pushes the actor playing it");
         }
         {
-            const auto p = Parse("<EventRegistry><Event name='X'><Do op='spell' plugin='a.esp' form='1' "
+            const auto p = Parse("<EventRegistry><Event name='X'><Do op='magic' action='cast' plugin='a.esp' form='1' "
                                  "releasePhysics='true'/></Event></EventRegistry>");
             Check(!p.ok, "a spell has no releasePhysics");
         }
@@ -315,7 +335,7 @@ int main() {
                 <Event name='Throw'><Do op='ragdoll' force='8'/></Event>
                 <Event name='Pay'><Do op='cost' stamina='12'/></Event>
             </EventValues></Action>
-            <Pair id='P' clip='p.hkx'><EventValues><Event name='Fire'><Do op='spell' delay='0.3'/></Event></EventValues></Pair>
+            <Pair id='P' clip='p.hkx'><EventValues><Event name='Fire'><Do op='magic' action='cast' delay='0.3'/></Event></EventValues></Pair>
             <EventRegistry>
                 <Event name='Fire'><Do op='fireArrow'/><Do op='shake'/></Event>
                 <Event name='Throw'><Do op='ragdoll' direction='backward'/></Event>
@@ -347,7 +367,7 @@ int main() {
                       run.plugin == "a.esp" && std::fabs(run.force - 8) < 1e-6f && run.target == EventTarget::kSender,
                 "WithValues: the registry's direction, the action's force");
             Check(NeedsValues(EventOp::kCost) && NeedsValues(EventOp::kTimeOn) && !NeedsValues(EventOp::kShake) &&
-                      !NeedsValues(EventOp::kSpell),
+                      !NeedsValues(EventOp::kMagicCast),
                 "cost and timeOn run only with an action's numbers");
         }
         for (const char* attr : {"plugin='a.esp' form='1'", "direction='up'", "target='player'", "at='0.1'"}) {
@@ -382,9 +402,9 @@ int main() {
                 return f;
             };
             const std::vector<EventFunctionSpec> registry = {
-                fn(EventOp::kSpell), fn(EventOp::kShake), fn(EventOp::kSpell), fn(EventOp::kHide)};
-            const std::vector<EventFunctionSpec> values = {
-                fn(EventOp::kSpell, 1), fn(EventOp::kSpell, 2), fn(EventOp::kSpell, 3), fn(EventOp::kShake, 4)};
+                fn(EventOp::kMagicCast), fn(EventOp::kShake), fn(EventOp::kMagicCast), fn(EventOp::kHide)};
+            const std::vector<EventFunctionSpec> values = {fn(EventOp::kMagicCast, 1), fn(EventOp::kMagicCast, 2),
+                fn(EventOp::kMagicCast, 3), fn(EventOp::kShake, 4)};
             std::vector<int> unmatched;
             const auto m = MatchValues(registry, values, &unmatched);
             Check(m == std::vector<int>{0, 3, 1, -1}, "each op's values in order, none for the hide");
@@ -409,6 +429,48 @@ int main() {
         }
         Check(Rejected("<Action id='A' clip='a.hkx'><Cost at='event:Pay' stamina='5'/></Action>"),
             "costs are paid at clip times");
+        // Health as a cost too (10-31), never its last point.
+        {
+            const auto c = Parse("<Action id='A' clip='a.hkx'><Cost health='15' magicka='5'/></Action>");
+            Check(c.ok && c.actions[0].cost.enabled && std::fabs(c.actions[0].cost.health - 15) < 1e-6f &&
+                      std::fabs(c.actions[0].cost.magicka - 5) < 1e-6f && c.actions[0].cost.stamina == 0,
+                "a health cost");
+            const auto t = Parse("<Pair id='P' clip='p.hkx'><Do at='0.2' op='cost' health='8'/></Pair>");
+            Check(t.ok && std::fabs(t.actions[0].pairFeatures.timed[0].function.health - 8) < 1e-6f,
+                "a clip-time health cost");
+            Check(Rejected("<Action id='A' clip='a.hkx'><Cost health='-1'/></Action>"), "no negative health cost");
+            using AnimationInjector::ResourceCost::Health;
+            Check(Health(15, 100) == 15 && Health(15, 10) == 9 && Health(15, 1) == 0 && Health(15, 0.5f) == 0 &&
+                      Health(-3, 100) == 0,
+                "health cost leaves the last point");
+        }
+        // A cost in percent of each maximum (10-31): the action's Cost, and a registered cost with its node's numbers.
+        {
+            const auto c = Parse("<Action id='A' clip='a.hkx'><Cost stamina='25' measure='percent'/></Action>");
+            Check(c.ok && c.actions[0].cost.percent && std::fabs(c.actions[0].cost.stamina - 25) < 1e-6f,
+                "a percent cost");
+            Check(!Parse("<Action id='A' clip='a.hkx'><Cost stamina='25'/></Action>").actions[0].cost.percent,
+                "values by default");
+            Check(Rejected("<Action id='A' clip='a.hkx'><Cost stamina='120' measure='percent'/></Action>"),
+                "at most 100 percent");
+            Check(
+                Rejected("<Action id='A' clip='a.hkx'><Cost stamina='5' measure='max'/></Action>"), "value or percent");
+            const auto r = Parse(R"(<Action id='A' clip='a.hkx'><EventValues>
+                <Event name='Pay'><Do op='cost' health='10'/></Event></EventValues></Action>
+                <EventRegistry><Event name='Pay'><Do op='cost' measure='percent'/></Event></EventRegistry>)");
+            Check(r.ok, r.error.c_str());
+            const auto run = WithValues(r.events[0].functions[0], r.actions[0].eventValues[0].functions[0]);
+            Check(run.costPercent && std::fabs(run.health - 10) < 1e-6f, "the registry's unit, the node's numbers");
+            Check(Rejected("<Action id='A' clip='a.hkx'><EventValues><Event name='Pay'><Do op='cost' stamina='5' "
+                           "measure='percent'/></Event></EventValues></Action>"),
+                "the unit is the registry's");
+            Check(Rejected("<EventRegistry><Event name='X'><Do op='shake' measure='percent'/></Event></EventRegistry>"),
+                "measure is a cost's");
+            using AnimationInjector::ResourceCost::OfMaximum;
+            Check(OfMaximum(25, 200) == 50 && OfMaximum(150, 200) == 200 && OfMaximum(-5, 200) == 0 &&
+                      OfMaximum(25, 0) == 0,
+                "percent of the maximum, within 0~100");
+        }
 
         // A pair's clip-time effects.
         {
@@ -500,7 +562,7 @@ int main() {
             EventFunctionSpec hide;
             hide.op = EventOp::kHide;
             EventFunctionSpec spell;
-            spell.op = EventOp::kSpell;
+            spell.op = EventOp::kMagicCast;
             spell.plugin = "a.esp";
             spell.form = "1";
             std::vector<EventRuleSpec> rules = {
@@ -533,9 +595,15 @@ int main() {
             Check(refused("<Action id='A' clip='a.hkx'><Exit at='event:AI'/></Action>"), "in any event attribute");
             using AnnotationCommands::Parse;
             using AnnotationCommands::Parsed;
-            Check(Parse("CamShake|1.5|0.5") == Parsed{AnnotationCommands::Command::kCamShake, 1.5f, 0.5f},
-                "strength and duration");
-            Check(Parse("camshake|2|1") == Parsed{AnnotationCommands::Command::kCamShake, 2.0f, 1.0f}, "any case");
+            const auto shakeOf = [](float strength, float duration) {
+                Parsed p;
+                p.op = EventOp::kShake;
+                p.strength = strength;
+                p.duration = duration;
+                return p;
+            };
+            Check(Parse("CamShake|1.5|0.5") == shakeOf(1.5f, 0.5f), "strength and duration");
+            Check(Parse("camshake|2|1") == shakeOf(2.0f, 1.0f), "any case");
             Check(Parse("CamShake|0|0") && Parse("CamShake|10|30"), "the range ends");
             for (const char* bad : {"", "CamShake", "CamShake|", "CamShake|1|", "CamShake||1", "CamShake|1|1|1",
                      "CamShake|x", "CamShake|1x", "CamShake|-1", "CamShake|11", "CamShake|1|31", "CamShake|nan",
@@ -543,13 +611,87 @@ int main() {
                 Check(!Parse(bad), (std::string("refused: '") + bad + "'").c_str());
             // A pair's two roles sending the same command at one moment run it once (0.12.275).
             AnnotationCommands::PairEcho echo;
-            const Parsed shake{AnnotationCommands::Command::kCamShake, 1.5f, 0.5f};
+            const auto shake = shakeOf(1.5f, 0.5f);
             Check(!echo.Repeat(1, 2, shake, 10.0) && echo.Repeat(2, 1, shake, 10.05), "the partner's echo is skipped");
             Check(!echo.Repeat(2, 1, shake, 10.5), "a later one runs");
             Check(!echo.Repeat(1, 0, shake, 20.0) && !echo.Repeat(1, 0, shake, 20.01), "outside a pair every one runs");
-            Check(!echo.Repeat(3, 4, shake, 30.0) &&
-                      !echo.Repeat(4, 3, Parsed{AnnotationCommands::Command::kCamShake, 1.0f, 0.5f}, 30.01),
-                "other numbers run");
+            Check(
+                !echo.Repeat(3, 4, shake, 30.0) && !echo.Repeat(4, 3, shakeOf(1.0f, 0.5f), 30.01), "other numbers run");
+        }
+        // Every event function but a strike is an AI. command (11-02): the annotation's own values, a window's on
+        // with an optional span last.
+        {
+            using AnnotationCommands::Parse;
+            const auto op = [](const char* text, EventOp want) {
+                const auto p = Parse(text);
+                return p && p->op == want;
+            };
+            Check(op("IFrameOn", EventOp::kIFrameOn) && op("iframeoff", EventOp::kIFrameOff) &&
+                      op("ArmorOn", EventOp::kArmorOn) && op("ArmorOff", EventOp::kArmorOff) &&
+                      op("RotateOn", EventOp::kRotateOn) && op("RotateOff", EventOp::kRotateOff) &&
+                      op("TimeOff", EventOp::kTimeOff) && op("Hide", EventOp::kHide) && op("Show", EventOp::kShow) &&
+                      op("StopVelocity", EventOp::kStopVelocity) && op("CancelPair", EventOp::kCancel),
+                "the commands without values");
+            Check(Parse("IFrameOn")->span == 0.0f && Parse("IFrameOn|0.3")->span == 0.3f &&
+                      Parse("ArmorOn|60")->span == 60.0f && Parse("RotateOn|0")->span == 0.0f,
+                "a window's on takes an optional span");
+            const auto time = Parse("TimeOn|0.3|0.15|1.5");
+            Check(time && time->op == EventOp::kTimeOn && time->factor == 0.3f && time->ease == 0.15f &&
+                      time->span == 1.5f && Parse("TimeOn|0.3|0.15")->span == 0.0f,
+                "a time scale: factor, ease, then its span");
+            const auto magic = Parse("MagicAdd|Skyrim.esm|0x12FCD");
+            Check(magic && magic->op == EventOp::kMagicAdd && magic->plugin == "Skyrim.esm" && magic->form == "12FCD" &&
+                      op("MagicRemove|a.esp|800", EventOp::kMagicRemove) &&
+                      op("MagicCast|a.esp|800", EventOp::kMagicCast),
+                "magic: a plugin and a form");
+            const auto cost = Parse("Cost|20|0|5"), percent = Parse("CostPercent|10|0|0");
+            Check(cost && cost->op == EventOp::kCost && cost->stamina == 20.0f && cost->health == 5.0f &&
+                      !cost->costPercent && percent && percent->costPercent && percent->stamina == 10.0f,
+                "a cost as amounts or percent");
+            const auto ragdoll = Parse("Ragdoll|backward|8");
+            Check(ragdoll && ragdoll->direction == RagdollPush::Direction::kBackward && ragdoll->force == 8.0f,
+                "a ragdoll's direction and force");
+            Check(Parse("FireArrow|150")->arrowDamage == 1.5f, "a shot's damage in percent");
+            const auto sound = Parse("Sound|sound\\fx\\a.wav|head|0.8"), form = Parse("SoundForm|a.esp|3C|root|1");
+            Check(sound && sound->file == "sound\\fx\\a.wav" && sound->bone == "head" && sound->volume == 0.8f &&
+                      form && form->plugin == "a.esp" && form->form == "3C" && form->bone == "root",
+                "a sound by file or by form");
+            const auto global = Parse("GlobalSet|a.esp|D62|-2.5"), mod = Parse("ModEvent|MyDodge||1");
+            Check(global && global->value == -2.5f && !global->restore && mod && mod->name == "MyDodge" &&
+                      mod->text.empty() && mod->number == 1.0f,
+                "a global's value, a mod event's name, text and number");
+            for (const char* bad : {"IFrameOn|61", "IFrameOn|-1", "IFrameOn|1|1", "IFrameOff|1", "TimeOn|0.3",
+                     "TimeOn|0.01|0", "TimeOn|1|3", "TimeOn|1|0|61", "MagicAdd|a.esp", "MagicAdd||800",
+                     "MagicAdd|a.esp|xyz", "MagicAdd|a/b.esp|800", "Cost|1|1", "CostPercent|101|0|0",
+                     "Ragdoll|sideways|1", "Ragdoll|down|21", "FireArrow|0", "Sound|C:\\a.wav|head|1",
+                     "Sound|..\\a.wav|head|1", "Sound|a.wav|Head|1", "Sound|a.wav|head|2", "SoundForm|a.esp|3C|head",
+                     "GlobalSet|a.esp|D62|x", "ModEvent||t|1", "Strike", "CancelPair|1", "Nothing"})
+                Check(!Parse(bad), (std::string("refused: '") + bad + "'").c_str());
+        }
+        // A window's span on a registered event (11-02): the registry's own, 0~60 seconds, windows only.
+        {
+            const auto p = Parse("<EventRegistry><Event name='Ghost'><Do op='iframeOn' duration='0.3'/></Event>"
+                                 "<Event name='Slow'><Do op='timeOn' duration='60'/></Event></EventRegistry>");
+            Check(p.ok && p.events[0].functions[0].span == 0.3f && p.events[0].functions[0].duration == 0.5f &&
+                      p.events[1].functions[0].span == 60.0f,
+                "a registered window's duration is its span");
+            Check(Parse("<EventRegistry><Event name='Ghost'><Do op='iframeOn'/></Event></EventRegistry>")
+                          .events[0]
+                          .functions[0]
+                          .span == 0.0f,
+                "no duration: no span");
+            Check(Rejected("<EventRegistry><Event name='G'><Do op='iframeOn' duration='61'/></Event></EventRegistry>"),
+                "a span is at most 60 seconds");
+            Check(
+                Rejected("<EventRegistry><Event name='G'><Do op='iframeOff' duration='1'/></Event></EventRegistry>") &&
+                    Rejected("<EventRegistry><Event name='G'><Do op='shake' duration='1'/></Event></EventRegistry>"),
+                "the registry's duration is a window's on only");
+            Check(Rejected("<Action id='A' clip='a.hkx'><EventValues><Event name='G'><Do op='iframeOn' duration='1'/>"
+                           "</Event></EventValues></Action><EventRegistry><Event name='G'><Do op='iframeOn'/></Event>"
+                           "</EventRegistry>"),
+                "an action's values hold no span");
+            Check(WithValues(p.events[0].functions[0], EventFunctionSpec{}).span == 0.3f,
+                "the registry's span runs with any numbers");
         }
         // An event's QTEs (0.12.248): read under <Event>, asked at once (at 0), every file's kept; no start
         // time, no recipient, ids unique within the event.
@@ -586,6 +728,33 @@ int main() {
             EventRuleSpec a{"Ragdoll", {}, "A.xml", p.events[0].qtes};
             EventRuleSpec b{"ragdoll", {}, "B.xml", p.events[0].qtes};
             Check(EventRegistryMerge::Merge({a, b}).entries[0].qtes.size() == 2, "every file's QTEs");
+        }
+        // A clip that turns a window on and off by itself owns it (11-02): the off event comes later in the clip.
+        {
+            using namespace ClipWindowsJudge;
+            const Role ghostOn{0, 0b0001}, ghostOff{1, 0, 0b0001}, armorOff{2, 0, 0b0010}, both{3, 0b1000, 0b1000};
+            const auto judge = [](std::vector<Note> notes) { return Judge(notes); };
+            Check(judge({{0.1f, &ghostOn}, {0.4f, &ghostOff}}) == std::vector<Own>{{0, 0}},
+                "on then off in one clip: the clip owns the window");
+            Check(judge({{0.1f, &ghostOn}}).empty(), "on without off: another clip turns it off");
+            Check(judge({{0.4f, &ghostOn}, {0.1f, &ghostOff}}).empty(), "an off before the on is another window's end");
+            Check(judge({{0.1f, &ghostOn}, {0.4f, &armorOff}}).empty(), "another window's off does not count");
+            Check(judge({{0.1f, &ghostOn}, {0.2f, &ghostOn}, {0.4f, &ghostOff}}) == std::vector<Own>{{0, 0}},
+                "each pair once");
+            Check(judge({{0.2f, &both}, {0.2f, &both}}).empty() && judge({{0.1f, &both}, {0.3f, &both}}).size() == 1,
+                "one event turning a window on and off: a later one of it ends the window");
+            // A paired clip's annotations are each actor's by prefix (11-02 review: a cut-short kill move with
+            // NPCAI.IFrameOn and NPCAI.IFrameOff left the attacker immune).
+            const auto part = [](std::string_view text, std::string_view body, int want) {
+                const int got = PairPart(text);
+                return got == want && text == body;
+            };
+            Check(part("NPCAI.IFrameOn", "AI.IFrameOn", 1) && part("2_dodge", "dodge", 2) && part("dodge", "dodge", 0),
+                "a paired annotation's prefix names its actor and comes off");
+            Check(part("NPC", "NPC", 0) && part("2_", "2_", 0), "a prefix alone is a name as written");
+            Check(PartOfPrefix(nullptr) == 1 && PartOfPrefix("NPC") == 1 && PartOfPrefix("2_") == 2 &&
+                      PartOfPrefix("") == 0 && PartOfPrefix("3_") == 0,
+                "a synchronized clip's prefix: null is NPC, an unknown one reads annotations as written");
         }
         std::cout << checks << " event registry checks passed\n";
         return 0;

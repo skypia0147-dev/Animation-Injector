@@ -25,7 +25,8 @@ Action mods combine these features into actions.
 | Starting | Keyboard and gamepad keys, game controls (Jump, Sprint, ...; they follow your key bindings), animation events. For the player and NPCs. A key can tell the moment it goes down, a tap, a double press and a hold; a game control press no start takes goes back to the game (e.g. tap Jump to dodge, hold it to jump). Transitions on an action's end, on a key's release and on a movement change, looping clips and a held-time condition make charge attacks (moving ones too, by directional dash loops) |
 | Chaining | Move on to the next action on a key press or an event; cancel by moving or by another action |
 | Conditions | Play a different action by weapon, movement direction, being in the air, stamina, equipment, race, the previous action, the hit just taken (normal, power attack, blocked and more), weather and more |
-| During an action | Invulnerability, stagger resistance, turning, stamina and magicka costs, strikes, firing arrows, spells, ragdoll, sounds, camera shake and more |
+| During an action | Invulnerability, stagger resistance, turning, time scale, stamina, magicka and health costs, strikes, firing arrows, spells, ragdoll, sounds, camera shake and more |
+| HKX events | Register features on the animation events any HKX sends (other mods' and vanilla ones too). An HKX annotation `AI.Command\|values` runs at its time with no registration |
 | Pairs | Actions two people do together. Both are lined up in position and facing when it starts, and their positions are corrected when it ends |
 | Carrying | Lift someone, carry them and put them down |
 | QTE | Six kinds: timing, rapid presses, hold and release, key sequences and more. Each result can lead to a different action |
@@ -58,6 +59,7 @@ The main entries of `SKSE/Plugins/AnimationInjector.ini`. See the INI's notes fo
 ## Compatibility
 
 - Tested with OAR, AMR, Precision and MCO/BFCO. Not every combination of mods is guaranteed.
+- With True Directional Movement installed, movement direction conditions and an action's rotation window follow TDM's settings. To turn this off, set `bFollowTDM = false` in the INI.
 - A pair ends if the partner dies or falls during it.
 - Action names belong to their XML file (its AnimationSet ID), so two action mods using the same name do not overwrite each other. If two XML files use the same AnimationSet ID, the later file is loaded on its own and the log warns.
 

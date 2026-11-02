@@ -3,6 +3,7 @@
 #include "runtime/HitHistory.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionRunner.h"
+#include "runtime/ClipWindows.h"
 #include "runtime/EventEffects.h"
 #include "runtime/EventRegistryMerge.h"
 #include "runtime/EventValuesMatch.h"
@@ -29,6 +30,7 @@ struct Event {
 std::vector<Event> events;
 std::unordered_map<const char*, std::size_t> byName;  // pooled string (case-insensitive pool) -> event
 std::vector<std::string> names;
+std::vector<bool> registeredOps;  // by EventOp: some event runs it
 std::atomic_bool ready{false};
 
 struct Queued {
@@ -104,15 +106,28 @@ void Build(const std::vector<EventRuleSpec>& rules, std::span<const ActionSpec> 
     events.clear();
     byName.clear();
     names.clear();
+    registeredOps.clear();
     std::size_t functions = 0;
     for (const auto& entry : merged.entries) {
         Event e{RE::BSFixedString(entry.name.c_str()), entry.functions, entry.qtes};
         if (!e.qtes.empty()) Qte::NoteEventQtes();
         functions += e.functions.size();
+        for (const auto& f : e.functions) {
+            const auto op = static_cast<std::size_t>(f.op);
+            if (registeredOps.size() <= op) registeredOps.resize(op + 1, false);
+            registeredOps[op] = true;
+        }
         names.push_back(entry.name);
         if (!e.functions.empty() || !e.qtes.empty()) byName.emplace(e.name.data(), events.size());
         events.push_back(std::move(e));
     }
+    std::vector<ClipWindows::Entry> windows;
+    for (std::size_t i = 0; i < events.size(); ++i) {
+        ClipWindows::Entry entry{i, events[i].name.c_str()};
+        for (const auto& f : events[i].functions) entry.ops.push_back(f.op);
+        windows.push_back(std::move(entry));
+    }
+    ClipWindows::Build(windows);
     for (const auto& note : merged.notes) logger::warn("[EventRegistry] {}", note);
     logger::info("[EventRegistry] {} events ({} with functions, {} functions, {} equal ones merged)", events.size(),
         byName.size(), functions, merged.merged);
@@ -123,6 +138,10 @@ void Build(const std::vector<EventRuleSpec>& rules, std::span<const ActionSpec> 
 }
 const std::vector<std::string>& Names() { return names; }
 std::size_t Count() { return events.size(); }
+bool Registers(EventOp op) {
+    const auto i = static_cast<std::size_t>(op);
+    return ready.load(std::memory_order_acquire) && i < registeredOps.size() && registeredOps[i];
+}
 
 void Announce() {
     // Other plugins that handle the same annotations (FH_Grapple_Plugin) skip what is registered here:
@@ -175,7 +194,8 @@ void Update(float delta) {
         // The event's QTEs (the player only; the same event again while they are open is the same start).
         if (!e.qtes.empty()) Qte::BeginEvent(q.actor, e.qtes, e.name.c_str());
         if (q.sent) continue;
-        const auto context = EventEffects::ContextFor(actor.get(), e.name.c_str());
+        auto context = EventEffects::ContextFor(actor.get(), e.name.c_str());
+        context.registered = true;
         // The numbers come from the action or pair playing on the sender (0.12.281), else the defaults.
         const int action = e.byAction.empty() ? -1 : PlayingAction(actor.get());
         const ActionValues* own = nullptr;
@@ -189,10 +209,13 @@ void Update(float delta) {
                         e.name.c_str(), static_cast<int>(f.op), action >= 0 ? Actions::Spec(action).id : "none");
                 continue;
             }
+            // A window from a clip that also turns it off ends with that clip (runtime/ClipWindows.h).
+            auto run = context;
+            run.clip = ClipWindows::Find(q.actor, q.event, f.op);
             if (f.delay > 0.0f)
-                delayed.push_back({f, context, f.delay, q.event});
+                delayed.push_back({f, run, f.delay, q.event});
             else
-                EventEffects::Run(f, context);
+                EventEffects::Run(f, run);
         }
     }
     // Spells cast here can send events synchronously: take the due ones out first.
@@ -203,6 +226,7 @@ void Update(float delta) {
     }
     std::erase_if(delayed, [](const Delayed& d) { return d.remaining <= 0.0f; });
     for (const auto& d : due) EventEffects::Run(d.function, d.context);
+    EventEffects::EndClips(ClipWindows::Sweep());
     EventEffects::Update(delta);
     ActionHistory::Advance(delta);
     HitHistory::Advance(delta);
@@ -222,5 +246,6 @@ void ResetOnLoad() {
         queue.clear();
     }
     delayed.clear();
+    ClipWindows::ResetOnLoad();
 }
 }

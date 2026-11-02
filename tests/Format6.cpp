@@ -328,7 +328,40 @@ int main() {
             Check(a.cancels.size() == 2 && a.cancels[0].id == "cancel1" && a.cancels[0].vanillaMatches.size() == 2 &&
                       Near(a.cancels[0].openAt, 0.3f) && a.cancels[1].id == "late" && a.cancels[1].mode == 1,
                 "vanilla transitions and their windows");
+            // The character graph's jumps (11-01): a Jump transition inherits both, "jumpStart" matched neither.
+            const auto jump = Parse("<Action id='A' clip='a.hkx'><Vanilla to='Jump,Sneak'/></Action>");
+            Check(jump.ok && jump["A"].cancels.size() == 1 &&
+                      jump["A"].cancels[0].vanillaMatches ==
+                          std::vector<std::string>{"JumpStandingStart", "JumpDirectionalStart", "sneakStart"},
+                "a jump transition matches the standing and the directional jump");
             Check(a.pairFeatures.enabled && a.pairFeatures.timed.size() == 1, "Do and Camera sit in the action");
+            // The time scale window (11-01): factor and ease, a range like IFrame; not a clip-time pair of functions.
+            const auto time =
+                Parse("<Action id='A' clip='a.hkx'><TimeScale factor='0.3' from='0.4' until='0.9' "
+                      "ease='0.15'/></Action><Action id='B' clip='b.hkx'><TimeScale factor='2'/></Action>");
+            Check(time.ok && time["A"].timeScale.enabled && Near(time["A"].timeScale.onAt, 0.4f) &&
+                      Near(time["A"].timeScale.offAt, 0.9f) && Near(time["A"].timeFactor, 0.3f) &&
+                      Near(time["A"].timeEase, 0.15f) && Near(time["B"].timeScale.onAt, 0) &&
+                      time["B"].timeScale.offRel && Near(time["B"].timeEase, 0),
+                "a TimeScale window with its factor and ease");
+            Check(Refused(Parse("<Action id='A' clip='a.hkx'><TimeScale until='0.9'/></Action>"), "factor"),
+                "a TimeScale needs its factor");
+            Check(Refused(Parse("<Action id='A' clip='a.hkx'><Do at='0.2' op='timeOn' factor='0.5'/></Action>"),
+                      "TimeScale"),
+                "an ordinary action's time scale is its TimeScale window");
+            Check(Refused(Parse("<Pair id='P' clip='p.hkx'><TimeScale factor='0.5'/></Pair>"), "<Do at>"),
+                "a pair's time scale is its clip-time timeOn");
+            const auto eased = Parse("<Pair id='P' clip='p.hkx'><Do at='0.2' op='timeOn' factor='0.5' ease='0.3' "
+                                     "target='player'/><Do at='0.8' op='timeOff' target='player'/></Pair>");
+            Check(eased.ok && eased["P"].pairFeatures.timed.size() == 2 &&
+                      Near(eased["P"].pairFeatures.timed[0].function.ease, 0.3f),
+                "a pair's timeOn eases");
+            Check(Refused(Parse("<Pair id='P' clip='p.hkx'><Do at='0.2' op='shake' ease='0.3'/></Pair>"), "ease"),
+                "ease is timeOn's only");
+            const auto numbers = Parse("<Action id='A' clip='a.hkx'><EventValues><Event name='X'><Do op='timeOn' "
+                                       "factor='0.5' ease='0.2'/></Event></EventValues></Action>");
+            Check(numbers.ok && Near(numbers["A"].eventValues[0].functions[0].ease, 0.2f),
+                "a registered timeOn's values ease");
             const auto both = Parse("<Start key='G' to='A' block='jumpStart'/><Action id='A' clip='a.hkx' "
                                     "block='jumpStart'/>");
             Check(both.ok && both["A"].suppress.when == SuppressSpec::When::kBoth, "the same block both ways");

@@ -171,21 +171,22 @@ std::vector<std::string> Split(const std::string& text) {
     if (!current.empty()) out.push_back(current);
     return out;
 }
-// vanilla:Attack → the native event name substring its cancel window inherits.
-std::string VanillaMatch(const std::string& alias) {
-    static const std::pair<const char*, const char*> table[] = {
-        {"vanilla:Attack", "attack"},
-        {"vanilla:PowerAttack", "attackPowerStart"},
-        {"vanilla:Block", "blockStart"},
-        {"vanilla:Bash", "bashStart"},
-        {"vanilla:Sprint", "sprintStart"},
-        {"vanilla:Jump", "jumpStart"},
-        {"vanilla:Sneak", "sneakStart"},
+// vanilla:Attack → the native event name substrings its cancel window inherits. The character graph's jumps are
+// JumpStandingStart and JumpDirectionalStart (0_master, 11-01): "jumpStart" matched neither.
+std::vector<std::string> VanillaMatch(const std::string& alias) {
+    static const std::pair<const char*, std::vector<std::string>> table[] = {
+        {"vanilla:Attack", {"attack"}},
+        {"vanilla:PowerAttack", {"attackPowerStart"}},
+        {"vanilla:Block", {"blockStart"}},
+        {"vanilla:Bash", {"bashStart"}},
+        {"vanilla:Sprint", {"sprintStart"}},
+        {"vanilla:Jump", {"JumpStandingStart", "JumpDirectionalStart"}},
+        {"vanilla:Sneak", {"sneakStart"}},
     };
     for (const auto& [a, m] : table)
         if (_stricmp(alias.c_str(), a) == 0) return m;
-    if (_strnicmp(alias.c_str(), "event:", 6) == 0) return alias.substr(6);
-    return "";
+    if (_strnicmp(alias.c_str(), "event:", 6) == 0) return {alias.substr(6)};
+    return {};
 }
 // A seconds time read as a clock time or an event: Recovery, QTE, Cost, CarryRelease.
 void ReadMoment(const std::string& text, std::string& event, float& at) {
@@ -249,23 +250,25 @@ T Pick(const std::pair<std::string_view, T> (&table)[N], std::string_view value,
     return fallback;
 }
 const std::pair<std::string_view, EventOp> kOps[] = {{"hide", EventOp::kHide}, {"show", EventOp::kShow},
-    {"spell", EventOp::kSpell}, {"stateOn", EventOp::kStateOn}, {"stateOff", EventOp::kStateOff},
     {"cost", EventOp::kCost}, {"shake", EventOp::kShake}, {"stopVelocity", EventOp::kStopVelocity},
     {"timeOn", EventOp::kTimeOn}, {"timeOff", EventOp::kTimeOff}, {"iframeOn", EventOp::kIFrameOn},
     {"iframeOff", EventOp::kIFrameOff}, {"armorOn", EventOp::kArmorOn}, {"armorOff", EventOp::kArmorOff},
     {"rotateOn", EventOp::kRotateOn}, {"rotateOff", EventOp::kRotateOff}, {"cancel", EventOp::kCancel},
     {"fireArrow", EventOp::kFireArrow}, {"ragdoll", EventOp::kRagdoll}, {"strike", EventOp::kStrike},
     {"sound", EventOp::kSound}, {"globalSet", EventOp::kGlobalSet}, {"modEvent", EventOp::kModEvent}};
+// <Do op="magic" action> (11-01): one function for a spell, the action says what it does.
+const std::pair<std::string_view, EventOp> kMagicActions[] = {
+    {"cast", EventOp::kMagicCast}, {"add", EventOp::kMagicAdd}, {"remove", EventOp::kMagicRemove}};
 const std::pair<std::string_view, EventTarget> kTargets[] = {{"both", EventTarget::kBoth},
     {"player", EventTarget::kPlayer}, {"initiator", EventTarget::kInitiator}, {"receiver", EventTarget::kReceiver}};
 // Where a <Do> stands (0.12.281): a registered event's function holds what it acts with (op, a spell, a ragdoll's
 // direction); an action's <EventValues> the numbers it runs with there; a clip-time effect both.
 enum class DoUse { kRegistry, kValues, kTimed };
-constexpr std::initializer_list<const char*> kNumbers = {"delay", "stamina", "magicka", "strength", "duration",
-    "factor", "damage", "force", "ratio", "amount", "radius", "angle", "up", "down", "edge", "volume", "value",
-    "number"};
+constexpr std::initializer_list<const char*> kNumbers = {"delay", "stamina", "magicka", "health", "strength",
+    "duration", "factor", "ease", "damage", "force", "ratio", "amount", "radius", "angle", "up", "down", "edge",
+    "volume", "value", "number"};
 // What a sound, a global and a mod event act with (0.12.296): a registered event's function holds them.
-constexpr std::initializer_list<const char*> kOpKinds = {"file", "bone", "restore", "name", "text"};
+constexpr std::initializer_list<const char*> kOpKinds = {"file", "bone", "restore", "name", "text", "measure"};
 // A strike's settings that say whom it hits and how (StrikeSpec.h): a registered event's function holds them.
 constexpr std::initializer_list<const char*> kStrikeKinds = {"pick", "hit", "hand", "block", "reaction", "without"};
 // What a real hit brings along, each named in a strike's `without` to leave it out (0.12.294).
@@ -344,9 +347,12 @@ void strikeSpec(Node e, DoUse use, StrikeSpec& s) {
 }
 EventFunctionSpec eventFunction(Node e, DoUse use) {
     const bool timed = use == DoUse::kTimed;
+    // A window's span (11-02): a registered function's own `duration`, 0~60 seconds; elsewhere duration is a shake's.
+    const auto opName = get(e, "op");
+    const bool window = opName == "iframeOn" || opName == "armorOn" || opName == "rotateOn" || opName == "timeOn";
     if (use == DoUse::kRegistry)
         for (const char* n : kNumbers)
-            if (e.attribute(n))
+            if (e.attribute(n) && !(window && std::string_view(n) == "duration"))
                 fail(e,
                     std::string(n) +
                         ": 0.12.281부터 수치는 이 이벤트를 보내는 동작(또는 페어)의 <EventValues>에 씁니다. 등록에는 "
@@ -361,47 +367,66 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
                 fail(e, std::string(n) + ": 타격의 대상·방식(pick·hit·hand·block)은 이벤트 등록에서 정합니다");
         for (const char* n : kOpKinds)
             if (e.attribute(n))
-                fail(e, std::string(n) +
-                            ": 소리 파일·뼈, 전역 값 되돌리기, 모드 이벤트 이름·글은 이벤트 등록에서 정합니다");
-        shape(e, {"op", "delay", "stamina", "magicka", "strength", "duration", "factor", "damage", "force", "ratio",
-                     "amount", "radius", "angle", "up", "down", "edge", "volume", "value", "number"});
+                fail(e,
+                    std::string(n) +
+                        ": 소리 파일·뼈, 전역 값 되돌리기, 모드 이벤트 이름·글, 자원 소모 단위는 이벤트 등록에서 정합니다");
+        shape(e, {"op", "action", "delay", "stamina", "magicka", "health", "strength", "duration", "factor", "ease",
+                     "damage", "force", "ratio", "amount", "radius", "angle", "up", "down", "edge", "volume", "value",
+                     "number"});
     }
     // A registered event's function changes the actor that sent the event (0.12.273); a pair's clip-time effect
     // names the role it changes (both actors play the clip, so no role sends it).
     if (timed)
-        shape(e, {"at", "op", "target", "plugin", "form", "delay", "stamina", "magicka", "strength", "duration",
-                     "factor", "damage", "direction", "force", "pick", "hit", "hand", "block", "ratio", "amount",
-                     "radius", "angle", "up", "down", "edge", "reaction", "without", "file", "bone", "volume", "value",
-                     "restore", "name", "text", "number"});
+        shape(e, {"at", "op", "action", "target", "plugin", "form", "delay", "stamina", "magicka", "health", "strength",
+                     "duration", "factor", "damage", "direction", "force", "pick", "hit", "hand", "block", "ratio",
+                     "amount", "radius", "angle", "up", "down", "edge", "reaction", "without", "file", "bone", "volume",
+                     "value", "restore", "name", "text", "number", "measure", "ease"});
     else if (use == DoUse::kRegistry)
-        shape(e, {"op", "plugin", "form", "direction", "pick", "hit", "hand", "block", "reaction", "without", "file",
-                     "bone", "restore", "name", "text"});
+        shape(e, {"op", "action", "plugin", "form", "direction", "pick", "hit", "hand", "block", "reaction", "without",
+                     "file", "bone", "restore", "name", "text", "measure", "duration"});
     const auto op = required(e, "op");
     choice(e, "op",
-        {"hide", "show", "spell", "stateOn", "stateOff", "cost", "shake", "stopVelocity", "timeOn", "timeOff",
-            "iframeOn", "iframeOff", "armorOn", "armorOff", "rotateOn", "rotateOff", "cancel", "fireArrow", "ragdoll",
-            "strike", "sound", "globalSet", "modEvent"});
+        {"hide", "show", "magic", "cost", "shake", "stopVelocity", "timeOn", "timeOff", "iframeOn", "iframeOff",
+            "armorOn", "armorOff", "rotateOn", "rotateOff", "cancel", "fireArrow", "ragdoll", "strike", "sound",
+            "globalSet", "modEvent"});
+    choice(e, "action", {"cast", "add", "remove"});
+    if (op == "magic")
+        required(e, "action");
+    else if (e.attribute("action"))
+        fail(e, "action은 magic에서만 씁니다");
     choice(e, "target", {"both", "player", "initiator", "receiver"});
     choice(e, "bone", {"spine", "head", "rightHand", "leftHand", "root"});
     choice(e, "restore", {"end"});
+    // A cost's amounts as values or as percent of each maximum (10-31).
+    choice(e, "measure", {"value", "percent"});
+    if (e.attribute("measure") && get(e, "op") != "cost") fail(e, "measure는 cost에서만 씁니다");
+    if (get(e, "measure") == "percent")
+        for (const char* n : {"stamina", "magicka", "health"}) num(e, n, 100);
     num(e, "volume", 1);
     num(e, "delay", 60);
     num(e, "stamina", 100000);
     num(e, "magicka", 100000);
+    num(e, "health", 100000);
     num(e, "strength", 10);
-    num(e, "duration", 30);
+    if (window && use != DoUse::kRegistry && e.attribute("duration"))
+        fail(e, "구간 기능의 duration(지속 시간)은 이벤트 등록에서 정합니다");
+    if (use == DoUse::kRegistry && e.attribute("duration") && !window)
+        fail(e, "등록의 duration은 iframeOn·armorOn·rotateOn·timeOn의 지속 시간입니다");
+    num(e, "duration", window ? 60 : 30);
     num(e, "factor", 5, 0.05);
+    num(e, "ease", 2);
+    if (e.attribute("ease") && get(e, "op") != "timeOn") fail(e, "ease는 timeOn에서만 씁니다");
     choice(e, "direction", {"down", "up", "forward", "backward", "left", "right"});
     num(e, "force", RagdollPush::kMaxForce);
     std::string form = get(e, "form");
     // An action's values for a cost or a time scale are what those functions run with: they must be given.
-    if (use == DoUse::kValues && op == "cost" && !e.attribute("stamina") && !e.attribute("magicka"))
-        fail(e, "cost에는 stamina 또는 magicka가 필요합니다");
+    if (use == DoUse::kValues && op == "cost" && !e.attribute("stamina") && !e.attribute("magicka") &&
+        !e.attribute("health"))
+        fail(e, "cost에는 stamina, magicka, health 중 하나가 필요합니다");
     if (use == DoUse::kValues && op == "timeOn" && !e.attribute("factor")) fail(e, "timeOn에는 factor가 필요합니다");
     if (use == DoUse::kValues) {
         // The registry's spell and ragdoll direction are its own: nothing to read here.
-    } else if (op == "spell" || op == "stateOn" || op == "stateOff" || op == "globalSet" ||
-               (op == "sound" && !e.attribute("file"))) {
+    } else if (op == "magic" || op == "globalSet" || (op == "sound" && !e.attribute("file"))) {
         const auto plugin = required(e, "plugin");
         required(e, "form");
         if (plugin.find_first_of("/\\:") != std::string::npos) fail(e, "plugin에는 파일 이름만 지정합니다");
@@ -410,7 +435,7 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
             !std::all_of(form.begin(), form.end(), [](unsigned char c) { return std::isxdigit(c) != 0; }))
             fail(e, "form은 16진수 ID여야 합니다");
     } else if (e.attribute("plugin") || e.attribute("form"))
-        fail(e, "plugin·form은 spell·stateOn·stateOff·sound·globalSet에서만 씁니다");
+        fail(e, "plugin·form은 magic·sound·globalSet에서만 씁니다");
     // A shot fires when its event or clip time comes (0.12.303): the arrow leaves with no draw, `damage` percent of
     // a full draw's damage (1~1000, default 100).
     if (op == "fireArrow") {
@@ -447,7 +472,8 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
         return std::isfinite(value) ? std::clamp(value, 0.0f, maximum) : fallback;
     };
     EventFunctionSpec f;
-    f.op = Pick(kOps, op, EventOp::kSpell);
+    f.op = op == "magic" ? Pick(kMagicActions, get(e, "action"), EventOp::kMagicCast)
+                         : Pick(kOps, op, EventOp::kMagicCast);
     // A registered event's function changes its sender; a clip-time effect without a target changes both actors.
     f.target = timed ? Pick(kTargets, get(e, "target", "both"), EventTarget::kBoth) : EventTarget::kSender;
     f.delay = number(e.attribute("delay"), 0, 60);
@@ -479,9 +505,15 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
     }
     f.stamina = number(e.attribute("stamina"), 0, 100000);
     f.magicka = number(e.attribute("magicka"), 0, 100000);
+    f.health = number(e.attribute("health"), 0, 100000);
+    f.costPercent = get(e, "measure") == "percent";
     f.strength = number(e.attribute("strength"), 1, 10);
-    f.duration = number(e.attribute("duration"), 0.5f, 30);
+    if (window)
+        f.span = number(e.attribute("duration"), 0, 60);
+    else
+        f.duration = number(e.attribute("duration"), 0.5f, 30);
     f.factor = std::max(0.05f, number(e.attribute("factor"), 1, 5));
+    f.ease = number(e.attribute("ease"), 0, 2);
     return f;
 }
 RecoverySpec recoveryDeclaration(Node r) {
@@ -957,12 +989,13 @@ struct Compiler {
                     fail(d,
                         "일반 동작의 시각 기능은 그 동작을 재생하는 액터에게 적용됩니다: target·from을 쓰지 않습니다");
                 const auto op = get(d, "op");
-                if (!op.empty() &&
-                    !has({"hide", "show", "spell", "stateOn", "stateOff", "shake", "stopVelocity", "timeOn", "timeOff",
-                             "ragdoll", "strike", "sound", "globalSet", "modEvent", "fireArrow"},
-                        op))
-                    fail(d, "일반 동작의 시각 기능이 아닙니다: " + op +
-                                " (무적·슈퍼아머·회전·비용은 IFrame·HyperArmor·Rotate·Cost, cancel은 페어 전용)");
+                if (!op.empty() && !has({"hide", "show", "magic", "shake", "stopVelocity", "ragdoll", "strike", "sound",
+                                            "globalSet", "modEvent", "fireArrow"},
+                                       op))
+                    fail(d,
+                        "일반 동작의 시각 기능이 아닙니다: " + op +
+                            " (무적·슈퍼아머·회전·비용·시간 배율은 IFrame·HyperArmor·Rotate·Cost·TimeScale, cancel은 "
+                            "페어 전용)");
             } else if (get(d, "op") == "fireArrow")
                 fail(d, "활 발사는 플레이어가 재생하는 일반 동작(Action)에서만 씁니다");
             TimedEffectSpec timed;
@@ -979,8 +1012,8 @@ struct Compiler {
         shape(n,
             {"id", "clip", "view", "firstPerson", "air", "attack", "enter", "block", "safety", "lostBlend", "reorient",
                 "interruptOnHit", "loop", "maxHold"},
-            {"Exit", "Rotate", "IFrame", "HyperArmor", "Cost", "MoveCancel", "Vanilla", "Transition", "FindPartner",
-                "Carry", "QTE", "CarryRelease", "EventValues", "Do", "Camera"});
+            {"Exit", "Rotate", "IFrame", "HyperArmor", "TimeScale", "Cost", "MoveCancel", "Vanilla", "Transition",
+                "FindPartner", "Carry", "QTE", "CarryRelease", "EventValues", "Do", "Camera"});
         if (!pair) {
             for (const char* only : {"lostBlend", "reorient", "interruptOnHit"})
                 if (n.attribute(only)) fail(n, std::string(only) + "는 페어 전용 속성입니다");
@@ -989,8 +1022,8 @@ struct Compiler {
         // Only the putdown Action a Carry names; the Carry checks that it has this slot.
         if (auto r = one(n, "CarryRelease"); r && !putdownActions.contains(get(n, "id")))
             fail(r, "CarryRelease는 운반(Carry)의 putdown이 가리키는 Action에만 씁니다");
-        if (pair &&
-            (n.child("Vanilla") || n.child("Rotate") || n.child("IFrame") || n.child("HyperArmor") || n.child("Cost")))
+        if (pair && (n.child("Vanilla") || n.child("Rotate") || n.child("IFrame") || n.child("HyperArmor") ||
+                        n.child("TimeScale") || n.child("Cost")))
             fail(n, "페어 역할 기능은 <Do at>으로 선언해야 합니다");
         ActionSpec s;
         s.id = get(n, "id");
@@ -1092,17 +1125,31 @@ struct Compiler {
                 const auto off = seconds(slot, "until", Basis::Either, "end");
                 ReadSlot(window, on, off);
             }
+        // The time scale window (11-01): the player's global time multiplier, eased over `ease` real seconds.
+        if (auto slot = one(n, "TimeScale")) {
+            shape(slot, {"from", "until", "factor", "ease"});
+            required(slot, "factor");
+            num(slot, "factor", 5, 0.05);
+            num(slot, "ease", 2);
+            const auto on = seconds(slot, "from", Basis::Seconds, "0");
+            const auto off = seconds(slot, "until", Basis::Either, "end");
+            ReadSlot(s.timeScale, on, off);
+            s.timeFactor = std::clamp(slot.attribute("factor").as_float(1.0f), 0.05f, 5.0f);
+            s.timeEase = std::clamp(slot.attribute("ease").as_float(0.0f), 0.0f, 2.0f);
+        }
         std::vector<LinkDeclaration> links;  // QTE results first, then transitions, in document order
         std::set<std::string> qteIds;
         for (auto q : n.children("QTE")) s.qtes.push_back(qte(q, n, pair, qteIds, &links));
         if (auto c = one(n, "Cost")) {
-            shape(c, {"at", "stamina", "magicka"});
-            num(c, "stamina", 100000);
-            num(c, "magicka", 100000);
+            shape(c, {"at", "stamina", "magicka", "health", "measure"});
+            choice(c, "measure", {"value", "percent"});
+            s.cost.percent = get(c, "measure") == "percent";
+            for (const char* r : {"stamina", "magicka", "health"}) num(c, r, s.cost.percent ? 100 : 100000);
             s.cost.enabled = true;
             ReadMoment(seconds(c, "at", Basis::Seconds, "0"), s.cost.event, s.cost.at);
             s.cost.stamina = c.attribute("stamina").as_float(0.0f);
             s.cost.magicka = c.attribute("magicka").as_float(0.0f);
+            s.cost.health = c.attribute("health").as_float(0.0f);
         }
         if (auto r = one(n, "CarryRelease")) {
             shape(r, {"at"});
@@ -1191,9 +1238,9 @@ struct Compiler {
                         fail(t, "Transition에는 키(input, key·gamepad 또는 control)와 event 중 하나가 필요합니다");
                 } else {
                     if (t.attribute("event")) fail(t, "on을 쓴 전환에는 event를 쓰지 않습니다");
-                    if (pair) fail(t, "on(끝나면·키를 떼면) 전환은 일반 동작에만 씁니다");
+                    if (pair) fail(t, "on(끝나면·차지 종료·이동 전환) 전환은 일반 동작에만 씁니다");
                     if (t.attribute("buffer") && on != "move")
-                        fail(t, "끝나면·키를 떼면 전환에는 buffer를 쓰지 않습니다");
+                        fail(t, "끝나면·차지 종료 전환에는 buffer를 쓰지 않습니다");
                     if (on == "end") {
                         if (key.given || t.attribute("from") || t.attribute("until"))
                             fail(t, "끝나면(on=\"end\") 전환에는 키·from·until을 쓰지 않습니다");
@@ -1203,7 +1250,7 @@ struct Compiler {
                         connect.onEnd = true;
                     } else if (on == "move") {
                         // A movement key's press (10-31), buffered as a key's: no key of its own.
-                        if (key.given) fail(t, "이동키를 누르면(on=\"move\") 전환에는 키를 쓰지 않습니다");
+                        if (key.given) fail(t, "이동 전환(on=\"move\")에는 키를 쓰지 않습니다");
                         connect.onMove = true;
                     } else
                         connect.onRelease = true;
@@ -1261,7 +1308,7 @@ struct Compiler {
             }
             // A vanilla transition's window.
             for (const auto& to : Split(targets))
-                if (const auto match = VanillaMatch(to); !match.empty()) ws.vanillaMatches.push_back(match);
+                for (auto& match : VanillaMatch(to)) ws.vanillaMatches.push_back(std::move(match));
             const std::string mode = times.mode.empty() ? "buffered" : times.mode;
             ws.mode = (_stricmp(mode.c_str(), "always") == 0) ? 0 : (_stricmp(mode.c_str(), "window") == 0) ? 1 : 2;
             float at;
@@ -1327,7 +1374,7 @@ struct Compiler {
         }
         // A loop has no end: nothing closes some seconds before it.
         if (s.loop.enabled) {
-            for (const auto* w : {&s.rotate, &s.iframe, &s.hyperArmor})
+            for (const auto* w : {&s.rotate, &s.iframe, &s.hyperArmor, &s.timeScale})
                 if (w->enabled && w->offRel && w->offAt > 0)
                     fail(n, "반복 동작에는 끝이 없어 end-… 시각을 쓸 수 없습니다");
         }

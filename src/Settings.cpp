@@ -324,8 +324,8 @@ std::vector<ActionSpec> LoadAllFrom(const std::filesystem::path& root, std::vect
                                  ? (w.offRel ? fmt::format("@end-{:.2f}", w.offAt) : fmt::format("@{:.2f}", w.offAt))
                                  : w.offEvent);
         };
-        logger::debug("[Decl]   슬롯: rotate {} | iframe {} | hyperArmor {} | cost {}", slotTxt(s.rotate),
-            slotTxt(s.iframe), slotTxt(s.hyperArmor),
+        logger::debug("[Decl]   슬롯: rotate {} | iframe {} | hyperArmor {} | timeScale {} | cost {}",
+            slotTxt(s.rotate), slotTxt(s.iframe), slotTxt(s.hyperArmor), slotTxt(s.timeScale),
             s.cost.enabled ? fmt::format("stamina {:.0f} magicka {:.0f} @{}", s.cost.stamina, s.cost.magicka,
                                  s.cost.at >= 0 ? fmt::format("{:.2f}", s.cost.at) : s.cost.event)
                            : std::string("-"));

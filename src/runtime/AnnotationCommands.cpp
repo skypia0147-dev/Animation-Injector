@@ -1,4 +1,6 @@
 #include "runtime/AnnotationCommands.h"
+#include "runtime/ClipWindows.h"
+#include "runtime/ClipWindowsJudge.h"
 #include "runtime/EventEffects.h"
 #include <atomic>
 #include <chrono>
@@ -31,8 +33,8 @@ void Observe(RE::Actor* actor, const RE::BSFixedString& payload) {
         std::lock_guard lock(reportedMutex);
         if (reported.size() < kReportLimit && std::find(reported.begin(), reported.end(), text) == reported.end()) {
             reported.emplace_back(text);
-            logger::warn("[AnnotationCommands] 'AI.{}' is not a command (AI.CamShake|strength|duration, every "
-                         "number written)",
+            logger::warn("[AnnotationCommands] 'AI.{}' is not a command (a known name and every value written: "
+                         "XML_GUIDE, AI commands)",
                 text);
         }
         return;
@@ -53,20 +55,25 @@ void Update() {
         if (q.epoch != now) continue;
         auto actor = q.actor.get();
         if (!actor || !actor->Is3DLoaded()) continue;
-        const auto context = EventEffects::ContextFor(actor.get(), "AI");
-        const auto partner = context.partner.get();
-        if (!context.senderIsPlayer && !(partner && partner->IsPlayerRef())) continue;
-        if (echo.Repeat(q.actor.native_handle(), context.partner.native_handle(), q.command, Now())) {
-            logger::debug("[AnnotationCommands] the pair's other role sent the same command: run once");
-            continue;
-        }
-        switch (q.command.command) {
-        case Command::kCamShake:
+        auto context = EventEffects::ContextFor(actor.get(), "AI");
+        if (q.command.op == EventOp::kShake) {
+            const auto partner = context.partner.get();
+            if (!context.senderIsPlayer && !(partner && partner->IsPlayerRef())) continue;
+            if (echo.Repeat(q.actor.native_handle(), context.partner.native_handle(), q.command, Now())) {
+                logger::debug("[AnnotationCommands] the pair's other role sent the same command: run once");
+                continue;
+            }
             RE::ShakeCamera(q.command.strength, actor->GetPosition(), q.command.duration);
             logger::debug("[AnnotationCommands] CamShake {:.2f} for {:.2f}s from {:08X}", q.command.strength,
                 q.command.duration, actor->GetFormID());
-            break;
+            continue;
         }
+        // Any other runs on its sender as a registered event's function would (11-02).
+        context.registered = true;
+        context.command = true;
+        if (WindowOn(q.command.op)) context.clip = ClipWindows::Find(q.actor, ClipWindowsJudge::kCommand, q.command.op);
+        EventEffects::Run(q.command, context);
+        logger::debug("[AnnotationCommands] op {} from {:08X}", static_cast<int>(q.command.op), actor->GetFormID());
     }
 }
 

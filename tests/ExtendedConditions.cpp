@@ -14,6 +14,15 @@ bool Read(const std::string& attrs) {
     std::string error;
     return ConditionFlowXml::ReadCheck(doc.document_element(), p, error);
 }
+// The engine test a check reads (11-01: several kinds became options of one).
+ConditionFlowXml::Test TestOf(const std::string& attrs) {
+    pugi::xml_document doc;
+    doc.load_string(("<Check " + attrs + "/>").c_str());
+    ConditionFlowXml::Predicate p;
+    std::string error;
+    Check(ConditionFlowXml::ReadCheck(doc.document_element(), p, error));
+    return p.test;
+}
 int main() {
     for (const char* value : {"forward", "back", "left", "right", "none"})
         Check(Read(std::string("kind='movementDirection' option='") + value + "'"));
@@ -44,10 +53,43 @@ int main() {
     auto queuedSprint = sprint;
     queuedSprint.CaptureSprinting(false);
     Check(queuedSprint.sprintingCaptured && queuedSprint.sprinting);
-    for (const char* kind :
-        {"essential", "protected", "blocking", "sprinting", "swimming", "mounted", "lineOfSight", "interior"})
+    for (const char* kind : {"child", "lineOfSight", "interior"})
         for (const char* subject : {"self", "partner"})
             Check(Read(std::string("kind='") + kind + "' subject='" + subject + "'"));
+    // 11-01: the states are actorStatus options, essential and protected protection's, falling air's; the old
+    // kinds are gone.
+    for (const char* kind : {"essential", "protected", "blocking", "sprinting", "swimming", "mounted", "sneaking",
+             "weaponDrawn", "combat", "falling"})
+        Check(!Read(std::string("kind='") + kind + "'"));
+    for (const char* option : {"essential", "protected"})
+        for (const char* subject : {"self", "partner"})
+            Check(Read(std::string("kind='protection' option='") + option + "' subject='" + subject + "'"));
+    Check(!Read("kind='protection'"));
+    Check(!Read("kind='protection' option='immortal'"));
+    {
+        using T = ConditionFlowXml::Test;
+        Check(TestOf("kind='protection' option='essential'") == T::kEssential);
+        Check(TestOf("kind='protection' option='protected'") == T::kProtected);
+        Check(TestOf("kind='actorStatus' option='weaponDrawn'") == T::kWeaponDrawn);
+        Check(TestOf("kind='actorStatus' option='combat'") == T::kCombat);
+        Check(TestOf("kind='actorStatus' option='sneaking'") == T::kSneaking);
+        Check(TestOf("kind='actorStatus' option='blocking'") == T::kBlocking);
+        Check(TestOf("kind='actorStatus' option='sprinting'") == T::kSprinting);
+        Check(TestOf("kind='actorStatus' option='swimming'") == T::kSwimming);
+        Check(TestOf("kind='actorStatus' option='mounted'") == T::kMounted);
+        Check(TestOf("kind='actorStatus' option='ragdoll'") == T::kActorStatus);
+        Check(TestOf("kind='child'") == T::kActorStatus);
+        Check(TestOf("kind='air' option='any'") == T::kAir);
+        Check(TestOf("kind='air' option='falling'") == T::kFalling);
+        // Several states in one check: each its own test.
+        pugi::xml_document doc;
+        doc.load_string("<Check kind='actorStatus' option='weaponDrawn,staggered,combat'/>");
+        std::vector<ConditionFlowXml::Predicate> read;
+        std::string error;
+        Check(ConditionFlowXml::ReadChecks(doc.document_element(), read, error));
+        Check(read.size() == 3 && read[0].test == T::kWeaponDrawn && read[1].test == T::kActorStatus &&
+              read[1].option == "staggered" && read[2].test == T::kCombat);
+    }
     for (const char* kind : {"race", "faction", "keyword", "wornKeyword", "perk", "spell", "location"}) {
         const auto prefix = std::string("kind='") + kind + "'";
         Check(Read(prefix + " plugin='Skyrim.esm' form='123'"));
@@ -61,8 +103,11 @@ int main() {
     for (const char* value : {"player", "npc", "animal", "creature", "undead", "daedra", "dwarven", "dragon"})
         Check(Read(std::string("kind='actorType' option='") + value + "'"));
     Check(!Read("kind='actorType' option='pc'"));
-    for (const char* value : {"ragdoll", "recovering", "bleedingOut", "killmove", "paired", "staggered", "child"})
+    for (const char* value : {"ragdoll", "recovering", "bleedingOut", "killmove", "paired", "staggered", "blocking",
+             "sprinting", "swimming", "mounted", "sneaking", "weaponDrawn", "combat"})
         Check(Read(std::string("kind='actorStatus' option='") + value + "'"));
+    Check(!Read("kind='actorStatus' option='child'"));
+    Check(!Read("kind='child' option='child'"));
     Check(Read("kind='relationship' option='hostile'"));
     Check(Read("kind='relationship' option='teammate'"));
     for (const char* kind : {"distance", "relativeAngle", "heightDifference", "scale", "scaleRatio", "height"})
@@ -139,20 +184,25 @@ int main() {
         Check(read.size() == 2 && read[0].test == ConditionFlowXml::Test::kHitReceived && read[0].option == "power" &&
               read[1].option == "bash" && read[1].within == 0.4f);
     }
-    Check(Read("kind='falling' option='falling'"));
-    Check(Read("kind='falling' option='rising'"));
-    Check(Read("kind='falling' option='falling' compare='ge' value='200'"));
-    Check(!Read("kind='falling'"));
-    Check(!Read("kind='falling' option='down'"));
+    Check(Read("kind='air' option='any'"));
+    Check(Read("kind='air' option='falling'"));
+    Check(Read("kind='air' option='rising'"));
+    Check(Read("kind='air' option='falling' compare='ge' value='200'"));
+    Check(!Read("kind='air'"));
+    Check(!Read("kind='air' option='down'"));
+    Check(!Read("kind='air' option='any' compare='ge' value='200'"));
     for (const char* option : {"downhill", "uphill", "any"})
         Check(Read(std::string("kind='slope' option='") + option + "' compare='ge' value='25'"));
     Check(!Read("kind='slope' option='any' compare='ge' value='91'"));
     Check(!Read("kind='slope' option='any'"));
     Check(Read("kind='actorValue' option='OneHanded' compare='ge' value='50'"));
     Check(Read("kind='actorValue' option='level' compare='range' value='10' upper='30'"));
-    Check(Read("kind='actorValue' option='Health' measure='base' compare='gt' value='100'"));
+    Check(Read("kind='actorValue' option='OneHanded' measure='base' compare='gt' value='100'"));
+    // 11-01: health, magicka and stamina are the resource check's.
+    for (const char* option : {"Health", "Magicka", "Stamina"})
+        Check(!Read(std::string("kind='actorValue' option='") + option + "' compare='gt' value='100'"));
     Check(!Read("kind='actorValue' option='Luck' compare='ge' value='1'"));
-    Check(!Read("kind='actorValue' option='Health' measure='percent' compare='ge' value='1'"));
+    Check(!Read("kind='actorValue' option='OneHanded' measure='percent' compare='ge' value='1'"));
     Check(Read("kind='gameHour' compare='range' value='20' upper='5'"));
     Check(Read("kind='gameHour' compare='ge' value='18'"));
     Check(!Read("kind='gameHour' compare='ge' value='25'"));

@@ -6,7 +6,7 @@
   </Inputs>
   <Start id="Gate_Start" to="Gate" input="go" cooldown="0.2">
     <Check kind="alive"/>
-    <Or><Check kind="sneaking"/><Check kind="weaponDrawn"/></Or>
+    <Or><Check kind="actorStatus" option="sneaking"/><Check kind="actorStatus" option="weaponDrawn"/></Or>
   </Start>
   <Action id="Gate" clip="Animations\FlowStop\Gate.hkx" safety="0.7"/>
 </AnimationSet>

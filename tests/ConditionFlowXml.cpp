@@ -29,7 +29,8 @@ int main() {
     // At least 10 stamina is a resource check (10-29: the stamina and magicka kinds went, it covers them).
     Check(Read("<Check kind='resource' option='stamina' measure='current' compare='ge' value='10'/>", p) &&
           p.test == ConditionFlowXml::Test::kResource && p.option == "stamina" && p.compare == "ge" && p.value == 10);
-    Check(Read("<Check kind='combat' subject='partner'/>", p) && p.subject == ConditionFlowXml::Subject::kPartner);
+    Check(Read("<Check kind='actorStatus' option='combat' subject='partner'/>", p) &&
+          p.subject == ConditionFlowXml::Subject::kPartner);
     // Room and ground (0.12.299): measured where the actor stands, from its own heading; no candidate, no partner.
     for (const auto& [name, angle] : std::initializer_list<std::pair<const char*, float>>{{"selfForward", 0.0f},
              {"selfBack", 3.141592654f}, {"selfRight", 1.570796327f}, {"selfLeft", -1.570796327f}}) {

@@ -142,7 +142,7 @@ int wmain(int argc, wchar_t** argv) {
           </EventRegistry>
           <Action id="Timed" clip="a.hkx"><Do at="0.6" op="fireArrow" damage="150"/>
             <EventValues><Event name="ShotA"><Do op="fireArrow" damage="80"/></Event></EventValues></Action>
-          <Start id="Pick" key="E" to="Timed"><Check kind="sneaking"/></Start>
+          <Start id="Pick" key="E" to="Timed"><Check kind="actorStatus" option="sneaking"/></Start>
         </AnimationSet>)"),
             "direct fixture XML");
         const auto directPath = std::filesystem::temp_directory_path() / "AnimationInjectorFireArrow-direct.xml";

@@ -323,7 +323,14 @@ bool InputSink::OnPress(const RE::ButtonEvent& event, Source source, std::uint32
         }
         pressed->down = true;
         const auto step = pressed->classifier.Down(_now, kinds, game, _timing);
+        const bool queued = pressed->send;
         Act(*pressed, step.outcome);
+        // A double that started nothing is the game's on this very press: it goes through as it is, and its release
+        // with it. Sent late instead, its release would be kept by the sink's rule, and the game would hold it.
+        if (!queued && pressed->send && !pressed->sendTap) {
+            pressed->send = false;
+            return false;
+        }
         return step.keep;
     }
     if (!pressed) return false;

@@ -10,7 +10,7 @@
 //
 //   <EventRegistry>
 //     <Event name="Grapple_Stom">
-//       <Do op="spell" target="sender" plugin="FH_Grapple.esp" form="80B"/>
+//       <Do op="magic" action="cast" plugin="FH_Grapple.esp" form="80B"/>
 //     </Event>
 //     <Event name="Grapple_CamShake" values="1.5|0.5 3.0|1.0">...</Event>
 //   </EventRegistry>
@@ -21,9 +21,12 @@ namespace AnimationInjector {
 enum class EventOp : std::uint8_t {
     kHide,  // weapon and shield nodes (lasting until kShow)
     kShow,
-    kSpell,    // cast once
-    kStateOn,  // add a spell (lasting until kStateOff)
-    kStateOff,
+    // <Do op="magic" action="cast|add|remove"> (11-01): a spell cast once at the actor itself; added (an ability or
+    // a disease stays on, lasting until kMagicRemove; any other spell is cast instead of learned); removed (ours and
+    // one the actor had).
+    kMagicCast,
+    kMagicAdd,
+    kMagicRemove,
     kCost,          // damage stamina / magicka once
     kShake,         // camera shake, player only
     kStopVelocity,  // clear the character controller's velocity once
@@ -53,19 +56,24 @@ enum class EventTarget : std::uint8_t { kSender, kBoth, kPlayer, kInitiator, kRe
 // (a spell's plugin and form, a ragdoll's direction); the numbers it runs with come from the <EventValues> of the
 // action or pair playing on the sender, else its defaults (0.12.281).
 struct EventFunctionSpec {
-    EventOp op = EventOp::kSpell;
+    EventOp op = EventOp::kMagicCast;
     // A registry function always changes the event's sender (0.12.273); only a pair's clip-time effect sets a
     // target (initiator, receiver, both or player, 0.12.275).
     EventTarget target = EventTarget::kSender;
-    float delay = 0.0f;        // seconds of game time; cancelled by a load
-    std::string plugin, form;  // kSpell, kStateOn, kStateOff (form: local hex id)
+    float delay = 0.0f;                                                // seconds of game time; cancelled by a load
+    std::string plugin, form;                                          // magic, kSound, kGlobalSet (form: local hex id)
     RagdollPush::Direction direction = RagdollPush::Direction::kDown;  // kRagdoll
     float force = -1.0f;                                               // kRagdoll: <0 = the direction's default
-    float stamina = 0.0f, magicka = 0.0f;                              // kCost
+    float stamina = 0.0f, magicka = 0.0f, health = 0.0f;               // kCost
+    bool costPercent = false;                // kCost: the amounts are percent of each maximum (the registry's, 10-31)
     float strength = 1.0f, duration = 0.5f;  // kShake (an annotation's own numbers: AI.CamShake)
     float factor = 1.0f;                     // kTimeOn
-    float arrowDamage = 1.0f;                // kFireArrow: multiplier on a full draw's damage (percent / 100)
-    StrikeSpec strike;                       // kStrike
+    float ease = 0.0f;                       // kTimeOn: real seconds to reach `factor`, and back when it ends
+    // A window's on (iframeOn, armorOn, rotateOn, timeOn; 11-02): seconds it stays on, then it ends; 0 = until its
+    // off. Game seconds, a time scale's real ones. The registry's, as what it acts with.
+    float span = 0.0f;
+    float arrowDamage = 1.0f;  // kFireArrow: multiplier on a full draw's damage (percent / 100)
+    StrikeSpec strike;         // kStrike
     // kSound: `file` (a path under Data, a .wav or .xwm) or `plugin`·`form` (a sound descriptor), at `bone`
     // (spine, head, rightHand, leftHand, root), `volume` 0~1.
     std::string file, bone;
@@ -79,6 +87,10 @@ struct EventFunctionSpec {
     bool operator==(const EventFunctionSpec&) const = default;
 };
 
+// A window's on function: the ones that may stay on for a span.
+constexpr bool WindowOn(EventOp op) {
+    return op == EventOp::kIFrameOn || op == EventOp::kArmorOn || op == EventOp::kRotateOn || op == EventOp::kTimeOn;
+}
 // Ops that run only with an action's numbers (0.12.281): skipped, and logged, when the sender's action gives none.
 constexpr bool NeedsValues(EventOp op) { return op == EventOp::kCost || op == EventOp::kTimeOn; }
 
@@ -95,6 +107,8 @@ inline EventFunctionSpec WithValues(const EventFunctionSpec& registry, const Eve
     out.file = registry.file;
     out.bone = registry.bone;
     out.restore = registry.restore;
+    out.costPercent = registry.costPercent;
+    out.span = registry.span;
     out.name = registry.name;
     out.text = registry.text;
     out.strike.pick = registry.strike.pick;
