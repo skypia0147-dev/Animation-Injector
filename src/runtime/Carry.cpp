@@ -22,6 +22,7 @@
 #include "runtime/CarryWeaponCover.h"
 #include "runtime/PrecisionLink.h"
 #include "runtime/EventEffects.h"
+#include "runtime/MainThread.h"
 #include "Settings.h"
 #include <atomic>
 #include <mutex>
@@ -71,6 +72,9 @@ struct State {
     // Keep the reference alive through streaming, while every operation still
     // resolves its ActorHandle. This does not retain an unloaded 3D scene.
     RE::NiPointer<RE::TESObjectREFR> targetLifetime;
+    // The held bone (CarrySpec::part) in the grip at the first attach: a cell transfer holds it there.
+    RE::NiTransform heldInHand;
+    bool haveHeld = false;
     CarryContinuity::TransferGate transfer;
     RE::NiPointer<RE::NiAVObject> hiddenScene;
     bool hiddenOwned = false;
@@ -168,14 +172,32 @@ struct ExitObservation {
 std::mutex observationMutex;
 ExitObservation observation;
 RE::FormID loadedTarget = 0;
-constexpr std::uint32_t saveType = 0x43525931;          // CRY1
-constexpr std::uint32_t contactsSaveType = 0x43525932;  // CRY2
-constexpr std::uint32_t immunitySaveType = 0x4149494D;  // AIIM: IFrame leases (runtime/ActorImmunity.h)
+constexpr std::uint32_t saveType = 0x43525931;            // CRY1
+constexpr std::uint32_t contactsSaveType = 0x43525932;    // CRY2
+constexpr std::uint32_t controllerSaveType = 0x43525933;  // CRY3: the controller flags and gravity a carry set
+constexpr std::uint32_t immunitySaveType = 0x4149494D;    // AIIM: IFrame leases (runtime/ActorImmunity.h)
 struct SavedContacts {
     RE::FormID actor = 0;
     std::uint32_t owned = 0;
 };
 SavedContacts loadedContacts;
+// The game saves the carried target's controller flags: a save made mid-carry came back with our
+// kNoSim (and kNoCharacterCollisions) still set, and the dropped chicken then moved through the air
+// spinning, off the ground (11-03, flags 0B22004C long after the knockdown). The carry records the
+// bits it set and its original gravity, and the load takes them back once the controller exists.
+struct SavedController {
+    RE::FormID actor = 0;
+    std::uint32_t owned = 0;
+    float gravity = 1;
+};
+SavedController loadedController;
+struct ControllerRecovery {
+    RE::ActorHandle target;
+    RE::NiPointer<RE::TESObjectREFR> lifetime;
+    std::uint32_t owned = 0;
+    float gravity = 1;
+};
+ControllerRecovery controllerRecovery;
 const RE::BSFixedString& AnchorName() { return entries[state.entry].bone; }
 const RE::BSFixedString& TargetRoot() { return entries[state.entry].targetRoot; }
 const RE::BSFixedString& Synced() {
@@ -275,6 +297,23 @@ void RetryContactRecovery() {
         logger::info("[CarryContacts] deferred cleanup completed actor={:08X}", target->GetFormID());
         contactRecovery = {};
     }
+}
+void RetryControllerRecovery() {
+    if (!controllerRecovery.owned) return;
+    auto target = controllerRecovery.target.get();
+    if (!target || target->IsDeleted()) {
+        controllerRecovery = {};
+        return;
+    }
+    auto* cc = target->Is3DLoaded() ? target->GetCharController() : nullptr;
+    if (!cc) return;
+    const auto before = static_cast<std::uint32_t>(cc->flags.get());
+    cc->flags = static_cast<RE::CHARACTER_FLAGS>(before & ~controllerRecovery.owned);
+    const bool gravity = cc->gravity == 0 && std::isfinite(controllerRecovery.gravity);
+    if (gravity) cc->gravity = controllerRecovery.gravity;
+    logger::info("[CarryController] saved carry flags taken back actor={:08X} flags={:08X}->{:08X} gravity={}",
+        target->GetFormID(), before, static_cast<std::uint32_t>(cc->flags.get()), gravity);
+    controllerRecovery = {};
 }
 bool SharedPhysicsWorld(RE::Actor* a, RE::Actor* b) {
     auto* ac = a && a->Is3DLoaded() ? a->GetCharController() : nullptr;
@@ -381,6 +420,7 @@ void AdvanceDrop(float delta) {
         delta,
         [&] {
             if (contactRecovery.flags.acquired && contactRecovery.target == drop.target) return false;
+            if (controllerRecovery.owned && controllerRecovery.target == drop.target) return false;
             auto* cc = target->GetCharController();
             // Release() restored our flags, gravity and AI. A loaded target has no flags of ours in
             // memory; the engine may still hold it without simulation until the knockdown.
@@ -412,7 +452,8 @@ void AdvanceDrop(float delta) {
     StartDropWatch(target.get());
     drop = {};
 }
-bool Attach(RE::Actor* carrier, RE::Actor* target) {
+// resume: a cell transfer attaches the target's new 3D again, holding its held bone where it was held.
+bool Attach(RE::Actor* carrier, RE::Actor* target, bool resume = false) {
     auto* cc = target->GetCharController();
     auto* root = carrier->Get3D(false);
     auto* bone = root ? root->GetObjectByName(AnchorName()) : nullptr;
@@ -432,7 +473,25 @@ bool Attach(RE::Actor* carrier, RE::Actor* target) {
     // Preserve the authored root-to-anchor position AND rotation. Recompute
     // scene placement from the current root local after the pair has retired.
     const auto desiredRoot = state.endPose.Root(bone->world, targetScene->world.scale * rootInScene.scale);
-    const auto desiredScene = CarryPlacement::Solve(desiredRoot, rootInScene, RE::NiPoint3{}).scene;
+    auto desiredScene = CarryPlacement::Solve(desiredRoot, rootInScene, RE::NiPoint3{}).scene;
+    // The held bone (the carry's part: the one the physics pins to the grip) is what the hand holds.
+    // A cell transfer's new 3D keeps the pose it loaded with (the lock writes only when the graph
+    // generates, and a carried target's barely does), so neither its root nor its pose is the lift's:
+    // placing it by the root left the chicken on the floor after a door (11-03). On resume the scene
+    // goes where the held bone lands in the grip as it did at the first attach.
+    auto hand = bone->world;
+    hand.scale = 1;
+    const auto& part = entries[state.entry].part;
+    auto* held = part.empty() ? nullptr : targetScene->GetObjectByName(RE::BSFixedString(part));
+    RE::NiTransform heldInScene;
+    const bool heldValid = held && RelativeRoot(targetScene, held, heldInScene);
+    const bool byHeld = resume && heldValid && state.haveHeld;
+    if (byHeld) {
+        desiredScene = hand * state.heldInHand * heldInScene.Invert();
+    } else {
+        state.haveHeld = heldValid;
+        if (heldValid) state.heldInHand = hand.Invert() * (desiredScene * heldInScene);
+    }
     state.syncOffset = CarryPlacement::NativeOffset(bone->world, desiredScene);
     if (!ValidTransform(state.syncOffset) || Length(state.syncOffset.translate) > 180 ||
         !CarryAttachment::Begin(state.attachment, carrier, target, anchor, state.syncOffset))
@@ -469,10 +528,11 @@ bool Attach(RE::Actor* carrier, RE::Actor* target) {
     logger::info("[CarryPhysics] filter target={:08X} before={:08X} carried={:08X} owned={:08X}", target->GetFormID(),
         original.filter, disabled, state.filterFlags.acquired);
     logger::info(
-        "[Carry] attached nativeSync target={:08X} anchor={} root={} originalGravity={} ownedFlags={:X} aiPaused={} rootLocal=({:.3f},{:.3f},{:.3f}) poseLocked={}",
+        "[Carry] attached nativeSync target={:08X} anchor={} root={} originalGravity={} ownedFlags={:X} aiPaused={} rootLocal=({:.3f},{:.3f},{:.3f}) poseLocked={} resume={} byHeld={} heldInScene=({:.3f},{:.3f},{:.3f})",
         target->GetFormID(), AnchorName().c_str(), TargetRoot().c_str(), state.gravity, state.flags.acquired,
         state.aiChanged, rootInScene.translate.x, rootInScene.translate.y, rootInScene.translate.z,
-        CarryPoseLock::Captured());
+        CarryPoseLock::Captured(), resume, byHeld, heldInScene.translate.x, heldInScene.translate.y,
+        heldInScene.translate.z);
     CarryHold::Hold();
     // The carried body now rides the grip, so the carrier's head and spine may track again.
     headtracking.Release();
@@ -490,6 +550,9 @@ bool CheckInterruption(RE::Actor* carrier, RE::Actor* target) {
     for (unsigned role = 0; role < 2; ++role) {
         auto* actor = role ? target : carrier;
         if (!actor || actor->IsDeleted() || actor->IsDisabled()) {
+            logger::info("[Carry] participant removed role={} actor={:08X} missing={} deleted={} disabled={}", role,
+                actor ? actor->GetFormID() : (role ? state.targetId : 0), !actor, actor && actor->IsDeleted(),
+                actor && actor->IsDisabled());
             Stop("participant-removed", false);
             return true;
         }
@@ -636,7 +699,7 @@ void ContinueTransfer(RE::Actor* carrier, RE::Actor* target, float delta) {
     const auto attempts = state.transfer.attempts;
     const auto waited = state.transfer.readyAge;
     Release(false, false);  // Reacquire the new physics lease atomically with attachment.
-    if (!Attach(carrier, target)) {
+    if (!Attach(carrier, target, true)) {
         Stop("transfer-attach-failed", false);
         return;
     }
@@ -729,12 +792,59 @@ void FollowRoot(RE::Actor* carrier, RE::Actor* target) {
     const RE::NiQuaternion q(local.rotate);
     CarryPoseLock::Follow({{local.translate.x, local.translate.y, local.translate.z}, {q.x, q.y, q.z, q.w}});
 }
+// A target that is not persistent (most placed animals and NPCs) leaves memory with the cell it was
+// left in, so after the load there is nothing to bring along (11-03: a chicken carried out of a house).
+// The load door the player opens while carrying sends the target through ahead of the load, while
+// the old cell is still there; the transfer then finds it in the destination and attaches it again.
+// The activation event comes on another thread (11-03 log: mainThread=false), so it only records the
+// door under a lock; the move happens when the load opens, on the main thread.
+std::mutex loadDoorLock;
+RE::ObjectRefHandle loadDoor;  // that door's other side
+std::uint64_t loadDoorFrame = 0;
+std::atomic<std::uint64_t> frames{0};
+constexpr std::uint64_t loadDoorFrames = 600;  // the load opens about a second after the door
+void CarryThroughDoor() {
+    RE::ObjectRefHandle handle;
+    std::uint64_t at = 0;
+    {
+        std::lock_guard lock(loadDoorLock);
+        handle = loadDoor;
+        at = loadDoorFrame;
+        loadDoor.reset();
+    }
+    const auto door = handle.get();
+    const bool recent = frames.load() - at <= loadDoorFrames;
+    if (state.phase != Phase::kCarrying && state.phase != Phase::kPuttingDown) return;
+    auto target = state.target.get();
+    // The bodies and the attachment end now, with the old cell's world still loaded.
+    Suspend("loading");
+    if (!door || !recent || !target || state.phase != Phase::kSuspended) return;
+    logger::info("[CarryTransfer] through door target={:08X} door={:08X}", target->GetFormID(), door->GetFormID());
+    target->MoveTo(door.get());
+}
 class TransferEvents final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>,
-                             public RE::BSTEventSink<RE::TESCellAttachDetachEvent> {
+                             public RE::BSTEventSink<RE::TESCellAttachDetachEvent>,
+                             public RE::BSTEventSink<RE::TESActivateEvent> {
     RE::BSEventNotifyControl ProcessEvent(
         const RE::MenuOpenCloseEvent* e, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override {
         static const RE::BSFixedString loading("Loading Menu");
-        if (e && e->opening && e->menuName == loading) transferSignal = hitMailbox.watched[0].load();
+        if (e && e->opening && e->menuName == loading) {
+            transferSignal = hitMailbox.watched[0].load();
+            if (MainThread::IsCurrent()) CarryThroughDoor();
+        }
+        return RE::BSEventNotifyControl::kContinue;
+    }
+    RE::BSEventNotifyControl ProcessEvent(
+        const RE::TESActivateEvent* e, RE::BSTEventSource<RE::TESActivateEvent>*) override {
+        // Any load door the player opens: the carry state belongs to the main thread and is not read here.
+        if (!e || !e->objectActivated || e->actionRef.get() != RE::PlayerCharacter::GetSingleton())
+            return RE::BSEventNotifyControl::kContinue;
+        const auto* teleport = e->objectActivated->extraList.GetByType<RE::ExtraTeleport>();
+        if (teleport && teleport->teleportData && teleport->teleportData->linkedDoor) {
+            std::lock_guard lock(loadDoorLock);
+            loadDoor = teleport->teleportData->linkedDoor;
+            loadDoorFrame = frames.load();
+        }
         return RE::BSEventNotifyControl::kContinue;
     }
     RE::BSEventNotifyControl ProcessEvent(
@@ -770,6 +880,12 @@ void Saved(SKSE::SerializationInterface* s) {
             if (!s->WriteRecord(contactsSaveType, 1, record))
                 logger::error("[CarryContacts] failed to save collision recovery record");
         }
+    if (state.flags.acquired)
+        if (auto target = state.target.get()) {
+            const SavedController record{target->GetFormID(), state.flags.acquired, state.gravity};
+            if (!s->WriteRecord(controllerSaveType, 1, record))
+                logger::error("[CarryController] failed to save controller recovery record");
+        }
     // The plugin has one co-save (one unique id): event functions' records go in it too.
     EventEffects::Save(s);
     // IFrame leases held now (runtime/ActorImmunity.h): the game saves their actors as ghosts.
@@ -789,6 +905,7 @@ void Saved(SKSE::SerializationInterface* s) {
 void Loaded(SKSE::SerializationInterface* s) {
     loadedTarget = 0;
     loadedContacts = {};
+    loadedController = {};
     std::uint32_t type = 0, version = 0, size = 0;
     while (s->GetNextRecordInfo(type, version, size))
         if (type == saveType && version == 1 && size == sizeof(RE::FormID)) {
@@ -799,6 +916,13 @@ void Loaded(SKSE::SerializationInterface* s) {
             RE::FormID resolved = 0;
             if (s->ReadRecordData(record) == sizeof(record) && s->ResolveFormID(record.actor, resolved))
                 loadedContacts = {resolved, record.owned & RE::CFilter::Flags::kNoCollision};
+        } else if (type == controllerSaveType && version == 1 && size == sizeof(SavedController)) {
+            SavedController record{};
+            RE::FormID resolved = 0;
+            constexpr auto ours = static_cast<std::uint32_t>(RE::CHARACTER_FLAGS::kNoSim) |
+                                  static_cast<std::uint32_t>(RE::CHARACTER_FLAGS::kNoCharacterCollisions);
+            if (s->ReadRecordData(record) == sizeof(record) && s->ResolveFormID(record.actor, resolved))
+                loadedController = {resolved, record.owned & ours, record.gravity};
         } else if (type == immunitySaveType && (version == 1 || version == 2)) {
             std::uint32_t count = 0;
             std::vector<ActorImmunity::SavedLease> leases;
@@ -883,8 +1007,10 @@ void Register() {
     if (entries.empty()) return;
     static TransferEvents transferEvents;
     if (auto* ui = RE::UI::GetSingleton()) ui->AddEventSink<RE::MenuOpenCloseEvent>(&transferEvents);
-    if (auto* events = RE::ScriptEventSourceHolder::GetSingleton())
+    if (auto* events = RE::ScriptEventSourceHolder::GetSingleton()) {
         events->AddEventSink<RE::TESCellAttachDetachEvent>(&transferEvents);
+        events->AddEventSink<RE::TESActivateEvent>(&transferEvents);
+    }
 }
 bool CanBegin(int action, RE::Actor* carrier, RE::Actor* target) {
     if (state.phase != Phase::kIdle || contactRecovery.flags.acquired || drop.handoff.active || !Alive(carrier) ||
@@ -1150,6 +1276,7 @@ void BeforeGameLoad() {
     RetryContactRecovery();
     loadedTarget = 0;
     loadedContacts = {};
+    loadedController = {};
 }
 void OnGameLoad() {
     dropWatch = {};
@@ -1187,6 +1314,19 @@ void OnGameLoad() {
         if (auto* actor = RE::TESForm::LookupByID<RE::Actor>(loadedContacts.actor))
             contactRecovery = {actor->GetHandle(), RE::NiPointer<RE::TESObjectREFR>(actor), {loadedContacts.owned}};
     loadedContacts = {};
+    controllerRecovery = {};
+    if (loadedController.actor && loadedController.owned)
+        if (auto* actor = RE::TESForm::LookupByID<RE::Actor>(loadedController.actor))
+            controllerRecovery = {actor->GetHandle(), RE::NiPointer<RE::TESObjectREFR>(actor), loadedController.owned,
+                loadedController.gravity};
+    // A mid-carry save from before this record (11-03) has only the AI record: every carry sets
+    // kNoSim and gravity 0, which a loaded target near the player never has on its own.
+    if (!controllerRecovery.owned && drop.fromLoad)
+        if (auto actor = drop.target.get())
+            controllerRecovery = {drop.target, RE::NiPointer<RE::TESObjectREFR>(actor.get()),
+                static_cast<std::uint32_t>(RE::CHARACTER_FLAGS::kNoSim), 1.0f};
+    loadedController = {};
+    RetryControllerRecovery();
     RetryContactRecovery();
 }
 bool BlocksAction(RE::Actor* actor, int action) {
@@ -1203,6 +1343,7 @@ void ObserveHit(RE::Actor* actor) {
 }
 void BeforeUpdate() {
     RetryContactRecovery();
+    RetryControllerRecovery();
     if (state.phase == Phase::kIdle || !hitMailbox.watched[0].load()) return;
     auto* player = RE::PlayerCharacter::GetSingleton();
     auto target = state.target.get();
@@ -1215,18 +1356,21 @@ void BeforeUpdate() {
         Stop("carrier-changed", false);
         return;
     }
-    if (CheckInterruption(player, target.get())) return;
-    if (state.phase != Phase::kCarrying && state.phase != Phase::kPuttingDown && state.phase != Phase::kSuspended)
-        return;
+    const bool held =
+        state.phase == Phase::kCarrying || state.phase == Phase::kPuttingDown || state.phase == Phase::kSuspended;
     auto* ui = RE::UI::GetSingleton();
-    const auto notice = transferSignal.exchange(0);
+    const auto notice = held ? transferSignal.exchange(0) : 0;
     const bool loading = ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
-    if (state.phase == Phase::kSuspended) {
-        HideTransferScene(target.get());
+    // A load or cell detach before the removal check: a target left in the old cell is what the
+    // transfer brings along, not a removed participant (carrying through a load door, 11-03).
+    if (held && state.phase != Phase::kSuspended && (loading || hitMailbox.Owns(notice))) {
+        Suspend("loading-or-cell-detach");
         return;
     }
-    if (loading || hitMailbox.Owns(notice)) {
-        Suspend("loading-or-cell-detach");
+    if (CheckInterruption(player, target.get())) return;
+    if (!held) return;
+    if (state.phase == Phase::kSuspended) {
+        HideTransferScene(target.get());
         return;
     }
     if (!player->Is3DLoaded() || !target->Is3DLoaded() || player->Get3D(false) != state.sampledCarrierScene.get() ||
@@ -1256,6 +1400,7 @@ bool BeginPutdown() {
     return true;
 }
 void Update(float delta) {
+    ++frames;
     // Again after the engine's player update (the first run is before it, also on paused frames):
     // a hit, knockdown or load notice that arrived during that update ends or suspends the carry
     // before this frame's steps use it.

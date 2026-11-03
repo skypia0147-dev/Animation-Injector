@@ -240,8 +240,12 @@ struct Session::State final : RE::hkpWorldPostSimulationListener {
     Request request;
     Status status;
     RE::NiPointer<RE::NiAVObject> scene;
-    RE::NiPointer<RE::bhkWorld> world;
-    RE::hkRefPtr<RE::hkpWorld> nativeWorld;
+    // The cell's physics world, not owned: holding a reference kept an unloaded cell's world alive
+    // past its bhkWorld, and releasing it later ran the hkpWorld destructor against the freed
+    // bhkWorld (crash after carrying through a load door, 11-03). Read only while WorldAlive().
+    RE::bhkWorld* world = nullptr;
+    RE::hkpWorld* nativeWorld = nullptr;
+    RE::FormID worldCell = 0;
     RE::BSTSmartPointer<RE::BSAnimationGraphManager> manager;
     RE::BSTSmartPointer<RE::BShkbAnimationGraph> graph;
     std::vector<Body> bodies;
@@ -336,7 +340,7 @@ struct Session::State final : RE::hkpWorldPostSimulationListener {
     // gameplay APIs or allocates memory.
     void PostSimulationCallback(RE::hkpWorld* completed) override {
         std::lock_guard lock(samplesMutex);
-        if (completed != nativeWorld.get() || !listening) return;
+        if (completed != nativeWorld || !listening) return;
         for (auto& b : bodies) {
             if (!b.owned) continue;
             if (b.rigid->world != completed) {
@@ -368,8 +372,19 @@ struct Session::State final : RE::hkpWorldPostSimulationListener {
         auto carrier = request.carrier.get();
         return target && carrier && target->Is3DLoaded() && carrier->Is3DLoaded() &&
                target->Get3D(false) == scene.get() && target->GetParentCell() && carrier->GetParentCell() &&
-               target->GetParentCell()->GetbhkWorld() == world.get() &&
-               carrier->GetParentCell()->GetbhkWorld() == world.get();
+               target->GetParentCell()->GetbhkWorld() == world && carrier->GetParentCell()->GetbhkWorld() == world;
+    }
+    // A cell that still hands out this world keeps it alive: the cell it was taken from, or the
+    // carrier's or the target's current one (an exterior world is shared by its cells).
+    bool WorldAlive() const {
+        if (!world || !nativeWorld) return false;
+        const auto holds = [this](const RE::TESObjectCELL* cell) {
+            return cell && cell->GetbhkWorld() == world && world->GetWorld1() == nativeWorld;
+        };
+        auto target = request.target.get();
+        auto carrier = request.carrier.get();
+        return holds(RE::TESForm::LookupByID<RE::TESObjectCELL>(worldCell)) ||
+               (carrier && holds(carrier->GetParentCell())) || (target && holds(target->GetParentCell()));
     }
     void Unlisten() {
         if (!listening || !nativeWorld) return;
@@ -450,8 +465,9 @@ Result Session::Prepare(const Request& request) {
             std::isfinite(d.jointFriction) && d.jointFriction >= 0 ? std::min(d.jointFriction, 100.0f) : -1.0f;
     }
     s.scene.reset(target->Get3D(false));
-    s.world.reset(world);
-    s.nativeWorld = RE::hkRefPtr<RE::hkpWorld>(world->GetWorld1());
+    s.world = world;
+    s.nativeWorld = world->GetWorld1();
+    s.worldCell = cell->GetFormID();
     if (!target->GetAnimationGraphManager(s.manager) || !s.manager) return fail(Result::kSceneUnavailable);
     {
         RE::BSSpinLockGuard guard(s.manager->GetRuntimeData().updateLock);
@@ -509,7 +525,7 @@ Result Session::Prepare(const Request& request) {
             if (r) {
                 const bool owned = std::find(ragdoll->rigidBodies.begin(), ragdoll->rigidBodies.end(), r) !=
                                    ragdoll->rigidBodies.end();
-                if (r->world && r->world != s.nativeWorld.get()) {
+                if (r->world && r->world != s.nativeWorld) {
                     logger::warn("[CarryPartial] foreign world bone={}", node->name.c_str());
                     unsupported = true;
                     return;
@@ -768,7 +784,7 @@ Result Session::Enable() {
     for (const auto& b : s.bodies)
         if (b.owned) {
             anyWorld |= b.rigid->world != nullptr;
-            allWorld &= b.rigid->world == s.nativeWorld.get();
+            allWorld &= b.rigid->world == s.nativeWorld;
         }
     if (anyWorld && !allWorld) return Result::kWorldMismatch;
     if (!anyWorld) {
@@ -777,7 +793,7 @@ Result Session::Enable() {
         if (!s.graph->AddRagdollToWorld()) return failed(Result::kActivationFailed);
     }
     for (const auto& b : s.bodies)
-        if (b.owned && b.rigid->world != s.nativeWorld.get()) return failed(Result::kWorldMismatch);
+        if (b.owned && b.rigid->world != s.nativeWorld) return failed(Result::kWorldMismatch);
     // Recursive layer setters can touch descendants before their own turn.
     // Include every captured body in rollback, even after partial activation.
     for (auto& b : s.bodies)
@@ -1025,7 +1041,7 @@ void Session::BeforePhysics(float delta) {
     const float gravityTime = moved && delta <= 0.1f ? delta : 0.0f;
     for (auto& b : s.bodies) {
         if (!b.changed) continue;
-        if (b.rigid->world != s.nativeWorld.get()) {
+        if (b.rigid->world != s.nativeWorld) {
             s.status.phase = Phase::kFaulted;
             return;
         }
@@ -1254,7 +1270,7 @@ Result Session::BeginNativeRelease() {
     // Validate the entire snapshot before relinquishing any owned state.
     for (auto& b : s.bodies)
         if (b.owned) {
-            if (b.rigid->world != s.nativeWorld.get()) return Result::kWorldMismatch;
+            if (b.rigid->world != s.nativeWorld) return Result::kWorldMismatch;
             if (s.status.phase == Phase::kSimulating) {
                 // World-space state already includes the carrier's motion (the anchor moves with it).
                 b.releasePose = ReadPose(*b.rigid);
@@ -1295,7 +1311,7 @@ Result Session::AdvanceNativeRelease() {
         bool ready = target->IsInRagdollState();
         for (const auto& b : s.bodies)
             if (b.owned) {
-                if (b.rigid->world != s.nativeWorld.get() ||
+                if (b.rigid->world != s.nativeWorld ||
                     std::find(ragdoll->rigidBodies.begin(), ragdoll->rigidBodies.end(), b.rigid.get()) ==
                         ragdoll->rigidBodies.end())
                     return Result::kWorldMismatch;
@@ -1339,7 +1355,8 @@ Result Session::AdvanceNativeRelease() {
 void Session::Invalidate(EndReason reason) {
     auto& s = *state_;
     const bool yield = reason == EndReason::kFullRagdoll;
-    if (s.world && s.nativeWorld) {
+    // A world its cell already let go of is gone with our listener and its bodies: only drop the references.
+    if (s.WorldAlive()) {
         RE::BSWriteLockGuard lock(s.world->worldLock);
         s.Unlisten();
         s.RestoreModes(yield);
@@ -1363,8 +1380,10 @@ void Session::Invalidate(EndReason reason) {
     s.graph.reset();
     s.manager.reset();
     s.scene.reset();
-    s.world.reset();
-    s.nativeWorld.reset();
+    s.world = nullptr;
+    s.nativeWorld = nullptr;
+    s.worldCell = 0;
+    s.listening = false;
     s.registered = false;
     s.haveSample = false;
     s.invalid = false;
