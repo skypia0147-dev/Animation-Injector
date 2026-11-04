@@ -144,11 +144,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
             logger::info("[PairB] coexistence: OAR={} Grapple={}",
                 REX::W32::GetModuleHandleW(L"OpenAnimationReplacer.dll") != nullptr,
                 REX::W32::GetModuleHandleW(L"FH_Grapple_Plugin.dll") != nullptr);
-            if (REX::W32::GetModuleHandleW(L"PairedAnimationImprovements.dll") &&
-                FrameworkSettings::Get().nativePairAlignment == 2)
-                logger::warn(
-                    "[Compatibility] Paired Animation Improvements is loaded and iNativePairAlignment=2: both adjust every "
-                    "paired start. Set iNativePairAlignment=1 to limit alignment to Animation Injector pairs.");
             PairRootRuntime::Install();
             NativePairEnd::Install();
             PairedStartHooks::Install();

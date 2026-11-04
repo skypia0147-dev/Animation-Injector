@@ -63,7 +63,7 @@ The main entries of `SKSE/Plugins/AnimationInjector.ini`. See the INI's notes fo
 
 | Entry | Default | Meaning |
 |---|---|---|
-| `iNativePairAlignment` | 2 | Lining up position and facing when a pair starts. 0 off / 1 this mod's pairs only / 2 all pairs (killmoves included). 1 is recommended with Paired Animation Improvements |
+| `iNativePairAlignment` | 2 | Lining up position and facing when a pair starts. 0 off / 1 this mod's pairs only / 2 all pairs (killmoves included). |
 | `iPairEndPosition` | 2 | Position correction when a pair ends. 0 off / 1 this mod's pairs only / 2 all pairs |
 | `bOrdinary` | true | Preload the animations of single-actor actions too (pairs are always preloaded) |
 | `bLoadingProgress` | true | Show preparation progress when the game starts and a save loads |

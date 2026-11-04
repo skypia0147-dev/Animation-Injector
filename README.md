@@ -63,7 +63,7 @@ XML을 직접 쓰려면 `XML_GUIDE.md`를 보세요.
 
 | 항목 | 기본값 | 의미 |
 |---|---|---|
-| `iNativePairAlignment` | 2 | 페어 시작 때 위치·방향 맞추기. 0 끔 / 1 이 모드의 페어만 / 2 모든 페어(킬무브 포함). Paired Animation Improvements와 함께 쓰면 1을 권장합니다 |
+| `iNativePairAlignment` | 2 | 페어 시작 때 위치·방향 맞추기. 0 끔 / 1 이 모드의 페어만 / 2 모든 페어(킬무브 포함). |
 | `iPairEndPosition` | 2 | 페어가 끝날 때 위치 보정. 0 끔 / 1 이 모드의 페어만 / 2 모든 페어 |
 | `bOrdinary` | true | 혼자 하는 동작의 애니메이션도 미리 불러 둠(페어는 항상 미리 불러 둠) |
 | `bLoadingProgress` | true | 게임 시작·로드 때 준비 진행 표시 |
