@@ -180,6 +180,10 @@ void HeadtrackingLease::Release() {
         logger::debug("[PairStartControl] headtracking restored result={}", static_cast<unsigned>(result));
     });
 }
+namespace {
+bool (*rotationOwner)(RE::Actor*) = nullptr;
+}
+void SetRotationOwner(bool (*query)(RE::Actor*)) { rotationOwner = query; }
 void Lease::Release(bool restoreActors) {
     PairStartCamera::Release(cameraToken);
     cameraToken = 0;
@@ -189,7 +193,8 @@ void Lease::Release(bool restoreActors) {
             auto actor = role.actor.get();
             if (!actor || !actor->Is3DLoaded() || actor->Get3D(false) != role.scene.get()) continue;
             bool current = true;
-            if (actor->GetGraphVariableBool(Rotation(), current) && !current)
+            if (actor->GetGraphVariableBool(Rotation(), current) && !current &&
+                (!rotationOwner || rotationOwner(&*actor)))
                 actor->SetGraphVariableBool(Rotation(), true);
         }
     yaw.Release();

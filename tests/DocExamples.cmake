@@ -1,4 +1,5 @@
-# Every ```xml block of a guide is a whole file the runtime must read: each one goes through the XML checker.
+# Every ```xml block of a guide is a whole file the runtime must read: each one goes through the XML checker
+# (a <Ragdoll> block through its ragdoll mode).
 #   cmake -D DOC=<guide.md> -D CHECKER=<AnimationInjectorXmlCheck.exe> -D OUT=<folder> -D EXPECT=<count> -P DocExamples.cmake
 file(READ "${DOC}" text)
 string(REPLACE "\r\n" "\n" text "${text}")
@@ -20,7 +21,13 @@ while(TRUE)
     math(EXPR count "${count} + 1")
     set(file "${OUT}/${name}-${count}.xml")
     file(WRITE "${file}" "${example}\n")
-    execute_process(COMMAND "${CHECKER}" "${file}" RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE output)
+    # A carry ragdoll file (<Ragdoll>) goes through the ragdoll parser, every other example is an action file.
+    set(mode "")
+    string(FIND "${example}" "<Ragdoll " ragdoll)
+    if(NOT ragdoll EQUAL -1)
+        set(mode "--ragdoll")
+    endif()
+    execute_process(COMMAND "${CHECKER}" ${mode} "${file}" RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE output)
     if(NOT result EQUAL 0)
         message(FATAL_ERROR "${DOC}: example ${count} is not read by the runtime:\n${output}")
     endif()

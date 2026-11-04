@@ -1027,6 +1027,7 @@ struct Compiler {
             fail(n, "페어 역할 기능은 <Do at>으로 선언해야 합니다");
         ActionSpec s;
         s.id = get(n, "id");
+        s.localId = s.id;
         s.source = sourceName;
         // The camera view (runtime/ViewSpec.h): the file's unless written here. Pairs, carries and a carry's
         // putdown play in third person whatever the file says.
@@ -1538,6 +1539,7 @@ struct Compiler {
         const bool pair = compiled.playsPair;
         ActionSpec s;
         s.id = id;
+        s.localId = id;
         s.source = sourceName;
         s.view.view = pair ? View::kThird : fileView;
         for (const auto& [name, info] : inputs)

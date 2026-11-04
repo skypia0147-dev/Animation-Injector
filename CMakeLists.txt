@@ -433,7 +433,7 @@ add_test(NAME XmlCheck COMMAND AnimationInjectorXmlCheck --json "${AI_DDS_PORT}"
 # The XML guides' examples are files the runtime reads: a grammar change that breaks one fails here.
 foreach(guide XML_GUIDE XML_GUIDE_EN)
     add_test(NAME Doc_${guide} COMMAND ${CMAKE_COMMAND} -D "DOC=${CMAKE_SOURCE_DIR}/${guide}.md"
-        -D "CHECKER=$<TARGET_FILE:AnimationInjectorXmlCheck>" -D "OUT=${CMAKE_BINARY_DIR}/doc-examples" -D EXPECT=6
+        -D "CHECKER=$<TARGET_FILE:AnimationInjectorXmlCheck>" -D "OUT=${CMAKE_BINARY_DIR}/doc-examples" -D EXPECT=7
         -P "${CMAKE_SOURCE_DIR}/tests/DocExamples.cmake")
 endforeach()
 # --compare on cards: an empty False (format 5's Stop) equals none, and to="X" with common conditions equals the
@@ -447,27 +447,31 @@ add_test(NAME XmlCompareFlowMembers COMMAND AnimationInjectorXmlCheck --compare
 set_tests_properties(XmlCompareFlowMembers PROPERTIES PASS_REGULAR_EXPRESSION "Semantic mismatch: FlowOrder_Back")
 add_test(NAME RagdollProfile COMMAND AnimationInjectorXmlCheck --ragdoll "${AI_TEST_DATA}/ragdoll/chicken.xml")
 add_test(NAME RagdollProfileReject COMMAND AnimationInjectorXmlCheck --ragdoll-reject "${AI_TEST_DATA}/ragdoll/invalid.xml")
-# Which profile a carry reads: the lift clip's own (Ragdoll/<clip file name>.xml), else the rig's.
-function(ai_ragdoll_resolve name rig clip expected)
-    add_test(NAME RagdollResolve-${name}
-        COMMAND AnimationInjectorXmlCheck --ragdoll-resolve "${AI_TEST_DATA}/ragdoll-resolve/Data" ${rig} "${clip}")
-    set_tests_properties(RagdollResolve-${name} PROPERTIES PASS_REGULAR_EXPRESSION "${expected}")
+# Which profile a carry reads: the lift action's file next to its declaration file
+# (<folder>/Ragdoll/<lift id>.xml), else vanilla.
+set(AI_RAGDOLL_ACTION "${AI_TEST_DATA}/ragdoll-action")
+function(ai_ragdoll_load name folder id rig expected)
+    add_test(NAME RagdollLoad-${name}
+        COMMAND AnimationInjectorXmlCheck --ragdoll-load "${AI_RAGDOLL_ACTION}/${folder}/Carry.xml" "${id}" ${rig})
+    set_tests_properties(RagdollLoad-${name} PROPERTIES PASS_REGULAR_EXPRESSION "${expected}")
 endfunction()
-ai_ragdoll_resolve(clip character "Animations/Grapple/Grapple_Lift.hkx"
-    "Resolved: clip SKSE/Plugins/AnimationInjector/Ragdoll/Grapple_Lift.xml bodies=2")
-ai_ragdoll_resolve(clip-as-declared character "Animations\\Grapple\\GRAPPLE_LIFT.HKX" "Resolved: clip .* bodies=2")
-ai_ragdoll_resolve(clip-any-folder character "Other/Grapple_Lift.hkx" "Resolved: clip .*/Grapple_Lift.xml bodies=2")
-ai_ragdoll_resolve(clip-no-folder character "Grapple_Lift.hkx" "Resolved: clip .*/Grapple_Lift.xml bodies=2")
-ai_ragdoll_resolve(no-clip-file character "Animations/Other/None.hkx"
-    "Resolved: rig SKSE/Plugins/AnimationInjector/Ragdoll/character.xml bodies=0")
-ai_ragdoll_resolve(clip-other-rig character "Animations/Wrong/Wrong_Lift.hkx" "Resolved: rig .*/character.xml")
-ai_ragdoll_resolve(clip-rejected character "Animations/Broken/Broken_Lift.hkx" "Resolved: rig .*/character.xml")
-# A clip named like a rig profile (a runtime rig, or a rig only HKX_Edit saves) never reads it as its own.
-ai_ragdoll_resolve(rig-name character "Animations/Lifts/Wolf.hkx" "Resolved: rig .*/character.xml")
-ai_ragdoll_resolve(hkx-edit-rig-name character "Animations/Lifts/character_female.hkx" "Resolved: rig .*/character.xml")
-ai_ragdoll_resolve(empty-name character "Animations/Lifts/.hkx" "Resolved: rig .*/character.xml")
-ai_ragdoll_resolve(not-hkx character "Animations/Grapple/Grapple_Lift.xml" "Resolved: rig .*/character.xml")
-ai_ragdoll_resolve(no-rig-file chicken "Animations/Grapple/Grapple_Lift.hkx" "Resolved: none")
+ai_ragdoll_load(action Valid Lift chicken "Resolved: action Ragdoll/Lift.xml bodies=")
+ai_ragdoll_load(rejected Broken Lift chicken "Resolved: built-in bodies=0")
+ai_ragdoll_load(other-rig WrongRig Lift chicken "Resolved: built-in bodies=0")
+ai_ragdoll_load(no-file NoFile Lift chicken "Resolved: built-in bodies=0")
+ai_ragdoll_load(other-action Valid PutDown chicken "Resolved: built-in bodies=0")
+ai_ragdoll_load(unsafe-id Valid "../Valid/Ragdoll/Lift" chicken "Resolved: built-in bodies=0")
+ai_ragdoll_load(character NoFile Lift character "Resolved: built-in bodies=0")
+ai_ragdoll_load(other-rig-defaults NoFile Lift wolf "Resolved: built-in bodies=0")
+# The action check reads the lift's ragdoll file too: a rejected one fails the file.
+add_test(NAME RagdollActionCheck COMMAND AnimationInjectorXmlCheck "${AI_RAGDOLL_ACTION}/Valid/Carry.xml")
+set_tests_properties(RagdollActionCheck PROPERTIES PASS_REGULAR_EXPRESSION "Ragdoll Lift: action file")
+add_test(NAME RagdollActionCheckBuiltIn COMMAND AnimationInjectorXmlCheck "${AI_RAGDOLL_ACTION}/NoFile/Carry.xml")
+set_tests_properties(RagdollActionCheckBuiltIn PROPERTIES PASS_REGULAR_EXPRESSION "Ragdoll Lift: built-in")
+add_test(NAME RagdollActionCheckRejected COMMAND AnimationInjectorXmlCheck "${AI_RAGDOLL_ACTION}/Broken/Carry.xml")
+set_tests_properties(RagdollActionCheckRejected PROPERTIES WILL_FAIL TRUE)
+add_test(NAME RagdollActionCheckOtherRig COMMAND AnimationInjectorXmlCheck "${AI_RAGDOLL_ACTION}/WrongRig/Carry.xml")
+set_tests_properties(RagdollActionCheckOtherRig PROPERTIES WILL_FAIL TRUE)
 # Carry putdown: a carrier-only Action with a CarryRelease moment (docs/설계-운반-래그돌-내려놓기.md).
 add_test(NAME CarryPutdownXml COMMAND AnimationInjectorXmlCheck "${AI_TEST_DATA}/carry/putdown.xml")
 add_test(NAME CarryPutdownEventXml COMMAND AnimationInjectorXmlCheck "${AI_TEST_DATA}/carry/putdown-event.xml")

@@ -23,13 +23,14 @@ enum class State : std::uint8_t {
     kFaulted,     // safety stop; Carry ends physics and keeps (or drops) the target
 };
 // After a successful attach. Reads the ragdoll profile once per carry (runtime/RagdollProfile; a
-// restart with the same generation reuses it): the lift
-// clip's own (liftClip = the lift pair's clip path), else the rig's.
+// restart with the same generation reuses it): the lift action's file (actionXml = its declaration file,
+// liftId = its id as written there), else vanilla (RagdollProfile::BuiltIn).
 // kPose = physics unavailable (reason logged); stay in pose mode. kTargetSimulating = the target's own
 // ragdoll still simulates its bodies: holding it in a pose would fight the engine (Carry lets it go).
 enum class Start : std::uint8_t { kStarted, kPose, kTargetSimulating };
-Start Begin(RE::ActorHandle carrier, RE::ActorHandle target, PairedRig::Kind rig, std::string_view liftClip,
-    const RE::BSFixedString& part, const RE::BSFixedString& carrierBone, std::uint64_t generation);
+Start Begin(RE::ActorHandle carrier, RE::ActorHandle target, PairedRig::Kind rig,
+    const std::filesystem::path& actionXml, std::string_view liftId, const RE::BSFixedString& part,
+    const RE::BSFixedString& carrierBone, std::uint64_t generation);
 // Every frame after the attachment pulse.
 State Update(float delta);
 // Drop (cancel or the putdown's CarryRelease): snapshot poses and velocities before the attachment

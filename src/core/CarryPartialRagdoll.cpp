@@ -84,6 +84,21 @@ RE::NiMatrix3 FrameRotation(const RE::hkTransform& t) {
         for (unsigned y = 0; y < 3; ++y) r.entry[y][c] = cols[c]->quad.m128_f32[y];
     return r;
 }
+// Writes a matrix (acting on column vectors) as a constraint atom's local frame rotation.
+void SetFrameRotation(RE::hkTransform& t, const RE::NiMatrix3& r) {
+    RE::hkVector4* cols[]{&t.rotation.col0, &t.rotation.col1, &t.rotation.col2};
+    for (unsigned c = 0; c < 3; ++c) *cols[c] = RE::hkVector4{r.entry[0][c], r.entry[1][c], r.entry[2][c], 0};
+}
+bool SameRotation(const RE::hkTransform& t, const RE::hkRotation& r) {
+    const RE::hkVector4* a[]{&t.rotation.col0, &t.rotation.col1, &t.rotation.col2};
+    const RE::hkVector4* b[]{&r.col0, &r.col1, &r.col2};
+    for (unsigned c = 0; c < 3; ++c)
+        for (unsigned y = 0; y < 3; ++y)
+            if (a[c]->quad.m128_f32[y] != b[c]->quad.m128_f32[y]) return false;
+    return true;
+}
+// A welded joint's range about its start angle (radians): Havok holds an exactly zero range poorly.
+constexpr float weldPad = 1.0f * std::numbers::pi_v<float> / 180.0f;
 // The axes CarryJointAngles measures: Havok's own ragdoll layout (twist 0, plane 1).
 bool StandardAxes(const RE::hkpRagdollConstraintData::Atoms& atoms) {
     using Mode = RE::hkpConeLimitConstraintAtom::MeasurementMode;
@@ -130,9 +145,13 @@ struct Session::State final : RE::hkpWorldPostSimulationListener {
         std::uint32_t flags = 0, writtenFlags = 0;
         unsigned part = 0;
         bool selected = false, anchor = false, changed = false, owned = false;
-        // An anchor below simulated bodies (a chicken's neck) is pinned to the scene frame at its
-        // captured model-space pose, never to its node, whose ancestors physics moves.
+        // A body still held below simulated ones (a chicken's neck anchor, a held body whose joint cannot be
+        // locked) is pinned to the scene frame at its captured model-space pose, never to its node, whose
+        // ancestors physics moves (PartialRagdollPolicy::PinnedToCarry).
         bool pinned = false;
+        // A simulate="false" body below a simulated one: simulated with its joint to the body above locked
+        // (PartialRagdollPolicy::WeldedToParent).
+        bool welded = false;
         // A simulated body with no body above it (the pelvis hanging from that neck) is free
         // relative to its parent; its stretch is measured from the anchor instead.
         bool hanging = false;
@@ -202,6 +221,10 @@ struct Session::State final : RE::hkpWorldPostSimulationListener {
         RE::hkpLimitedHingeConstraintData* hinge = nullptr;
         float hingeBefore[2]{}, hingeApplied[2]{};
         bool hingeOwned = false;
+        // Welded (PartialRagdollPolicy::WeldedToParent): the welded body's index; its frame turned onto the other's.
+        std::size_t weld = SIZE_MAX;
+        RE::hkRotation frameBefore, frameApplied;
+        bool frameOwned = false;
     };
     std::vector<Joint> joints;
     // Limits opened to the start pose at Enable, for the log and the trace header.
@@ -229,6 +252,11 @@ struct Session::State final : RE::hkpWorldPostSimulationListener {
                     if (now[0] == set[0] && now[1] == set[1] && now[2] == set[2]) t = j.before[side];
                 }
             j.pivotOwned = false;
+            if (j.frameOwned) {
+                auto& t = j.weld == j.a ? atoms.transforms.transformA : atoms.transforms.transformB;
+                if (SameRotation(t, j.frameApplied)) t.rotation = j.frameBefore;
+            }
+            j.frameOwned = false;
             if (j.limitsOwned) {
                 const auto limits = Limits(atoms);
                 for (unsigned k = 0; k < limits.size(); ++k)
@@ -669,15 +697,45 @@ Result Session::Prepare(const Request& request) {
             return false;
         };
         const auto anchor = std::find_if(s.bodies.begin(), s.bodies.end(), [](const auto& b) { return b.anchor; });
+        // Welds, all chosen against the selection the profile left (a held chain under a simulated body welds
+        // link by link), then simulated.
+        std::vector<std::size_t> welds;
+        for (std::size_t i = 0; i < s.bodies.size(); ++i) {
+            auto& b = s.bodies[i];
+            const bool simulatedAbove = ancestor(b.node.get(), true);
+            if (!b.owned || b.selected || b.anchor || !simulatedAbove) continue;
+            std::optional<std::size_t> above;
+            for (const auto* p = b.node->parent; p && p != s.scene.get() && !above; p = p->parent)
+                for (std::size_t k = 0; k < s.bodies.size(); ++k)
+                    if (s.bodies[k].owned && s.bodies[k].node.get() == p) above = k;
+            const auto joint =
+                !above ? s.joints.end() : std::find_if(s.joints.begin(), s.joints.end(), [&](const auto& j) {
+                    return (j.a == i && j.b == *above) || (j.b == i && j.a == *above);
+                });
+            const bool lockable =
+                joint != s.joints.end() && (joint->hinge ? joint->hinge->atoms.angLimit.limitAxis == 0
+                                                         : joint->data && StandardAxes(joint->data->atoms));
+            if (!PartialRagdollPolicy::WeldedToParent(b.anchor, !b.selected, simulatedAbove, lockable)) {
+                logger::warn("[CarryPartial] held body {} below a simulated one has no lockable joint; pinned instead",
+                    b.node->name.c_str());
+                continue;
+            }
+            joint->weld = i;
+            welds.push_back(i);
+        }
+        for (const auto i : welds) {
+            s.bodies[i].welded = s.bodies[i].selected = true;
+            logger::debug("[CarryPartial] welded bone={} to the body above", s.bodies[i].node->name.c_str());
+        }
         for (auto& b : s.bodies) {
             if (!b.owned) continue;
             b.inScene = s.scene->world.Invert() * b.node->world;
-            b.pinned = b.anchor && ancestor(b.node.get(), true);
+            b.pinned = PartialRagdollPolicy::PinnedToCarry(b.selected, ancestor(b.node.get(), true));
             b.hanging = b.selected && !ancestor(b.node.get(), false);
             if (b.hanging && anchor != s.bodies.end())
                 b.reach = (b.node->world.translate - anchor->node->world.translate).Length();
             if (b.pinned || b.hanging)
-                logger::debug("[CarryPartial] {} bone={} reach={:.2f}", b.pinned ? "pinned anchor" : "hanging root",
+                logger::debug("[CarryPartial] {} bone={} reach={:.2f}", b.pinned ? "pinned held body" : "hanging root",
                     b.node->name.c_str(), b.reach);
         }
     }
@@ -729,9 +787,11 @@ Result Session::Prepare(const Request& request) {
                 root = p;
                 break;
             }
-        if (!root || !b.selected) {
+        if (!root || !b.selected || b.welded) {
             logger::warn("[RagdollProfile] swingFrom '{}' of '{}' ignored: {}", t.swingFrom, t.bone,
-                root ? "the body does not simulate" : "not a bone between it and the body above");
+                !root      ? "not a bone between it and the body above"
+                : b.welded ? "the body is welded"
+                           : "the body does not simulate");
             continue;
         }
         const auto& parent = s.bodies[*above].node->world;
@@ -884,7 +944,7 @@ Result Session::Enable() {
     for (auto& j : s.joints) {
         const auto& a = s.bodies[j.a];
         const auto& b = s.bodies[j.b];
-        if ((!j.data && !j.hinge) || (!a.selected && !b.selected)) continue;
+        if ((!j.data && !j.hinge) || (!a.selected && !b.selected) || j.weld != SIZE_MAX) continue;
         const auto bodyA = (a.node->world * a.offset).rotate, bodyB = (b.node->world * b.offset).rotate;
         const auto note = [&](const char* limit, float from, float to) {
             s.widened.push_back({a.node->name.c_str(), b.node->name.c_str(), limit, from, to});
@@ -928,6 +988,54 @@ Result Session::Enable() {
             *limits[k] = j.limitsApplied[k] = wide[k];
         }
         j.limitsOwned = true;
+    }
+    // Welds: the welded body's frame turned onto the other's at the start pose (every angle 0 there), each range
+    // a pad about it; a hinge keeps its frames and holds its start angle.
+    for (auto& j : s.joints) {
+        if (j.weld == SIZE_MAX) continue;
+        const auto& a = s.bodies[j.a];
+        const auto& b = s.bodies[j.b];
+        const auto bodyA = (a.node->world * a.offset).rotate, bodyB = (b.node->world * b.offset).rotate;
+        if (j.hinge) {
+            auto& limit = j.hinge->atoms.angLimit;
+            const auto& t = j.hinge->atoms.transforms;
+            const float angle =
+                CarryJointAngles::HingeAngle(bodyA, FrameRotation(t.transformA), bodyB, FrameRotation(t.transformB));
+            if (!std::isfinite(angle)) {
+                logger::warn("[CarryPartial] weld hinge {}-{}: no start angle; its own limits kept",
+                    a.node->name.c_str(), b.node->name.c_str());
+                continue;
+            }
+            if (!j.hingeOwned) {
+                j.hingeBefore[0] = limit.minAngle;
+                j.hingeBefore[1] = limit.maxAngle;
+            }
+            limit.minAngle = j.hingeApplied[0] = angle - weldPad;
+            limit.maxAngle = j.hingeApplied[1] = angle + weldPad;
+            j.hingeOwned = true;
+            logger::debug("[CarryPartial] weld hinge {}-{} at {:.1f}", a.node->name.c_str(), b.node->name.c_str(),
+                Degrees(angle));
+            continue;
+        }
+        if (!j.data) continue;
+        auto& atoms = j.data->atoms;
+        const bool weldA = j.weld == j.a;
+        auto& mine = weldA ? atoms.transforms.transformA : atoms.transforms.transformB;
+        const auto& other = weldA ? atoms.transforms.transformB : atoms.transforms.transformA;
+        const auto otherWorld = (weldA ? bodyB : bodyA) * FrameRotation(other);
+        const auto mineLocal = (weldA ? bodyA : bodyB).Transpose() * otherWorld;
+        j.frameBefore = mine.rotation;
+        SetFrameRotation(mine, mineLocal);
+        j.frameApplied = mine.rotation;
+        j.frameOwned = true;
+        const auto limits = Limits(atoms);
+        if (!j.limitsOwned)
+            for (unsigned k = 0; k < limits.size(); ++k) j.limitsBefore[k] = *limits[k];
+        const float locked[5]{weldPad, -weldPad, weldPad, -weldPad, weldPad};
+        for (unsigned k = 0; k < limits.size(); ++k) *limits[k] = j.limitsApplied[k] = locked[k];
+        j.limitsOwned = true;
+        logger::debug("[CarryPartial] weld joint {}-{} (frame of {})", a.node->name.c_str(), b.node->name.c_str(),
+            s.bodies[j.weld].node->name.c_str());
     }
     for (auto& j : s.joints)
         if (j.data) {

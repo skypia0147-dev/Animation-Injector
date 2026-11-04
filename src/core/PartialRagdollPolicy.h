@@ -46,6 +46,17 @@ constexpr bool SimulatedByOther(bool owned, bool inWorld, bool dynamic, bool kno
 // it. A dynamic one lies wherever it fell and a body outside the world holds a stale state, so the pose
 // is the bone's (a plain bhkRigidBody sits on its node, unscaled).
 constexpr bool FrameFromBone(bool inWorld, bool dynamic) { return !inWorld || dynamic; }
+// A simulate="false" body below a simulated one is welded to the body above it: it stays in the simulation with that
+// joint locked at its start angle, so it moves with its parent and its weight hangs on it (user decision 11-04). A
+// keyframe taken from its node instead pulls the simulated ancestor that moves the node, round and round (a held
+// upper arm under a simulated Spine2 shook, its forearm's joint 34 apart, a physics safety stop every 2 s). The carry
+// anchor is never welded; a body whose joint cannot be locked is pinned instead (below).
+constexpr bool WeldedToParent(bool anchor, bool held, bool simulatedAncestor, bool lockableJoint) {
+    return !anchor && held && simulatedAncestor && lockableJoint;
+}
+// A body still held out of physics below a simulated one (a chicken's neck anchor, a held body whose joint cannot be
+// locked) is pinned to the carry's scene frame at its start pose, never to its node.
+constexpr bool PinnedToCarry(bool selected, bool simulatedAncestor) { return !selected && simulatedAncestor; }
 // Follow native constraints from the retained anchors. Foreign equipment must
 // never count as an anchor for a disconnected simulated chain.
 template<class Bodies, class Edges>

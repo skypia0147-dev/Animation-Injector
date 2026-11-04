@@ -12,7 +12,9 @@
 |---|---|
 | XML | `Data\SKSE\Plugins\AnimationInjector\<모드 이름>\<아무 이름>.xml` |
 | HKX | `Data\meshes\actors\character\` 아래. `clip`에는 이 폴더 기준 경로를 씁니다 |
+| 운반 래그돌 값 | XML 옆 `Ragdoll\<들기 동작 id>.xml` ([운반 래그돌](#운반-래그돌)) |
 
+- XML은 모드 이름 폴더 바로 안에 둡니다(더 아래 폴더는 읽지 않음).
 - HKX 경로의 파일·폴더 이름에는 영문·숫자·일반 기호만 씁니다.
 - XML이나 HKX를 바꾼 뒤에는 게임을 완전히 다시 시작해야 반영됩니다.
 - 파일 하나에 오류가 하나라도 있으면 그 파일 전체가 무시됩니다. 게임에 넣기 전에 [검사](#검사하기)하세요.
@@ -201,6 +203,7 @@ HKX에 넣은 주석 이벤트가 오면 기능을 실행합니다. 이벤트와
 | `sound` | 소리 재생 | `file="sound\…\a.wav"` 또는 `plugin` `form`; 값 `volume`(0~1) |
 | `globalSet` | 글로벌 값 바꾸기 | `plugin` `form` `restore="end"`(끝나면 되돌림); 값 `value` |
 | `modEvent` | Papyrus에 모드 이벤트 보내기 | `name` `text`; 값 `number` |
+| `cancel` | 페어 끝내기 | |
 
 켜 두는 기능(숨기기·무적 등)은 짝 기능(`show`·`iframeOff` 등)이 오거나 이어지는 동작이 모두 끝나면 꺼집니다. 다만 등록된 이벤트로 켠 `iframeOn`·`armorOn`·`rotateOn`·`timeOn`은 짝 기능을 등록한 이벤트가 있으면 애니메이션이 끝나도 그 이벤트가 올 때까지 유지됩니다(사망·래그돌·불러오기 때는 꺼짐). 단, 켜는 이벤트를 보낸 HKX가 그보다 뒤에 끄는 이벤트도 보내면 구간처럼 동작합니다: 끄는 이벤트가 오거나 그 HKX가 끝나거나 끊기면 꺼집니다. 우리 동작이든 다른 모드·바닐라 HKX든 같습니다. 등록의 켜는 기능에 `duration`(초, 0~60)을 주면 그 시간이 지나면 꺼집니다. 그 전에 끄는 이벤트가 오면 그때 꺼지고, HKX가 끝나거나 끊겨도 남은 시간은 유지됩니다(시간 배율은 실제 초, 그 밖은 게임 시간).
 
@@ -251,8 +254,28 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 - 다른 모드가 보내는 이벤트로 시작하려면 `<Start event="이름" target="combatTarget" to="…">`처럼 씁니다.
 - 바닐라 동작을 바꾸려면 그 이벤트로 시작하고 같은 이벤트를 `block`에 씁니다. 예: 막았을 때 `<Start event="blockHitStart" block="blockHitStart" to="…">`. 시작할 수 있을 때만 바닐라 그래프에 그 이벤트가 가지 않고 이 동작이 재생됩니다(`chance` 조건이 있으면 막지 않음). NPC도 `actor`가 NPC를 포함하면 같습니다. `<Action block="…">`은 그 동작이 재생되는 동안 막고, 키·조작 시작의 `block`은 플레이어에게만 적용됩니다.
 - 재생 중인 동작에 같은 이벤트의 `<Transition event>`가 있으면 그 이벤트는 전환이 받고, 같은 이벤트의 `<Start>`는 시작하지 않습니다(키와 같은 규칙). 구간이 열리기 전이면 선입력으로 기억했다가 열릴 때 전환하고, 닫힌 뒤에는 아무것도 하지 않습니다. 예: 막기 피격 동작 안의 `<Transition event="blockHitStart" from="0.1">`로 연속 막기.
-- 조건에 `subject="partner"`를 붙이면 상대를 검사합니다. 누구를 검사해도 같은 조건(`chance` `gameHour` `weather` `global` `movementDirection` `space` `ground`)에는 붙일 수 없습니다.
+- 조건에 `subject="partner"`를 붙이면 상대를 검사합니다. 누구를 검사해도 같은 조건(`chance` `gameHour` `weather` `global` `movementDirection` `space` `ground` `heldTime`)에는 붙일 수 없습니다.
 - 페어는 3인칭에서만 재생됩니다. 페어 안의 무적·경직 저항 등은 `<Do at op="iframeOn">`처럼 시각 기능으로 씁니다.
+
+### 운반 래그돌
+
+운반(`<Carry target="physics">`)으로 들린 대상이 물리로 흔들리는 방식은 들기 동작마다 파일 하나로 정합니다. 위치는 그 동작 XML 옆의 `Ragdoll\<들기 동작 id>.xml`입니다(예: `Grapple\Grapple.xml`의 `GrappleCarryLift` → `Grapple\Ragdoll\GrappleCarryLift.xml`). 게임은 대상을 들 때마다 이 파일을 다시 읽으므로, 게임을 켠 채 고쳐도 다음 들기부터 반영됩니다. 파일이 없거나 오류가 있으면 게임 원래 래그돌 값(바닐라)으로 움직입니다(오류는 로그에 남고, 검사기는 동작 XML을 검사할 때 이 파일도 검사합니다). 에디터의 운반 항목에서 만들 수 있습니다.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Ragdoll rig="character" version="1">
+  <Motion follow="1" gravity="4" drag="10" spin="10" inertia="10"/>
+  <Body bone="NPC COM [COM ]" simulate="false"/>
+  <Body bone="NPC Spine2 [Spn2]" simulate="false"/>
+  <Body bone="NPC L Thigh [LThg]" simulate="true" cone="40" twist="-15 15"/>
+</Ragdoll>
+```
+
+| 요소 | 속성 |
+|---|---|
+| `<Ragdoll>` | `rig`(들기 대상의 리그, 다르면 쓰지 않음) `version="1"` |
+| `<Motion>` | `follow`(운반자 속도 변화를 몸에 바로 주는 몫 0~1) `gravity`(중력 배율 1~4) `drag`(공기 저항 0~10) `spin`(회전 저항 0~10) `inertia`(회전 관성 배율 1~10) `friction`(관절 마찰 0~100, 쓰지 않으면 바닐라) |
+| `<Body bone>` | 래그돌 몸체가 붙은 뼈마다 하나. `simulate`(false면 스스로 흔들리지 않음: 위 몸체가 물리로 흔들리면 그 관절을 처음 각도로 고정해 함께 움직이고, 위가 모두 물리 끔이면 들기 자세를 따라감), 그 몸체만의 `drag` `spin` `gravity` `inertia` `friction`, 위 몸체와의 관절 제한 `cone`(0~180도) `plane` `twist`(「최소 최대」 도), 관절 축 `swingFrom`(뼈 이름). 쓰지 않은 관절 값은 바닐라 관절 그대로입니다 |
 
 ## QTE
 
@@ -310,4 +333,4 @@ AnimationInjectorXmlCheck.exe "경로\MyMod.xml"
 
 `Valid: …`가 나오면 게임이 읽을 수 있는 파일입니다. 오류가 있으면 어느 요소(예: `/AnimationSet/Action/Vanilla`)의 무엇이 틀렸는지 나옵니다. 게임에서 읽히지 않은 파일은 `AnimationInjector.log`에 같은 이유가 남습니다.
 
-같은 `id`의 동작이 여러 파일에 있으면 파일 이름 순으로 나중 것이 쓰입니다.
+동작 `id`는 파일(`AnimationSet id`)마다 따로라서, 여러 파일에 같은 `id`가 있어도 서로 덮어쓰지 않습니다. 두 파일이 같은 `AnimationSet id`를 쓰면 파일 경로 순으로 뒤 파일의 동작을 따로 다루고 로그에 경고합니다.

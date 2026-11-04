@@ -22,14 +22,16 @@ struct CachedProfile {
     bool valid = false;
     std::uint64_t generation = 0;
     PairedRig::Kind rig = PairedRig::Kind::kUnsupported;
-    std::string clip;
-    std::optional<RagdollProfile::Profile> profile;
+    std::filesystem::path actionXml;
+    std::string liftId;
+    RagdollProfile::Profile profile;
 };
 CachedProfile cached;
-const std::optional<RagdollProfile::Profile>& ProfileFor(
-    std::uint64_t carry, PairedRig::Kind rig, std::string_view liftClip) {
-    if (!cached.valid || cached.generation != carry || cached.rig != rig || cached.clip != liftClip)
-        cached = {true, carry, rig, std::string(liftClip), RagdollProfile::Load(rig, liftClip)};
+const RagdollProfile::Profile& ProfileFor(
+    std::uint64_t carry, PairedRig::Kind rig, const std::filesystem::path& actionXml, std::string_view liftId) {
+    if (!cached.valid || cached.generation != carry || cached.rig != rig || cached.actionXml != actionXml ||
+        cached.liftId != liftId)
+        cached = {true, carry, rig, actionXml, std::string(liftId), RagdollProfile::Load(rig, actionXml, liftId)};
     return cached.profile;
 }
 
@@ -64,8 +66,9 @@ void Finish(EndReason reason, const char* why) {
     current = State::kOff;
 }
 }
-Start Begin(RE::ActorHandle carrier, RE::ActorHandle target, PairedRig::Kind rig, std::string_view liftClip,
-    const RE::BSFixedString& part, const RE::BSFixedString& carrierBone, std::uint64_t carryGeneration) {
+Start Begin(RE::ActorHandle carrier, RE::ActorHandle target, PairedRig::Kind rig,
+    const std::filesystem::path& actionXml, std::string_view liftId, const RE::BSFixedString& part,
+    const RE::BSFixedString& carrierBone, std::uint64_t carryGeneration) {
     Reset();
     auto carrierActor = carrier.get();
     auto targetActor = target.get();
@@ -76,13 +79,11 @@ Start Begin(RE::ActorHandle carrier, RE::ActorHandle target, PairedRig::Kind rig
         return Start::kPose;
     }
     generation = carryGeneration;
-    const auto& profile = ProfileFor(carryGeneration, rig, liftClip);
+    const auto& profile = ProfileFor(carryGeneration, rig, actionXml, liftId);
     Request request{carrier, target, carryGeneration, anchor};
-    if (profile) {
-        request.dynamics = profile->motion;
-        request.bodies = profile->bodies;
-        request.traceProfile = profile->source;
-    }
+    request.dynamics = profile.motion;
+    request.bodies = profile.bodies;
+    request.traceProfile = profile.source;
     request.trace = FrameworkSettings::Get().ragdollTrace;
     request.traceRig = PairedRig::Name(rig);
     const auto prepared = session.Prepare(request);

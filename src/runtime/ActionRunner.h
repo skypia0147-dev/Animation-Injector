@@ -79,6 +79,11 @@ public:
     bool HyperArmorActive() const noexcept { return _hyperOn; }
     State GetState() const noexcept { return _state; }
     bool IsActive() const noexcept { return _state == State::kActive; }
+    // Its Rotate window has bAllowRotation true right now.
+    bool RotationWindowOn() const noexcept { return _state != State::kIdle && _rotateOn; }
+    // A rotation true an ended pair hands on to the action its link plays (PairFeatures::End): this runner clears it at
+    // its end as if it had written it, unless it writes the mode itself first.
+    void AdoptRotation();
     int Variant() const noexcept { return _variant; }
     float Elapsed() const noexcept { return _elapsed; }
     // True once this run reached its CarryRelease time or event (reset when a run starts). The carry
@@ -173,6 +178,7 @@ private:
     // 슬롯 상태 (재생마다 초기화, 종료 경로 전부에서 복원)
     bool _rotationLockOwned = false, _rotationBeforeLock = false;
     bool _rotateOn = false, _costDone = false;
+    bool _rotationAdopted = false;  // a true another owner wrote and handed to this runner to clear
     std::vector<bool> _timedFired;  // per clip-time effect (Spec().pairFeatures.timed), 0.12.274
     bool _carryReleaseDue = false;  // per run, kept after Finish for the carry to read
     void ReachCarryRelease(const char* why);

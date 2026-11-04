@@ -28,7 +28,7 @@ Action mods combine these features into actions.
 | During an action | Invulnerability, stagger resistance, turning, time scale, stamina, magicka and health costs, strikes, firing arrows, spells, ragdoll, sounds, camera shake and more |
 | HKX events | Register features on the animation events any HKX sends (other mods' and vanilla ones too). An HKX annotation `AI.Command\|values` runs at its time with no registration |
 | Pairs | Actions two people do together. Both are lined up in position and facing when it starts, and their positions are corrected when it ends |
-| Carrying | Lift someone, carry them and put them down |
+| Carrying | Lift someone, carry them and put them down. How a target swinging under physics moves is set per lift action by a ragdoll file beside the XML (vanilla without one) |
 | QTE | Six kinds: timing, rapid presses, hold and release, key sequences and more. Each result can lead to a different action |
 | View | Third- and first-person actions; switching from first to third person to play one |
 

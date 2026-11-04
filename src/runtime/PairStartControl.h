@@ -19,6 +19,9 @@ struct YawLease {
 // Actor-update lease; optional TDM calls run in scheduled game tasks.
 // The native pair may rotate normally; input steering waits.
 // Explicit release is required before discarding a carry/session state.
+// Whether an actor's bAllowRotation true still has an owner (the runtime installs Actions::RotationWindowOpen). Without
+// one a release gives every true back as before.
+void SetRotationOwner(bool (*query)(RE::Actor*));
 struct Lease {
     struct Role {
         RE::ActorHandle actor;
@@ -32,7 +35,8 @@ struct Lease {
     // true accepts the reservation. Check Ready before native placement/start.
     bool Acquire(RE::Actor* initiator, RE::Actor* target);
     Readiness Ready() const;
-    // false drops old-save actor leases, but still returns our optional API lease.
+    // false drops old-save actor leases, but still returns our optional API lease. A rotation true found at the
+    // start goes back only while its owner still wants it (SetRotationOwner), else stays false.
     void Release(bool restoreActors = true);
     // Transfer the moving participant to locomotion, without restoring its old rotation mode.
     void ReleaseForMovement(RE::ActorHandle actor);

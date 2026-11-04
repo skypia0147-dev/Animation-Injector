@@ -257,5 +257,16 @@ int main() {
     controllerReady = true;
     check(handoff.Advance(.016f, restoreController, requestNative, commitNative) == HandoffResult::kFailed);
     check(requestCalls == 0);
+    // Held bodies below a simulated one weld to the body above (11-04 shaking upper arm); never the anchor, never
+    // without a lockable joint, never without a simulated body above.
+    check(WeldedToParent(false, true, true, true));
+    check(!WeldedToParent(true, true, true, true));
+    check(!WeldedToParent(false, true, true, false));
+    check(!WeldedToParent(false, true, false, true));
+    check(!WeldedToParent(false, false, true, true));
+    // What is still held below a simulated body rides the carry's frame, never its own node.
+    check(PinnedToCarry(false, true));
+    check(!PinnedToCarry(false, false));
+    check(!PinnedToCarry(true, true));
     std::cout << checks << " partial ragdoll policy checks passed\n";
 }

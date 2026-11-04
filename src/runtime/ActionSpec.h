@@ -162,8 +162,9 @@ struct SuppressSpec {
 struct ActionSpec {
     bool rotationLocked = false;
     SuppressSpec suppress;
-    std::string id;  // "Dodge"
-    ViewSpec view;   // the camera view it plays in (runtime/ViewSpec.h); pairs and carries: third
+    std::string id;       // "Dodge"
+    std::string localId;  // the id as written in its file, before the file's qualifier: names its ragdoll file
+    ViewSpec view;        // the camera view it plays in (runtime/ViewSpec.h); pairs and carries: third
     ConditionFlowXml::Program flow;
     std::vector<std::string> flowActions;
     // Ordinary actions join the root's FullBodyPlayerIdles machine in both views; pairs the root (0.12.232).

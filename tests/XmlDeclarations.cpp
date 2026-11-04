@@ -444,24 +444,24 @@ int wmain(int argc, wchar_t** argv) {
                       << " swingFrom=" << body.swingFrom << '\n';
         return 0;
     }
-    // Which profile a carry would read (runtime/RagdollProfile::Resolve): the lift clip's own, the
-    // rig's, or none, under a Data folder.
-    if (argc == 5 && std::wstring_view(argv[1]) == L"--ragdoll-resolve") {
+    // Which profile a carry would read (runtime/RagdollProfile::Load): the lift action's file next to its
+    // declaration file, else vanilla (BuiltIn).
+    if (argc == 5 && std::wstring_view(argv[1]) == L"--ragdoll-load") {
         const auto narrow = [](std::wstring_view text) {
-            const std::filesystem::path path(text);
-            const auto utf8 = path.u8string();
+            const auto utf8 = std::filesystem::path(text).u8string();
             return std::string(utf8.begin(), utf8.end());
         };
-        const auto rig = AnimationInjector::PairedRig::FromName(narrow(argv[3]));
-        const auto profile = AnimationInjector::RagdollProfile::Resolve(argv[2], rig, narrow(argv[4]));
-        if (!profile) {
-            std::cout << "Resolved: none\n";
+        const auto rig = AnimationInjector::PairedRig::FromName(narrow(argv[4]));
+        const auto profile = AnimationInjector::RagdollProfile::Load(rig, argv[2], narrow(argv[3]));
+        if (profile.from == AnimationInjector::RagdollProfile::Source::kBuiltIn) {
+            std::cout << "Resolved: built-in bodies=" << profile.bodies.size() << '\n';
             return 0;
         }
-        const auto relative = std::filesystem::path(profile->source).lexically_relative(argv[2]).generic_u8string();
-        std::cout << "Resolved: "
-                  << (profile->from == AnimationInjector::RagdollProfile::Source::kClip ? "clip" : "rig") << ' '
-                  << std::string(relative.begin(), relative.end()) << " bodies=" << profile->bodies.size() << '\n';
+        const auto relative = std::filesystem::path(std::u8string(profile.source.begin(), profile.source.end()))
+                                  .lexically_relative(std::filesystem::path(argv[2]).parent_path())
+                                  .generic_u8string();
+        std::cout << "Resolved: action " << std::string(relative.begin(), relative.end())
+                  << " bodies=" << profile.bodies.size() << '\n';
         return 0;
     }
     if (argc == 3 && std::wstring_view(argv[1]) == L"--ragdoll-reject") {
@@ -490,6 +490,20 @@ int wmain(int argc, wchar_t** argv) {
         std::vector<ActionSpec> out;
         std::vector<EventRuleSpec> events;
         if (!load(argv[1], out, events)) return 2;
+        // A lift action's ragdoll file next to this file (runtime/RagdollProfile): the game would skip a rejected
+        // one for vanilla, but its author wants to know.
+        for (const auto& a : out) {
+            if (!a.carry.enabled) continue;
+            const auto file = AnimationInjector::RagdollProfile::ActionProfilePath(argv[1], a.localId);
+            std::error_code ec;
+            if (file.empty() || !std::filesystem::is_regular_file(file, ec)) continue;
+            std::string error;
+            if (!AnimationInjector::RagdollProfile::Parse(file, PairedRig::Name(a.paired.targetRig), error)) {
+                const auto text = file.u8string();
+                std::cerr << "Rejected ragdoll " << std::string(text.begin(), text.end()) << ": " << error << '\n';
+                return 2;
+            }
+        }
         std::cout << "Valid: " << out.size() << " actions, " << events.size() << " registered events\n";
         for (auto& a : out) {
             std::cout << a.id << " key=" << a.trigger.key << " clips=" << a.clips.size()
@@ -500,6 +514,13 @@ int wmain(int argc, wchar_t** argv) {
                 std::cout << "Recovery event=" << a.recovery.event << " at=" << a.recovery.at
                           << " blend=" << a.recovery.blend << " move=" << a.recovery.move
                           << " exit=" << a.recovery.recoverEvent << '\n';
+            if (a.carry.enabled) {
+                const auto file = AnimationInjector::RagdollProfile::ActionProfilePath(argv[1], a.localId);
+                std::error_code ec;
+                std::cout << "Ragdoll " << a.localId << ": "
+                          << (!file.empty() && std::filesystem::is_regular_file(file, ec) ? "action file" : "built-in")
+                          << '\n';
+            }
             if (a.carry.enabled)
                 std::cout << "Carry bone=" << a.carry.bone << " root=" << a.carry.targetRoot
                           << " putdown=" << a.carry.putdownAction << " key=" << a.carry.key
@@ -519,6 +540,6 @@ int wmain(int argc, wchar_t** argv) {
     std::cout
         << "AnimationInjectorXmlCheck <file.xml>\n  --compare <v1.xml> <v2.xml>\n"
            "  --compare-starts <a.xml> <b.xml>\n  --reject <invalid.xml>\n  --json <file.xml>\n"
-           "  --ragdoll <profile.xml>\n  --ragdoll-reject <invalid.xml>\n  --ragdoll-resolve <Data> <rig> <lift clip>\n";
+           "  --ragdoll <profile.xml>\n  --ragdoll-reject <invalid.xml>\n  --ragdoll-load <action.xml> <lift id> <rig>\n";
     return 1;
 }

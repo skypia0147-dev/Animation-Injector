@@ -540,6 +540,7 @@ void ActionRunner::ApplyRotate(bool a_on) {
         if (!_rotationLockOwned)
             _rotationLockOwned = actor->GetGraphVariableBool(VarAllowRotation(), _rotationBeforeLock);
         actor->SetGraphVariableBool(VarAllowRotation(), a_on);
+        _rotationAdopted = false;  // this runner's own write decides from here
     }
     if (_rotateOn != a_on) logger::debug("[{}] Rotate {} at {:.2f}s", Spec().id, a_on ? "ON" : "OFF", _elapsed);
     _rotateOn = a_on;
@@ -644,13 +645,18 @@ void ActionRunner::ReleaseRotation() {
                 })) {
                 next->_rotationBeforeLock = _rotationBeforeLock;
                 next->_rotationLockOwned = true;
+                if (_rotateOn || _rotationAdopted) next->_rotationAdopted = true;
                 transferred = true;
             }
             PairedSession::Ticket ticket;
-            // The destination state owns the mode from here; the start value is kept only for the log.
-            if (!transferred && !PairedSession::TryGetTicket(_owner, ticket)) {
+            // A pair took the actor over: its graph states never write the mode, so the true this runner wrote goes to
+            // the pair, which clears it when the actor returns to locomotion (11-04: a player who waited out a pair
+            // started from an action's Rotate window stayed in the engine's turn-in-place mode and could not walk).
+            if (!transferred && PairedSession::TryGetTicket(_owner, ticket)) {
+                if (_rotateOn || _rotationAdopted) PairFeatures::OweRotation(_owner);
+            } else if (!transferred) {
                 HandBackRotation(
-                    _rotationLockOwned, _rotateOn,
+                    _rotationLockOwned, _rotateOn || _rotationAdopted,
                     [&](bool& value) { return actor->GetGraphVariableBool(VarAllowRotation(), value); },
                     [&](bool value) { actor->SetGraphVariableBool(VarAllowRotation(), value); });
             }
@@ -662,6 +668,14 @@ void ActionRunner::ReleaseRotation() {
         _rotationLockOwned = false;
     }
     _rotateOn = false;
+    _rotationAdopted = false;
+}
+void ActionRunner::AdoptRotation() {
+    if (!_rotationLockOwned) {
+        _rotationLockOwned = true;
+        _rotationBeforeLock = false;
+    }
+    _rotationAdopted = true;
 }
 
 void ActionRunner::PrepareExit(float blend) {
@@ -1474,6 +1488,7 @@ void ActionRunner::Finish() {
 
 void ActionRunner::ResetOnLoad() {
     ++_playbackSerial;
+    _rotationAdopted = false;
     _normalExitMovementAccepted = false;
     _recoveryMovement = false;
     _requestOrigin = -1;

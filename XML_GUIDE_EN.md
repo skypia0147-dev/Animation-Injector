@@ -12,7 +12,9 @@ Every example in this guide is a file Animation Injector reads as it is.
 |---|---|
 | XML | `Data\SKSE\Plugins\AnimationInjector\<mod name>\<any name>.xml` |
 | HKX | Under `Data\meshes\actors\character\`. `clip` is the path from that folder |
+| Carry ragdoll values | `Ragdoll\<lift action id>.xml` next to the XML ([Carry ragdoll](#carry-ragdoll)) |
 
+- Put the XML directly in the mod-name folder (folders below it are not read).
 - Use only English letters, digits and common symbols in the file and folder names of HKX paths.
 - Restart the game fully after changing an XML or HKX file.
 - If a file has any error, the whole file is ignored. [Check](#checking-a-file) it before putting it in the game.
@@ -201,6 +203,7 @@ A feature applies to the actor that sent the event (the one playing the action).
 | `sound` | Play a sound | `file="sound\…\a.wav"` or `plugin` `form`; value `volume` (0~1) |
 | `globalSet` | Change a global's value | `plugin` `form` `restore="end"` (set back when it ends); value `value` |
 | `modEvent` | Send a mod event to Papyrus | `name` `text`; value `number` |
+| `cancel` | End the pair | |
 
 A feature that stays on (hiding, invulnerability and such) ends when its pair (`show`, `iframeOff`, ...) comes or when the actions that follow have all ended. But `iframeOn`, `armorOn`, `rotateOn` and `timeOn` turned on by a registered event, while some event is registered with their pair, stay on until that event comes, even after the animation ends (they end on death, ragdoll or a load). But when the HKX that sent the on event also sends the off event later, it works as a range: it ends when the off event comes or when that HKX ends or is cut short. This holds for our actions and for any other mod's or vanilla HKX alike. A registered on function with a `duration` (seconds, 0~60) ends when that time is up; an off event before then ends it then, and it lasts its time even when the HKX ends or is cut short (real seconds for a time scale, game time for the others).
 
@@ -251,8 +254,28 @@ An action two people do together is a `<Pair>`. Its HKX is one paired HKX holdin
 - To start on an event another mod sends, write `<Start event="Name" target="combatTarget" to="…">`.
 - To replace a vanilla action, start on its event and name the same event in `block`, e.g. on a blocked hit `<Start event="blockHitStart" block="blockHitStart" to="…">`. While the action can start, the vanilla graph does not get the event and this action plays (not with a `chance` condition). An NPC is the same when `actor` includes NPCs. `<Action block="…">` blocks while that action plays; a key or control start's `block` is the player's only.
 - While an action plays that has a `<Transition event>` on an event, that event is the transition's and a `<Start>` on the same event does not start (the rule keys follow). Before its window opens a buffered transition keeps it and goes when the window opens; after it closes nothing happens. For example a `<Transition event="blockHitStart" from="0.1">` inside a block hit action for a block hit after block hit.
-- `subject="partner"` on a condition checks the partner. Conditions that are the same whoever is asked (`chance` `gameHour` `weather` `global` `movementDirection` `space` `ground`) do not take it.
+- `subject="partner"` on a condition checks the partner. Conditions that are the same whoever is asked (`chance` `gameHour` `weather` `global` `movementDirection` `space` `ground` `heldTime`) do not take it.
 - Pairs play in third person only. Invulnerability, stagger resistance and such in a pair are clip-time features, like `<Do at op="iframeOn">`.
+
+### Carry ragdoll
+
+How a target lifted by a carry (`<Carry target="physics">`) sways under physics is set by one file per lift action: `Ragdoll\<lift action id>.xml` next to that action's XML (e.g. `GrappleCarryLift` in `Grapple\Grapple.xml` → `Grapple\Ragdoll\GrappleCarryLift.xml`). The game reads it again at every pickup, so an edit made while the game runs applies from the next lift. Without the file, or with an error in it, the game's own ragdoll values (vanilla) are used (the error is logged, and the checker checks this file along with the action XML). The editor's carry item makes it.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Ragdoll rig="character" version="1">
+  <Motion follow="1" gravity="4" drag="10" spin="10" inertia="10"/>
+  <Body bone="NPC COM [COM ]" simulate="false"/>
+  <Body bone="NPC Spine2 [Spn2]" simulate="false"/>
+  <Body bone="NPC L Thigh [LThg]" simulate="true" cone="40" twist="-15 15"/>
+</Ragdoll>
+```
+
+| Element | Attributes |
+|---|---|
+| `<Ragdoll>` | `rig` (the lifted target's rig; another rig's file is not used) `version="1"` |
+| `<Motion>` | `follow` (share of the carrier's speed change given to the body at once, 0~1) `gravity` (gravity factor 1~4) `drag` (air drag 0~10) `spin` (spin damping 0~10) `inertia` (rotational inertia factor 1~10) `friction` (joint friction 0~100; left out, vanilla) |
+| `<Body bone>` | One per bone carrying a ragdoll body. `simulate` (false: it never sways on its own; below a body that sways, its joint stays at its first angle and it moves along, and below bodies that all stay out of physics it follows the lift pose), that body's own `drag` `spin` `gravity` `inertia` `friction`, the joint to the body above: `cone` (0~180 degrees), `plane` and `twist` ("minimum maximum" degrees), its axis bone `swingFrom`. Joint values left out keep the vanilla joint |
 
 ## QTE
 
@@ -310,4 +333,4 @@ AnimationInjectorXmlCheck.exe "path\MyMod.xml"
 
 `Valid: …` means the game can read the file. With an error, it says which element (for example `/AnimationSet/Action/Vanilla`) is wrong and how. A file the game did not read leaves the same reason in `AnimationInjector.log`.
 
-If several files have an action with the same `id`, the one in the file that sorts later by name is used.
+Action ids belong to their file (its `AnimationSet id`), so several files may use the same `id` without one replacing another. When two files use the same `AnimationSet id`, the actions of the one whose path sorts later are kept apart and the log warns.

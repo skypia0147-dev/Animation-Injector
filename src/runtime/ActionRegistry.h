@@ -104,6 +104,9 @@ const std::vector<std::string>& AllEventNames();
 // them, not only the graphs an action is injected into.
 const std::vector<std::string>& RegistryEventNames();
 bool AnyActive();  // 플레이어 실행기 중 Idle 이 아닌 것
+// Main thread: an action of this actor has its Rotate window open, so a bAllowRotation true is still wanted. Anything
+// that saw a true and later restores it gives it back only then: an actor back in locomotion walks only with it false.
+bool RotationWindowOpen(RE::Actor* actor);
 // Main thread (ViewGuard): ends every running player action and pending link through its exit blend.
 void CancelPlayerRun(const char* reason);
 bool HyperArmorFor(RE::Actor* a_actor);  // 그 액터의 실행기 중 스태거 무시 구간 (IFrame 포함)

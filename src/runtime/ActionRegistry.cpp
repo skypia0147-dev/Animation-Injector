@@ -993,6 +993,9 @@ bool AnyActive() {
     return g_playerBound.load(std::memory_order_acquire) &&
            g_player->FindIf([](int, ActionRunner& r) { return r.GetState() != ActionRunner::State::kIdle; });
 }
+bool RotationWindowOpen(RE::Actor* actor) {
+    return actor && FindRunner(actor, [](int, ActionRunner& r) { return r.RotationWindowOn(); }) != nullptr;
+}
 
 namespace {
 // Read-only predicates, callable from any thread (damage and notify hooks).

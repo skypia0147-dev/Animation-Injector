@@ -30,6 +30,7 @@
 #include "ui/LoadingMenu.h"
 #include "ui/QteMenu.h"
 #include "runtime/ActionRegistry.h"
+#include "runtime/PairStartControl.h"
 #include "runtime/MainThread.h"
 #include "runtime/InputSink.h"
 #include "runtime/TdmMovement.h"
@@ -121,6 +122,8 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
     LoadingProgress::SetEnabled(FrameworkSettings::Get().loadingProgress);
     Actions::Load();           // XML declarations and runners
     GraphInjector::Install();  // CreateSymbolIdMap / LoadClips
+    // A carry start gives a bAllowRotation true back only to an action still wanting it.
+    PairStartControl::SetRotationOwner(Actions::RotationWindowOpen);
     ExitBlendHooks::Install();
     ClipHooks::Install();  // hkbClipGenerator Activate/Deactivate
     if (FrameworkSettings::Get().loadingProgress) AnimationLoadObserver::Install();

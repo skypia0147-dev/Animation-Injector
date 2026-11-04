@@ -95,6 +95,18 @@ int main(int argc, char**) {
     const auto releases = api.released;
     Release(lease);
     Check(api.released == releases, "duplicate release inert");
+    {
+        // A rotation true found at the start goes back only to an owner still wanting it (11-04: a true outliving its
+        // action kept the player turning in place after a carry).
+        static RE::Actor* wanted = nullptr;
+        AnimationInjector::PairStartControl::SetRotationOwner([](RE::Actor* actor) { return actor == wanted; });
+        wanted = &a;
+        Check(Reserve(lease, &a, &b) && !a.rotation && !b.rotation, "owner case locks steering");
+        Release(lease);
+        Check(a.rotation && !b.rotation, "only the actor whose owner still wants it gets its true back");
+        AnimationInjector::PairStartControl::SetRotationOwner(nullptr);
+        b.rotation = true;
+    }
     if (installed) {
         // Match the report: 12828 input, 46032 Actor update, changing game-task
         // workers 15096/65132/16056. OS thread identity is not API eligibility.

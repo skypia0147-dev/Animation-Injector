@@ -63,6 +63,32 @@ struct Role {
     RE::NiPointer<RE::bhkCharacterController> startController;
 };
 std::array<Role, 2> roles;
+// Actors whose rotation true a pair took over (OweRotation). Own lock: a runner's release can run under the feature lock.
+std::mutex rotationMutex;
+std::vector<RE::ActorHandle> owedRotation;
+bool TakeOwedRotation(RE::ActorHandle actor) {
+    std::lock_guard lock(rotationMutex);
+    const auto it = std::find(owedRotation.begin(), owedRotation.end(), actor);
+    if (it == owedRotation.end()) return false;
+    owedRotation.erase(it);
+    return true;
+}
+void HandBackOwedRotation(RE::Actor* actor, std::uint64_t request, bool handoff) {
+    static const RE::BSFixedString allowRotation{"bAllowRotation"};
+    if (handoff)
+        if (auto* next = Actions::FindRunner(
+                actor, [](int, ActionRunner& r) { return r.GetState() != ActionRunner::State::kIdle; })) {
+            next->AdoptRotation();
+            logger::debug("[PairRotation] #{} actor={:08X} rotation handed to '{}'", request, actor->GetFormID(),
+                next->Spec().id);
+            return;
+        }
+    bool current = false;
+    const bool readable = actor->Is3DLoaded() && actor->GetGraphVariableBool(allowRotation, current);
+    if (readable && current) actor->SetGraphVariableBool(allowRotation, false);
+    logger::debug("[PairRotation] #{} actor={:08X} back to locomotion: rotation {} -> false", request,
+        actor->GetFormID(), readable ? (current ? "true" : "false") : "unreadable");
+}
 // Roles this pair released to native physics, until the engine finishes their get-up.
 struct GetUpWatch {
     RE::ActorHandle actor;
@@ -592,6 +618,7 @@ void End(Ticket value, bool completed, bool handoff) {
                 }
             // The engine's single get-up request can arrive while this pair still held the graph.
             if (!handoff && role.physicsReleased) WatchGetUp(role.actor, ticket.request);
+            if (TakeOwedRotation(role.actor)) HandBackOwedRotation(actor.get(), ticket.request, handoff);
         }
     }
     if (camera.owned && (!completed || camera.restoreOnEnd)) {
@@ -824,7 +851,15 @@ void RequestCancel(RE::ActorHandle actor) {
     std::lock_guard lock(mutex);
     if (active && !suspended && (actor == roles[0].actor || actor == roles[1].actor)) cancel = true;
 }
+void OweRotation(RE::ActorHandle actor) {
+    std::lock_guard lock(rotationMutex);
+    if (std::find(owedRotation.begin(), owedRotation.end(), actor) == owedRotation.end()) owedRotation.push_back(actor);
+}
 void ResetOnLoad() {
+    {
+        std::lock_guard rotation(rotationMutex);
+        owedRotation.clear();
+    }
     std::lock_guard lock(mutex);
     getUpWatches.clear();
     WeaponCull::Reset();  // every hide's nodes belong to the old 3D

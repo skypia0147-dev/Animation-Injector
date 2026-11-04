@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <pugixml.hpp>
 #include "declarations/XmlV2.h"
-#include "runtime/RagdollProfile.h"
 
 namespace AnimationInjector {
 
@@ -288,8 +287,6 @@ std::vector<ActionSpec> LoadAllFrom(const std::filesystem::path& root, std::vect
     std::vector<std::filesystem::path> xmls;
     for (const auto& dir : std::filesystem::directory_iterator(root, ec)) {
         if (!dir.is_directory(ec)) continue;
-        // Rig ragdoll profiles live beside the action sets; they are not action declarations.
-        if (_wcsicmp(dir.path().filename().c_str(), RagdollProfile::kFolder.data()) == 0) continue;
         for (const auto& f : std::filesystem::directory_iterator(dir.path(), ec)) {
             if (!f.is_regular_file(ec)) continue;
             if (_wcsicmp(f.path().extension().c_str(), L".xml") == 0) xmls.push_back(f.path());

@@ -20,11 +20,6 @@ bool Same(std::string_view a, std::string_view b) {
         return std::tolower(x) == std::tolower(y);
     });
 }
-// A rig profile's file name: no lift clip profile may take it.
-bool ReservedName(std::string_view stem) {
-    return PairedRig::FromName(stem) != PairedRig::Kind::kUnsupported ||
-           std::any_of(kHkxEditRigs.begin(), kHkxEditRigs.end(), [&](auto rig) { return Same(stem, rig); });
-}
 std::optional<float> Number(std::string_view text) {
     while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front()))) text.remove_prefix(1);
     while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) text.remove_suffix(1);
@@ -166,57 +161,52 @@ std::optional<Profile> Parse(const std::filesystem::path& file, std::string_view
     }
     return profile;
 }
-std::filesystem::path ClipProfilePath(std::string_view liftClip) {
-    constexpr std::string_view extension = ".hkx";
-    if (liftClip.size() <= extension.size() || !Same(liftClip.substr(liftClip.size() - extension.size()), extension))
-        return {};
-    liftClip.remove_suffix(extension.size());
-    const auto slash = liftClip.find_last_of("/\\");
-    const auto stem = slash == liftClip.npos ? liftClip : liftClip.substr(slash + 1);
-    if (stem.empty() || stem == "." || stem == ".." || stem.find(':') != stem.npos || ReservedName(stem)) return {};
-    std::filesystem::path relative{kFolder};
-    relative /= std::filesystem::path(std::u8string(stem.begin(), stem.end()));  // declarations are UTF-8
-    relative += ".xml";
-    return relative;
+std::filesystem::path ActionProfilePath(const std::filesystem::path& actionXml, std::string_view liftId) {
+    if (liftId.empty() || liftId == "." || liftId == ".." || liftId.find_first_of("/\\:") != liftId.npos) return {};
+    auto file = actionXml.parent_path() / kFolder;
+    file /= std::filesystem::path(std::u8string(liftId.begin(), liftId.end()));  // declarations are UTF-8
+    file += ".xml";
+    return file;
 }
-std::optional<Profile> Resolve(const std::filesystem::path& data, PairedRig::Kind rig, std::string_view liftClip) {
+Profile BuiltIn(PairedRig::Kind) {
+    // Vanilla for every rig (user decision 11-04: "a default must not be needed, and if there is one it is vanilla"):
+    // the game's own ragdoll values. Damping is applied as at least this (0 keeps the native value), gravity 1 adds
+    // no extra gravity, inertia 1 keeps it, friction < 0 keeps the native joints, no follow share, every body
+    // simulates. A lift's own values belong in its file beside the action XML.
+    Profile profile;
+    profile.source = "built-in (vanilla)";
+    auto& m = profile.motion;
+    m.follow = 0;
+    m.gravity = 1;
+    m.linearDamping = 0;
+    m.angularDamping = 0;
+    m.inertia = 1;
+    m.jointFriction = -1;
+    return profile;
+}
+Profile Load(PairedRig::Kind rig, const std::filesystem::path& actionXml, std::string_view liftId) {
     const std::string name = PairedRig::Name(rig);
-    const auto folder = data / "SKSE/Plugins/AnimationInjector";
-    const auto loaded = [&](Profile& profile, const char* from) {
+    const auto log = [&](const Profile& profile) {
         const auto& m = profile.motion;
         logger::info(
-            "[RagdollProfile] rig '{}' from {} ({}): follow={} gravity={} drag={} spin={} inertia={} friction={} bodies={}",
-            name, profile.source, from, m.follow, m.gravity, m.linearDamping, m.angularDamping, m.inertia,
-            m.jointFriction, profile.bodies.size());
+            "[RagdollProfile] rig '{}' from {}: follow={} gravity={} drag={} spin={} inertia={} friction={} bodies={}",
+            name, profile.source, m.follow, m.gravity, m.linearDamping, m.angularDamping, m.inertia, m.jointFriction,
+            profile.bodies.size());
     };
     std::error_code ec;
     std::string error;
-    if (const auto relative = ClipProfilePath(liftClip); !relative.empty()) {
-        const auto file = folder / relative;
+    if (const auto file = ActionProfilePath(actionXml, liftId); !file.empty()) {
         if (std::filesystem::is_regular_file(file, ec)) {
             if (auto profile = Parse(file, name, error)) {
-                profile->from = Source::kClip;
-                loaded(*profile, "clip");
-                return profile;
+                profile->from = Source::kAction;
+                log(*profile);
+                return std::move(*profile);
             }
-            logger::warn("[RagdollProfile] {} rejected: {}; using the rig profile", Text(file), error);
+            logger::warn("[RagdollProfile] {} rejected: {}; built-in values", Text(file), error);
         }
     }
-    const auto file = folder / kFolder / (name + ".xml");
-    if (!std::filesystem::is_regular_file(file, ec)) {
-        logger::info(
-            "[RagdollProfile] no profile for rig '{}' ({}); native joints and default values", name, Text(file));
-        return std::nullopt;
-    }
-    auto profile = Parse(file, name, error);
-    if (!profile) {
-        logger::warn("[RagdollProfile] {} rejected: {}; native joints and default values", Text(file), error);
-        return std::nullopt;
-    }
-    loaded(*profile, "rig");
+    auto profile = BuiltIn(rig);
+    log(profile);
     return profile;
-}
-std::optional<Profile> Load(PairedRig::Kind rig, std::string_view liftClip) {
-    return Resolve(std::filesystem::current_path() / "Data", rig, liftClip);
 }
 }

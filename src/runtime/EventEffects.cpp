@@ -246,7 +246,12 @@ void End(const Hold& h) {
             const auto found =
                 std::find_if(rotations.begin(), rotations.end(), [&](const Rotation& r) { return r.actor == h.actor; });
             if (found != rotations.end()) {
-                if (actor && actor->Is3DLoaded()) actor->SetGraphVariableBool(RotationVariable(), found->initial);
+                // The true seen at the start belonged to an action's Rotate window: given back only while that
+                // window is still open, else false (11-04: a true outliving its owner keeps the engine turning in
+                // place and the actor cannot walk).
+                if (actor && actor->Is3DLoaded())
+                    actor->SetGraphVariableBool(
+                        RotationVariable(), found->initial && Actions::RotationWindowOpen(actor.get()));
                 rotations.erase(found);
             }
         }

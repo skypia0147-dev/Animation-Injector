@@ -17,6 +17,10 @@ bool AllowRecoveryMotion(RE::ActorHandle actor);
 // Effects the pair's clip time or its events started end with their run scopes (EventEffects), so a
 // role handed to a linked action keeps its hidden weapon until that action shows it or the chain ends.
 void End(PairedSession::Ticket ticket, bool completed, bool handoff = false);
+// An action that wrote bAllowRotation true and was released while a pair holds its actor (ActionRunner::ReleaseRotation):
+// the pair's end clears that true when the actor returns to locomotion (the engine walks only with it false), or hands it
+// to the action a link plays next.
+void OweRotation(RE::ActorHandle actor);
 void AbortHandoffCamera(PairedSession::Ticket ticket);
 // An ordinary action's camera restore (0.12.260): the player's action takes the camera as a pair does, and gives it
 // back at its end (restore="end") or on its reset event after it (restore="event", within the timeout).

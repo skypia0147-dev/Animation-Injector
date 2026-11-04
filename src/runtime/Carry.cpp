@@ -1561,9 +1561,10 @@ void Update(float delta) {
         state.bodyPending = false;
         const auto& lift = Actions::Spec(entries[state.entry].action);
         const bool restart = state.bodyRestarts > 0;
-        const auto started = CarryBody::Begin(state.carrier, state.target, lift.paired.targetRig,
-            lift.clips.empty() ? std::string_view() : std::string_view(lift.clips.front().file),
-            entries[state.entry].part, AnchorName(), state.ticket.request);
+        // The declaration file's path is UTF-8 (Settings PathText).
+        const auto actionXml = std::filesystem::path(std::u8string(lift.source.begin(), lift.source.end()));
+        const auto started = CarryBody::Begin(state.carrier, state.target, lift.paired.targetRig, actionXml,
+            lift.localId, entries[state.entry].part, AnchorName(), state.ticket.request);
         if (started == CarryBody::Start::kTargetSimulating) {
             // The target's own ragdoll never stopped simulating (grabbed while it was getting up): a
             // carry in the lift pose fought the engine's physics, and the putdown lost the target
