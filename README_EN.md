@@ -8,7 +8,7 @@ You describe in an XML file which HKX animation plays, when, and under what cond
 
 Animation Injector does not replace or change mods made with Nemesis, Pandora or OAR. It only runs mods written for Animation Injector, and your existing behavior mods keep working alongside it as they are.
 
-**This mod does nothing by itself.** Install it together with animation mods made for Animation Injector.
+**Apart from the paired animation fixes below, this mod does nothing by itself.** Install it together with animation mods made for Animation Injector.
 
 - **Users**: animation mods made for Animation Injector work as soon as you install them, with no Nemesis or Pandora run.
 - **Modders**: bring new animations into the game by writing XML, without patching the behavior graph.
@@ -46,6 +46,15 @@ Action mods combine these features into actions.
 | View | Third- and first-person actions; switching from first to third person to play one |
 
 Pairs and carrying work in third person only.
+
+## Paired animation fixes
+
+These two fixes apply to vanilla kill moves and other mods' paired animations too, not only to this mod's pairs.
+
+- **Start alignment**: the victim stays where it is and only turns toward the attacker; the attacker moves onto its mark.
+- **End position**: when an animation's root bone moves away from the actor, for example one that ends walking off, the actor normally snaps back to where it started as the animation ends. This mod leaves the actor where the animation ended instead.
+
+To use them for this mod's pairs only, set `iNativePairAlignment` and `iPairEndPosition` in the INI to 1; set them to 0 to turn them off.
 
 ## Making an action mod
 
