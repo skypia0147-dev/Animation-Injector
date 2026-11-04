@@ -2,14 +2,27 @@
 
 **버전 1.0.0** · [English](README_EN.md)
 
-키 입력, 게임 동작(점프·질주 등), 애니메이션 이벤트를 신호로 새 애니메이션을 재생하는 SKSE 프레임워크입니다. 혼자 하는 동작도, 두 사람이 함께 하는 페어 동작도 넣을 수 있습니다. 무기·이동 방향·받은 공격 같은 조건에 따라 다른 동작을 고르고, 동작 중에는 무적·타격·화살 발사·래그돌·QTE 같은 효과를 실행합니다. 동작을 추가하거나 바꿔도 Nemesis·Pandora를 다시 실행할 필요가 없습니다(다른 모드가 요구하는 비헤이비어 패치는 그대로 두세요). 동작은 XML 파일로 정의하며, 직접 쓰거나 전용 에디터로 만들 수 있습니다.
+새 애니메이션을 넣으려면 보통 Nemesis나 Pandora 같은 비헤이비어 도구로 비헤이비어 그래프를 패치해야 합니다. Animation Injector는 그 과정 없이 새 애니메이션을 넣는 SKSE 프레임워크입니다.
 
-이 모드만으로는 아무 일도 일어나지 않습니다. Animation Injector를 쓰는 동작 모드를 함께 설치해야 합니다.
+어떤 HKX 애니메이션을 언제, 어떤 조건에서 재생할지 XML 파일에 적어 두면, 게임이 시작할 때 그 XML을 읽고 애니메이션을 재생합니다. 애니메이션을 추가하거나 바꿔도 비헤이비어 도구를 다시 실행할 필요가 없습니다.
+
+Animation Injector는 Nemesis·Pandora·OAR로 만든 모드를 대체하거나 바꾸지 않습니다. Animation Injector용으로 만든 모드만 실행하며, 지금 쓰는 비헤이비어 모드는 지금처럼 함께 쓸 수 있습니다.
+
+**이 모드만으로는 아무 일도 일어나지 않습니다.** Animation Injector용으로 만든 애니메이션 모드를 함께 설치하세요.
+
+- **사용자**: Animation Injector용 애니메이션 모드는 설치하면 바로 동작합니다. Nemesis·Pandora를 실행할 필요가 없습니다.
+- **모드 제작자**: 비헤이비어 그래프를 패치하지 않고 XML만 써서 새 애니메이션을 게임에 넣을 수 있습니다.
+
+## 동작 방식
+
+Animation Injector는 바닐라 비헤이비어 그래프를 그대로 두고 그 위에서 새 애니메이션을 재생합니다. 예를 들어 특정 애니메이션 이벤트가 일어날 때, 특정 단축키를 누를 때 재생합니다. 바닐라 이벤트를 가로채 바닐라 반응 대신 내 애니메이션을 재생할 수도 있습니다(예: 공격을 막았을 때).
+
+예를 들어 질주를 멈출 때 나오는 정지 애니메이션을 넣으려면, 질주가 끝날 때 발생하는 `sprintStop` 이벤트를 신호로 쓰면 됩니다. Animation Injector Editor로 이 XML을 만드는 과정은 [이 영상](https://www.youtube.com/watch?v=H0bTLvZqs0Q)에서 볼 수 있습니다.
 
 ## 요구 사항
 
-- SKSE64
-- Address Library for SKSE Plugins (게임 버전에 맞는 것)
+- [SKSE64](https://skse.silverlock.org/)
+- [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444) (게임 버전에 맞는 것)
 - Skyrim SE/AE. 1.6.1170에서 시험했습니다. VR은 지원하지 않습니다.
 
 ## 설치
@@ -36,7 +49,7 @@
 
 ## 동작 모드 만들기
 
-동작은 XML 파일로 정의하며, 직접 쓰거나 Animation Injector Editor로 만들 수 있습니다. 에디터에서는 HKX를 카드로 놓고 연결하면 게임이 읽는 XML과 모드 폴더를 만들어 줍니다.
+동작은 XML 파일로 정의하며, 직접 쓰거나 모드 제작자용 도구인 Animation Injector Editor로 만들 수 있습니다. 에디터에서는 HKX를 카드로 놓고 연결하면 게임이 읽는 XML과 모드 폴더를 만들어 줍니다. 플레이어에게는 에디터가 필요 없고, Animation Injector와 이를 쓰는 애니메이션 모드만 있으면 됩니다.
 
 - HKX 경로의 파일·폴더 이름에는 영문·숫자·일반 기호만 쓰세요. 한글 경로의 파일은 게임이 찾지 못합니다.
 - XML이나 HKX를 바꾼 뒤에는 게임을 완전히 다시 시작하세요.
@@ -69,6 +82,17 @@ XML을 직접 쓰려면 `XML_GUIDE.md`를 보세요.
 2. 문제를 재현합니다.
 3. `문서\My Games\Skyrim Special Edition\SKSE\AnimationInjector.log`(직전 실행은 `AnimationInjector.previous.log`)를 보내 주세요. 크래시라면 크래시 로거의 로그도 함께 보내 주세요. 사용한 동작 모드와 마지막에 한 동작도 알려 주세요.
 
+## 크레딧
+
+- **SKSE Team**: [Skyrim Script Extender](https://skse.silverlock.org/)
+- **meh321**: [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
+- **Ryan McKenzie**: [CommonLibSSE](https://github.com/Ryan-rsm-McKenzie/CommonLibSSE)
+- **CharmedBaryon**: [CommonLibSSE-NG](https://github.com/CharmedBaryon/CommonLibSSE-NG)
+- **alandtse**와 기여자들: [CommonLibSSE-NG](https://github.com/alandtse/CommonLibVR/tree/ng) (이 모드를 빌드한 버전)
+- **SARDONYX**: [serde-hkx](https://github.com/SARDONYX-sard/serde-hkx) (에디터의 HKX 읽기)
+- **Lukas Cone (PredatorCZ)**: [HavokLib](https://github.com/PredatorCZ/HavokLib) (에디터의 스플라인 애니메이션 압축 해제, 포팅)
+- 라이브러리: pugixml, spdlog, fmt, rapidcsv, DirectXTK, DirectXMath, xbyak, hde64 (런타임) · Tauri, React, React Flow, three.js (에디터)
+
 ## 라이선스
 
-GNU General Public License 3.0(`LICENSE`). 함께 쓰는 라이브러리의 라이선스는 `licenses/`에 있습니다. 소스 코드의 위치는 `SOURCE.txt`에 있습니다.
+GNU General Public License 3.0(`LICENSE`). 소스 코드의 위치와 이 배포물을 빌드한 커밋은 `SOURCE.txt`에 있습니다. 함께 쓰는 라이브러리의 라이선스는 `licenses/`에 있습니다.

@@ -2,14 +2,27 @@
 
 **Version 1.0.0** · [한국어](README.md)
 
-An SKSE framework that plays new animations in Skyrim, started by keys, game controls (jump, sprint and more) or animation events. Actions can be done alone or as paired actions by two people together. A condition such as the weapon, the movement direction or the hit just taken picks the action, and during it effects like i-frames, strikes, arrows, ragdoll and QTEs run. Adding or changing actions does not require re-running Nemesis or Pandora (keep the behavior patches your other mods require). Actions are defined in XML files, written by hand or made in the companion editor.
+Adding a new animation usually means patching the behavior graph with a tool such as Nemesis or Pandora. Animation Injector is an SKSE framework that skips that step.
 
-This mod does nothing by itself. Install it together with action mods made for Animation Injector.
+You describe in an XML file which HKX animation plays, when, and under what conditions. The game reads the XML at startup and plays your animations. Adding or changing animations never requires running a behavior tool again.
+
+Animation Injector does not replace or change mods made with Nemesis, Pandora or OAR. It only runs mods written for Animation Injector, and your existing behavior mods keep working alongside it as they are.
+
+**This mod does nothing by itself.** Install it together with animation mods made for Animation Injector.
+
+- **Users**: animation mods made for Animation Injector work as soon as you install them, with no Nemesis or Pandora run.
+- **Modders**: bring new animations into the game by writing XML, without patching the behavior graph.
+
+## How it works
+
+Animation Injector leaves the vanilla behavior graph as it is and plays new animations on top of it, for example when an animation event fires or a hotkey is pressed. It can also take over a vanilla event and play your animation instead of the vanilla reaction (for example on a blocked hit).
+
+To play a stop animation after sprinting, for instance, use the `sprintStop` event, which fires when a sprint ends, as the trigger. [This video](https://www.youtube.com/watch?v=H0bTLvZqs0Q) shows how to build that XML in Animation Injector Editor.
 
 ## Requirements
 
-- SKSE64
-- Address Library for SKSE Plugins (the one for your game version)
+- [SKSE64](https://skse.silverlock.org/)
+- [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444) (the one for your game version)
 - Skyrim SE/AE. Tested on 1.6.1170. VR is not supported.
 
 ## Installation
@@ -36,7 +49,7 @@ Pairs and carrying work in third person only.
 
 ## Making an action mod
 
-Actions are defined in XML files, written by hand or made in Animation Injector Editor. In the editor, place HKX files as cards and connect them; it writes the XML the game reads and the mod folder.
+Actions are defined in XML files, written by hand or made in Animation Injector Editor, a tool for mod authors. In the editor, place HKX files as cards and connect them; it writes the XML the game reads and the mod folder. Players don't need the editor, only Animation Injector and the animation mods that use it.
 
 - Use only English letters, digits and common symbols in the file and folder names of HKX paths. The game cannot find files under non-English paths.
 - Restart the game fully after changing an XML or HKX file.
@@ -69,6 +82,17 @@ The main entries of `SKSE/Plugins/AnimationInjector.ini`. See the INI's notes fo
 2. Reproduce the problem.
 3. Send `Documents\My Games\Skyrim Special Edition\SKSE\AnimationInjector.log` (`AnimationInjector.previous.log` for the run before). For a crash, also send your crash logger's log. Say which action mods you use and which action you did last.
 
+## Credits
+
+- **SKSE Team**: [Skyrim Script Extender](https://skse.silverlock.org/)
+- **meh321**: [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
+- **Ryan McKenzie**: [CommonLibSSE](https://github.com/Ryan-rsm-McKenzie/CommonLibSSE)
+- **CharmedBaryon**: [CommonLibSSE-NG](https://github.com/CharmedBaryon/CommonLibSSE-NG)
+- **alandtse** and contributors: [CommonLibSSE-NG](https://github.com/alandtse/CommonLibVR/tree/ng) (the version this mod is built with)
+- **SARDONYX**: [serde-hkx](https://github.com/SARDONYX-sard/serde-hkx) (HKX reading in the editor)
+- **Lukas Cone (PredatorCZ)**: [HavokLib](https://github.com/PredatorCZ/HavokLib) (spline animation decompression in the editor, ported)
+- Libraries: pugixml, spdlog, fmt, rapidcsv, DirectXTK, DirectXMath, xbyak, hde64 (runtime) · Tauri, React, React Flow, three.js (editor)
+
 ## License
 
-GNU General Public License 3.0 (`LICENSE`). The licenses of the libraries it uses are in `licenses/`. Where to find the source code is in `SOURCE.txt`.
+GNU General Public License 3.0 (`LICENSE`). Where to find the source code, and the commit this download was built from, is in `SOURCE.txt`. The licenses of the libraries it uses are in `licenses/`.
