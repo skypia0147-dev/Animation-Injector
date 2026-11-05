@@ -8,7 +8,7 @@ if(TARGET CommonLibSSE::CommonLibSSE)
 endif()
 
 set(COMMONLIB_GIT_REPOSITORY "https://github.com/alandtse/CommonLibVR.git")
-set(COMMONLIB_GIT_TAG "0e167dd4c3981d586a53953e2c1a608e2c4ccedf")  # ng @ 2026-08-21
+set(COMMONLIB_GIT_TAG "cce63b4c8aacd2766c21f44b408df92a3ad9e95c")  # ng v15.6.0 @ 2026-11-04
 
 # CommonLibSSE's own tests and tooling stay off (Catch2 and regex conflicts).
 option(CommonLibSSE_POSH_GENERATION "Generate .posh.d.ts type definition file" OFF)
