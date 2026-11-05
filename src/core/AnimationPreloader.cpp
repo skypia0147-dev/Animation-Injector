@@ -2,6 +2,7 @@
 #include "core/AnimationPreloader.h"
 #include "core/LoadingProgress.h"
 #include "core/NodeFactory.h"
+#include "core/AnimationLimit.h"
 #include "core/AnimationBindingWithTriggers.h"
 #include "core/ClipHooks.h"
 #include "runtime/ActionRegistry.h"
@@ -259,7 +260,9 @@ void Prepare(RE::hkbBehaviorGraph* graph, const RE::hkbContext& ctx, float delta
         for (std::size_t i = 0; i < files.size(); ++i) {
             if (!(files[i].rigs & state.rig)) continue;
             const int index = NodeFactory::FindAnimationName(strings->animationNames, files[i].path.c_str());
-            if (index < 0 || index > 32767 || index >= set->bindings._size || !set->bindings._data[index]) continue;
+            if (index < 0 || index > AnimationLimit::MaxBindingIndex() || index >= set->bindings._size ||
+                !set->bindings._data[index])
+                continue;
             auto* loader = Acquire(i, index);
             state.jobs.push_back({i, loader});
             state.jobs.back().progress = LoadingProgress::Begin(LoadingProgress::Phase::kAnimation);
@@ -285,7 +288,8 @@ void Prepare(RE::hkbBehaviorGraph* graph, const RE::hkbContext& ctx, float delta
             job.retryDelay -= delta;
             if (job.retryDelay > 0) continue;
             const int index = NodeFactory::FindAnimationName(strings->animationNames, files[job.file].path.c_str());
-            if (index < 0 || index > 32767 || index >= set->bindings._size || !set->bindings._data[index]) {
+            if (index < 0 || index > AnimationLimit::MaxBindingIndex() || index >= set->bindings._size ||
+                !set->bindings._data[index]) {
                 if (++job.timeouts >= 4) {
                     job.retryPending = false;
                     job.finished = true;

@@ -4,6 +4,7 @@
 #include "core/GraphInjector.h"
 #include "core/LoadingProgress.h"
 #include "core/NodeFactory.h"
+#include "core/AnimationLimit.h"
 #include "core/AnimDataRegistry.h"
 #include "core/FullBodyEntry.h"
 #include "core/PairEntry.h"
@@ -495,7 +496,8 @@ void InjectPairedAction(int actionIndex, RE::hkbBehaviorGraph* graph, RE::hkbSta
         const int customEnd = InjectEvent(graph, spec.events.exit.c_str());
         if (enter < 0 || end < 0 || prefixedEnd < 0 || customEnd < 0) return skip("event registration failed");
         const int binding = EnsureAnimationName(character, variant.file.c_str());
-        if (binding < 0 || binding > 32767) return skip("animation index unavailable or out of range");
+        if (binding < 0 || binding > AnimationLimit::MaxBindingIndex())
+            return skip("animation index unavailable or out of range");
         // Preserve annotation conversion and use clip-relative completion,
         // rather than copying the original 3.467-second clip's trigger times.
         std::vector<TriggerDef> pairTriggers;
@@ -761,7 +763,8 @@ void InjectCreaturePair(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateMac
     const int enter = InjectEvent(graph, variant.enterEvent.c_str());
     const int end = InjectEvent(graph, spec.events.exit.c_str());
     const int index = EnsureAnimationName(character, variant.file.c_str());
-    if (enter < 0 || end < 0 || index < 0 || index > 32767) return fail("event or clip registration failed");
+    if (enter < 0 || end < 0 || index < 0 || index > AnimationLimit::MaxBindingIndex())
+        return fail("event or clip registration failed");
     std::vector<TriggerDef> triggers;
     const float exitAt = spec.exitTriggerBeforeEnd;
     if (exitAt >= 0) triggers.push_back({exitAt, end, true});
@@ -1308,7 +1311,8 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
         const auto& c = spec.clips[i];
         binding[i] = EnsureAnimationName(character, c.file.c_str());
         enterIds[i] = InjectEvent(graph, c.enterEvent.c_str());
-        if (binding[i] < 0 || binding[i] > 32767 || enterIds[i] < 0) return fail("clip or event unavailable");
+        if (binding[i] < 0 || binding[i] > AnimationLimit::MaxBindingIndex() || enterIds[i] < 0)
+            return fail("clip or event unavailable");
     }
     const int exitEvent = InjectEvent(graph, spec.events.exit.c_str());
     const int recover = spec.HasRecovery() ? InjectEvent(graph, spec.recovery.recoverEvent.c_str()) : -1;

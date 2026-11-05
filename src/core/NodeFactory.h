@@ -61,11 +61,9 @@ private:
 // lookups outside an injection pass, on any thread: one index per table, kept while the table's
 // buffer and size stay the same (a table with thousands of names was scanned per call).
 int FindAnimationName(RE::hkArray<RE::hkStringPtr>& names, const char* path);
-// A project's animation bindings are indexed with 16 bits: 32,767 at most, shared with every other
-// animation mod (OAR stops the game above it). Synchronized clips add bindings after the names, so
-// this module stops adding names 1,024 below the limit.
-inline constexpr int kAnimationTableLimit = 0x7FFF - 1024;
-// True (and logged once per table) when no more animation names may be added.
+// True (and logged once per table) when no more animation names may be added: the project's binding
+// cap (AnimationLimit: 32,767, or OAR's raised limit), shared with every other animation mod, minus
+// room for synchronized clips.
 bool AnimationTableFull(const RE::hkArray<RE::hkStringPtr>& names, const char* project);
 // 이벤트 등록: eventNames + eventInfos(4바이트) 쌍. 이미 있으면 그 id. 실패 -1
 int InjectEvent(RE::hkbBehaviorGraph* a_graph, const char* a_name);

@@ -5,6 +5,7 @@
 #include "core/NativePairEnd.h"
 #include "PCH.h"
 #include "Version.h"
+#include "core/AnimationLimit.h"
 #include "core/ExitBlendHooks.h"
 #include "core/PairInputGate.h"
 #include "runtime/PairFeatures.h"
@@ -144,6 +145,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
             logger::info("[PairB] coexistence: OAR={} Grapple={}",
                 REX::W32::GetModuleHandleW(L"OpenAnimationReplacer.dll") != nullptr,
                 REX::W32::GetModuleHandleW(L"FH_Grapple_Plugin.dll") != nullptr);
+            AnimationLimit::Get();  // Logs the binding cap: OAR has patched the engine by now if it raises it.
             PairRootRuntime::Install();
             NativePairEnd::Install();
             PairedStartHooks::Install();

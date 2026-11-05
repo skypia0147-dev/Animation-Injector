@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "core/NodeFactory.h"
+#include "core/AnimationLimit.h"
 #include "core/TemplateNodeClone.h"
 
 namespace AnimationInjector::NodeFactory {
@@ -149,15 +150,15 @@ const char* EventNameOf(RE::hkbBehaviorGraph* a_graph, std::int32_t a_id) {
 }
 
 bool AnimationTableFull(const RE::hkArray<RE::hkStringPtr>& a_names, const char* a_project) {
-    if (a_names._size < kAnimationTableLimit) return false;
+    if (a_names._size < AnimationLimit::NameTableLimit()) return false;
     static std::mutex lock;
     static std::unordered_set<const void*> reported;
     std::lock_guard guard(lock);
     if (reported.insert(&a_names).second)
-        logger::error("[Inject] project '{}' animation table reached {} names (the 32,767 bindings a project can hold, "
+        logger::error("[Inject] project '{}' animation table reached {} names (the {} bindings a project can hold, "
                       "shared with other animation mods such as OAR, minus room for synchronized clips); further clips "
                       "are not registered and the actions using them are skipped",
-            a_project ? a_project : "?", a_names._size);
+            a_project ? a_project : "?", a_names._size, AnimationLimit::Get().bindingCap);
     return true;
 }
 
