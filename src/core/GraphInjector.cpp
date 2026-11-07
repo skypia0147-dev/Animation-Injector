@@ -14,6 +14,7 @@
 #include <atomic>
 #include <bit>
 #include <format>
+#include <functional>
 #include <map>
 #include <tuple>
 #include <mutex>
@@ -64,6 +65,8 @@ struct Pass {
     std::unordered_map<const void*, Ids> ids;
     // Link blends by (native template, duration bits, event mode): one immutable effect each (SharedLinkEffect).
     std::map<std::tuple<const void*, std::uint32_t, int>, RE::hkReferencedObject*> linkEffects;
+    // Runs once the staged exits and pair containers have joined the graph (the node id budget counts then).
+    std::function<void()> afterCommit;
     struct FullBody {
         bool resolved = false;
         const char* failure = nullptr;
@@ -209,6 +212,7 @@ struct PassScope {
     ~PassScope() {
         CommitFullBodyExits(pass.fullBody);
         CommitPairContainers(pass.pairs);
+        if (pass.afterCommit) pass.afterCommit();
         g_pass = previous;
     }
     PassScope(const PassScope&) = delete;
@@ -284,9 +288,13 @@ int RegisterAnimationFiles(RE::hkbCharacterStringData* strings, const char* stag
     const auto& files = PairedRig::Equal(strings->name.c_str() ? strings->name.c_str() : "", "FirstPerson")
                             ? Actions::FirstPersonClipFiles()
                             : Actions::AllClipFiles(rig);
+    bool full = false;
     for (const auto& file : files) {
         if (FindName(names, file.c_str()) >= 0) continue;
-        if (AnimationTableFull(names, strings->name.c_str())) break;
+        if (AnimationTableFull(names, strings->name.c_str())) {
+            full = true;
+            break;
+        }
         LoadingProgress::Registration loading;
         if (!AppendName(names, file.c_str())) {
             loading.Fail();
@@ -297,6 +305,11 @@ int RegisterAnimationFiles(RE::hkbCharacterStringData* strings, const char* stag
         ++added;
     }
     const char* project = strings->name.c_str();
+    // The loading panel's animation row: the character projects (both views), whose tables the actions fill.
+    if (!files.empty() &&
+        (rig == PairedRig::Kind::kCharacter || PairedRig::Equal(project ? project : "", "FirstPerson")))
+        LoadingProgress::ReportAnimations(static_cast<std::size_t>(std::max(0, names._size)),
+            static_cast<std::size_t>(AnimationLimit::Get().bindingCap), full);
     if (added && project && rig != PairedRig::Kind::kUnsupported)
         logger::debug("[Inject] {} animation registration project='{}' names {} -> {} added={} order=declaration",
             stage, project, before, names._size, added);
@@ -2124,27 +2137,33 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
     if (firstPersonPairs)
         logger::info("[PairB] first-person {}: {} paired actions not injected (pairs play in third person)",
             tgt->smName, firstPersonPairs);
-    if (rootTarget) {
-        // Counted again, for the log: the engine numbered 33 more than native + made in a test game 11-07 (7010 + 506,
-        // numStaticNodes 7549), likely native nodes an action newly reaches; this count should include them.
+    if (!rootTarget) return;
+    std::vector<std::string> leftOut;
+    for (const auto* id : overBudget) leftOut.push_back(*id);
+    // Counted again once the pass has committed its staged exits and pair containers: this is the count the engine
+    // numbers (native + made misses native nodes an action newly reaches; a count before the commit misses the
+    // committed parts). A test game 11-07: 7010 + 506 = 7516, counted before the commit 7244, engine 7549.
+    pass.pass.afterCommit = [=, label = std::string(viewLabel), made = CreatedNodes() - createdBefore] {
         const std::size_t counted = CountNodes(root);
         logger::info(
-            "[NodeBudget] {} 0_master: native {} + AI {} = {}, counted after {} node ids of {} ({} kept free for clones)",
-            viewLabel, nativeNodes, made(), nativeNodes + made(), counted, kNodeIdLimit, kNodeIdsKeptFree);
+            "[NodeBudget] {} 0_master: native {} + AI {} = {}, counted {} node ids of {} ({} kept free for clones)",
+            label, nativeNodes, made, nativeNodes + made, counted, kNodeIdLimit, kNodeIdsKeptFree);
+        LoadingProgress::ReportNodes(
+            counted, kNodeIdLimit, !leftOut.empty() || counted + kNodeIdsKeptFree > kNodeIdLimit);
         if (counted + kNodeIdsKeptFree > kNodeIdLimit)
-            logger::error("[NodeBudget] {} 0_master: {} nodes leave fewer than {} of the {} node ids free", viewLabel,
+            logger::error("[NodeBudget] {} 0_master: {} nodes leave fewer than {} of the {} node ids free", label,
                 counted, kNodeIdsKeptFree, kNodeIdLimit);
-        if (!overBudget.empty()) {
+        if (!leftOut.empty()) {
             std::string names;
-            for (std::size_t i = 0; i < overBudget.size() && i < 40; ++i) names += (i ? ", " : "") + *overBudget[i];
-            if (overBudget.size() > 40) names += std::format(", ... ({} more)", overBudget.size() - 40);
+            for (std::size_t i = 0; i < leftOut.size() && i < 40; ++i) names += (i ? ", " : "") + leftOut[i];
+            if (leftOut.size() > 40) names += std::format(", ... ({} more)", leftOut.size() - 40);
             logger::error(
                 "[NodeBudget] {} 0_master: {} actions left out — the behavior graph is full (Havok numbers its nodes "
                 "with 16-bit ids; more would make two nodes share one and crash). Fewer behavior mods (Nemesis/"
                 "Pandora) free room: {}",
-                viewLabel, overBudget.size(), names);
+                label, leftOut.size(), names);
         }
-    }
+    };
 }
 
 // ── 훅 1: CreateSymbolIdMap ─────────────────────────────────────────────────

@@ -9,6 +9,8 @@ bool ObservesNativeRequests();
 Token BeginNativeAnimation();
 void Finish(Token& token, Outcome result);
 Snapshot Read();
+void ReportNodes(std::size_t used, std::size_t limit, bool shortfall);
+void ReportAnimations(std::size_t used, std::size_t limit, bool shortfall);
 Snapshot Advance(float delta, bool canComplete = true);
 void Reset(bool waitingForGameLoad = false);
 void GameLoaded();

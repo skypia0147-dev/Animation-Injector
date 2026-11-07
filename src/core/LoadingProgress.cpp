@@ -39,6 +39,14 @@ Snapshot Read() {
     std::lock_guard lock(mutex);
     return model.Read();
 }
+void ReportNodes(std::size_t used, std::size_t limit, bool shortfall) {
+    std::lock_guard lock(mutex);
+    model.ReportNodes(used, limit, shortfall);
+}
+void ReportAnimations(std::size_t used, std::size_t limit, bool shortfall) {
+    std::lock_guard lock(mutex);
+    model.ReportAnimations(used, limit, shortfall);
+}
 Snapshot Advance(float delta, bool canComplete) {
     std::lock_guard lock(mutex);
     const auto state = model.Advance(delta, canComplete);

@@ -113,6 +113,33 @@ int main() {
     model.Advance(0);
     for (int i = 0; i < 11; ++i) model.Advance(.1f);
     assert(!model.Read().visible && model.Read().ready == 1);
+
+    // Engine limits: the fuller report wins, a shortfall sticks, both survive new batches and reloads.
+    Model usage;
+    assert(!usage.Read().nodes.Known() && !usage.Read().animations.Known());
+    usage.ReportNodes(4211, 65535, false);  // first person
+    usage.ReportNodes(7549, 65535, false);  // third person, fuller
+    usage.ReportNodes(4211, 65535, false);
+    assert(usage.Read().nodes.used == 7549 && !usage.Read().nodes.Warn() && !usage.Read().nodes.shortfall);
+    const auto before = usage.Read().revision;
+    usage.ReportNodes(7549, 65535, false);
+    assert(usage.Read().revision == before);  // nothing new, nothing to redraw
+    usage.ReportAnimations(29900, 32767, false);
+    assert(usage.Read().animations.Warn());
+    usage.ReportAnimations(16333, 32767, true);
+    assert(usage.Read().animations.used == 29900 && usage.Read().animations.shortfall);
+    usage.ReportNodes(1, 0, true);  // no limit: ignored
+    assert(!usage.Read().nodes.shortfall);
+    const auto job = usage.Begin(Phase::kAnimation);
+    assert(usage.Read().nodes.used == 7549 && usage.Read().animations.shortfall);
+    usage.Finish(job, Outcome::kReady);
+    state = usage.Advance(0);
+    for (int i = 0; i < 70; ++i) state = usage.Advance(.1f);
+    assert(state.visible);  // a shortfall stays up to be read
+    for (int i = 0; i < 20; ++i) state = usage.Advance(.1f);
+    assert(!state.visible);
+    usage.Reset(true);
+    assert(usage.Read().nodes.used == 7549 && usage.Read().animations.used == 29900);
     std::cout
-        << "Loading progress: once per initial load, completion fence, empty session, gameplay suppression, immediate short display and reload passed\n";
+        << "Loading progress: once per initial load, completion fence, empty session, gameplay suppression, immediate short display, reload and engine limit rows passed\n";
 }
