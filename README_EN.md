@@ -1,6 +1,6 @@
 # Animation Injector
 
-**Version 1.0.3** · [한국어](README.md)
+**Version 1.0.4** · [한국어](README.md)
 
 Adding a new animation usually means patching the behavior graph with a tool such as Nemesis or Pandora. Animation Injector is an SKSE framework that skips that step.
 
