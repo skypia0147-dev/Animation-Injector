@@ -2,6 +2,7 @@
 #include "runtime/ExtendedConditions.h"
 #include "runtime/ActionHistory.h"
 #include "runtime/HitHistory.h"
+#include "runtime/EventHistory.h"
 #include "runtime/ResourceCost.h"
 #include "runtime/LyingSide.h"
 #include "runtime/PairedRig.h"
@@ -64,6 +65,17 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
             subject->GetFormID(), p.option, ago, hit.power, hit.bash, hit.sneak, hit.blocked);
         if (p.within >= 0.0f && ago > p.within) return Value::kFalse;
         return boolean(HitHistory::Matches(hit, p.option));
+    }
+    case Test::kRecentEvent: {
+        // Any of the named events reached the subject within the window (recorded only while such a check is loaded).
+        float nearest = -1.0f;
+        for (const int id : p.events) {
+            float ago = 0.0f;
+            if (EventHistory::Ago(subject->GetHandle(), id, ago) && (nearest < 0.0f || ago < nearest)) nearest = ago;
+        }
+        logger::debug("[FlowTest] actor={:08X} test=recentEvent events={} ago={:.3f} within={:.3f}",
+            subject->GetFormID(), p.eventNames.size(), nearest, p.within);
+        return boolean(nearest >= 0.0f && nearest <= p.within);
     }
     case Test::kPreviousAction: {
         // The last of our actions the subject finished (recorded only while such a check is loaded).
@@ -203,6 +215,15 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
         if (p.option == "killmove") return boolean(subject->IsInKillMove());
         if (p.option == "staggered") return boolean(state->IsStaggered());
         if (p.option == "child") return boolean(subject->IsChild());
+        // Any attack stage: a melee swing, a bow or crossbow draw, a bash (attackState other than none).
+        if (p.option == "attacking") {
+            // The engine's attack stage, or the graph's IsAttacking: attacks played by behavior mods (a BFCO sprint
+            // power attack, 11-07) can leave the stage at none.
+            if (state->GetAttackState() != RE::ATTACK_STATE_ENUM::kNone) return Value::kTrue;
+            static const RE::BSFixedString isAttacking("IsAttacking");
+            bool value = false;
+            return boolean(subject->GetGraphVariableBool(isAttacking, value) && value);
+        }
         if (p.option == "paired") {
             PairedSession::Ticket ticket;
             if (PairedSession::TryGetTicket(subject->GetHandle(), ticket)) return Value::kTrue;

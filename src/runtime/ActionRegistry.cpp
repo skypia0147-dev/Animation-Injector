@@ -5,6 +5,7 @@
 #include "PCH.h"
 #include "core/ExitBlendHooks.h"
 #include "runtime/InputSink.h"
+#include "runtime/EventHistory.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/ClipIndex.h"
@@ -325,8 +326,21 @@ Declared BuildDeclarations() {
         for (const auto& link : spec.links) d.usesControls |= link.control != GameControl::kNone;
     }
     // A previousAction check names actions by id, in any declaration file: their indices, now that all are in.
+    // A recentEvent check names events: every name any check asks about, then each check's ids.
+    std::vector<std::string> askedEvents;
+    for (const auto& spec : d.specs)
+        for (const auto& p : spec.flow.predicates)
+            if (p.test == ConditionFlowXml::Test::kRecentEvent)
+                askedEvents.insert(askedEvents.end(), p.eventNames.begin(), p.eventNames.end());
+    const auto eventIds = EventHistory::SetNames(askedEvents);
+    std::size_t nextEventId = 0;
     for (auto& spec : d.specs)
         for (auto& p : spec.flow.predicates) {
+            if (p.test == ConditionFlowXml::Test::kRecentEvent) {
+                p.events.assign(eventIds.begin() + static_cast<std::ptrdiff_t>(nextEventId),
+                    eventIds.begin() + static_cast<std::ptrdiff_t>(nextEventId + p.eventNames.size()));
+                nextEventId += p.eventNames.size();
+            }
             d.usesHits |= p.test == ConditionFlowXml::Test::kHitReceived;
             if (p.test != ConditionFlowXml::Test::kPreviousAction) continue;
             d.usesHistory = true;
@@ -821,6 +835,7 @@ void ClipDeactivated(RE::Actor* a_actor, int a_action, int a_variant) {
 
 void OnAnimEventFrom(RE::Actor* a_actor, const RE::BSFixedString& a_tag) {
     if (!a_actor || !a_tag.c_str()) return;
+    EventHistory::Record(a_actor, a_tag.c_str());
     PairFeatures::ObserveEvent(a_actor->GetHandle(), a_tag);
     EventRegistry::Observe(a_actor, a_tag);
     ActionLinks::ObserveEvent(a_actor->GetHandle(), a_tag);

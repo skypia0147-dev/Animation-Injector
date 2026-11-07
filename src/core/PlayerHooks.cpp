@@ -2,6 +2,7 @@
 #include "core/FullBodyEntry.h"
 #include "core/PairEntry.h"
 #include "core/PlayerHooks.h"
+#include "runtime/EventHistory.h"
 #include "runtime/EventEffects.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/PairFeatures.h"
@@ -40,6 +41,8 @@ struct Notify {
     static bool thunk(RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_event) {
         auto* actor =
             static_cast<RE::Actor*>(a_this);  // Actor 의 IAnimationGraphManagerHolder 부분객체 → 정적 캐스트로 되돌림
+        // A recentEvent check hears events sent to the graph too, accepted or not (runtime/EventHistory.h).
+        EventHistory::Record(actor, a_event.c_str());
         // Pair diagnostics (engine events around paired scenes); every event of every actor passes here.
         if (spdlog::should_log(spdlog::level::debug) && a_event.c_str() &&
             (std::strncmp(a_event.c_str(), "pa_", 3) == 0 || std::strstr(a_event.c_str(), "Paired") ||

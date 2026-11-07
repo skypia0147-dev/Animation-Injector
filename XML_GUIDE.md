@@ -131,7 +131,7 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 
 | `kind` | 더 쓰는 속성 | 참일 때 |
 |---|---|---|
-| `actorStatus` | `option="weaponDrawn\|combat\|sneaking\|blocking\|sprinting\|swimming\|mounted\|staggered\|ragdoll\|recovering\|bleedingOut\|killmove\|paired"`(쉼표로 여럿이면 그중 하나) | 그 상태일 때 |
+| `actorStatus` | `option="weaponDrawn\|combat\|sneaking\|blocking\|sprinting\|swimming\|mounted\|staggered\|ragdoll\|recovering\|bleedingOut\|killmove\|paired\|attacking"`(쉼표로 여럿이면 그중 하나) | 그 상태일 때. `attacking`은 공격 단계(휘두르기·활 당기기·방패 밀치기 등) 중이거나 그래프의 `IsAttacking`이 켜졌을 때(BFCO처럼 비헤이비어 모드가 재생하는 공격) |
 | `air` | `option="any\|falling\|rising"`; `falling`·`rising`은 `compare` `value`(떨어진 거리)도 | 공중에 있을 때(아무거나 / 떨어지는 중 / 오르는 중) |
 | `protection` | `option="essential\|protected"` | 필수·보호 대상일 때 |
 | `female` `interior` `child` | 없음 | 그럴 때 |
@@ -146,6 +146,7 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `previousAction` | `actions="A,B"`(이 파일의 동작) `within="초"` | 직전에 그 동작을 했을 때 |
 | `weather` | `option="pleasant\|cloudy\|rainy\|snow"` | 그 날씨 |
 | `hitReceived` | `option="normal\|power\|bash\|sneak\|blocked"` `within="초"` | 마지막으로 맞은 무기 공격이 일반(파워어택·방패 밀치기 아님)·파워어택·방패 밀치기·기습·막음일 때. 마법은 세지 않음. 막았을 때 `<Start event="blockHitStart">`에 `within="0.5"`로 씁니다 |
+| `recentEvent` | `events="이벤트,이벤트"` `within="초"` | 그 애니메이션 이벤트 중 하나를 그 시간 안에 받았을 때(그래프로 보낸 이벤트와 그래프가 보낸 이벤트 모두). 질주 공격 직후의 `sprintStop`을 거르려면 `<Check kind="recentEvent" events="attackStop" within="0.5" not="true"/>` |
 | `gameHour` | `compare` `value` | 게임 시각 비교 |
 | `heldTime` | `compare` `value` | 이 동작을 시작한 키를 누르고 있던 시간(초). 차지 종료 전환이 고를 때는 누른 순간부터 뗀 순간까지. 플레이어만(NPC는 판정 불가) |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | 그 방향에 그만큼 빈 공간이 있을 때 |

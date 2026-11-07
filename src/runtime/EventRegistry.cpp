@@ -1,6 +1,7 @@
 #include "runtime/EventRegistry.h"
 #include "runtime/ActionHistory.h"
 #include "runtime/HitHistory.h"
+#include "runtime/EventHistory.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/ClipWindows.h"
@@ -230,6 +231,7 @@ void Update(float delta) {
     EventEffects::Update(delta);
     ActionHistory::Advance(delta);
     HitHistory::Advance(delta);
+    EventHistory::Advance(delta);
 }
 
 void DropDelayed(RE::ActorHandle actor) {

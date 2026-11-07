@@ -68,7 +68,10 @@ enum class Test {
     kHitReceived,
     // 10-30, charge. How long the key that started the player's action was held, in seconds (compare, value):
     // ConditionValues::Request::heldTime. The player only, like movementDirection.
-    kHeldTime
+    kHeldTime,
+    // 11-07. One of these animation events (events, sent to the graph or sent by it) reached the subject within the
+    // last `within` seconds (runtime/EventHistory.h): a sprint stop right after a sprint attack's attackStop.
+    kRecentEvent
 };
 enum class EquippedType {
     kBow,
@@ -130,6 +133,9 @@ struct Predicate {
     // (runtime/ActionRegistry.cpp), the seconds since it ended (< 0 = any) and how it ended. kHitReceived: within.
     std::vector<std::string> actionNames;
     std::vector<int> actions;
+    // kRecentEvent: the event names as written, their history ids once every declaration is loaded.
+    std::vector<std::string> eventNames;
+    std::vector<int> events;
     float within = -1.0f;
     std::string ended = "any";
 };

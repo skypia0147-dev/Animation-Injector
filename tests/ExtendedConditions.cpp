@@ -2,10 +2,14 @@
 #include "runtime/ConditionValues.h"
 #include <cstdlib>
 #include <iostream>
+#include <cstdio>
 #include <limits>
+#include <source_location>
 using namespace AnimationInjector;
-void Check(bool v) {
-    if (!v) std::abort();
+void Check(bool v, std::source_location at = std::source_location::current()) {
+    if (v) return;
+    std::fprintf(stderr, "check failed at line %u\n", static_cast<unsigned>(at.line()));
+    std::abort();
 }
 bool Read(const std::string& attrs) {
     pugi::xml_document doc;
@@ -165,6 +169,30 @@ int main() {
         Check(pr.test == ConditionFlowXml::Test::kPreviousAction && pr.actionNames.size() == 3 &&
               pr.actionNames[0] == "A" && pr.within == 1.5f && pr.ended == "cancelled");
     }
+    // 11-07: an animation event reached the subject within some seconds (a sprint stop right after a sprint attack);
+    // attacking is an actor status read from the attack state.
+    {
+        pugi::xml_document doc;
+        doc.load_string("<Check kind='recentEvent' events='attackStop, ,attackPowerStop' within='0.5' not='true'/>");
+        ConditionFlowXml::Predicate pr;
+        std::string error;
+        Check(ConditionFlowXml::ReadCheck(doc.document_element(), pr, error));
+        Check(pr.test == ConditionFlowXml::Test::kRecentEvent && pr.eventNames.size() == 2 &&
+              pr.eventNames[0] == "attackStop" && pr.eventNames[1] == "attackPowerStop" && pr.within == 0.5f);
+    }
+    Check(Read("kind='recentEvent' events='attackStop' within='0.5' subject='partner'"));
+    Check(!Read("kind='recentEvent' events='attackStop'"));               // within is required
+    Check(!Read("kind='recentEvent' events='attackStop' within='0'"));    // a window of no time
+    Check(!Read("kind='recentEvent' events='attackStop' within='700'"));  // past 600 seconds
+    Check(!Read("kind='recentEvent' within='0.5'"));                      // no event
+    Check(!Read("kind='recentEvent' events=',' within='0.5'"));
+    Check(!Read("kind='recentEvent' events='attack Stop' within='0.5'"));
+    Check(!Read("kind='recentEvent' events='attackStop' within='0.5' option='any'"));
+    Check(!Read("kind='recentEvent' events='attackStop' within='0.5' actions='A'"));
+    Check(!Read("kind='previousAction' actions='A' events='attackStop'"));
+    Check(!Read("kind='hitReceived' option='power' events='attackStop'"));
+    Check(Read("kind='actorStatus' option='attacking'"));
+    Check(TestOf("kind='actorStatus' option='attacking'") == ConditionFlowXml::Test::kActorStatus);
     // 10-29: the last weapon hit received, of a kind, optionally within some seconds; the subject or its partner.
     for (const char* option : {"normal", "power", "bash", "sneak", "blocked"})
         Check(Read(std::string("kind='hitReceived' option='") + option + "'"));

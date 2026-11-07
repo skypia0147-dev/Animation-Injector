@@ -12,6 +12,7 @@
 #include "runtime/EventEffects.h"
 #include "runtime/ActionHistory.h"
 #include "runtime/HitHistory.h"
+#include "runtime/EventHistory.h"
 #include "runtime/EventRegistry.h"
 #include "runtime/ActionLinks.h"
 #include "Settings.h"
@@ -110,6 +111,7 @@ void EndSession() {
     EventEffects::ResetOnLoad();
     ActionHistory::ResetOnLoad();
     HitHistory::ResetOnLoad();
+    EventHistory::ResetOnLoad();
     PairedSession::ResetOnLoad();
     PairRootScale::Reset();
     // Every holder has let go above; a lease still held would keep its actor a ghost in the next session.

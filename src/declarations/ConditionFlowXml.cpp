@@ -31,7 +31,7 @@ void Shape(XML n, std::initializer_list<std::string_view> names, bool children =
 Predicate ReadPredicate(XML n) {
     Shape(n, {"kind", "not", "subject", "distance", "direction", "maxRise", "maxDrop", "maxSlope", "radius", "plugin",
                  "form", "keyword", "equals", "hand", "type", "state", "option", "compare", "measure", "value", "upper",
-                 "actions", "within", "ended"});
+                 "actions", "within", "ended", "events"});
     Predicate predicate;
     const auto test = Required(n, "kind");
     if (test == "air")
@@ -118,6 +118,8 @@ Predicate ReadPredicate(XML n) {
         predicate.test = Test::kHitReceived;
     else if (test == "heldTime")
         predicate.test = Test::kHeldTime;
+    else if (test == "recentEvent")
+        predicate.test = Test::kRecentEvent;
     else
         Fail(n, "unsupported condition " + test);
     const auto oneOf = [&](const std::string& s, std::initializer_list<std::string_view> choices) {
@@ -141,7 +143,7 @@ Predicate ReadPredicate(XML n) {
         if (test == "actorStatus")
             valid = oneOf(predicate.option,
                 {"ragdoll", "recovering", "bleedingOut", "killmove", "paired", "staggered", "blocking", "sprinting",
-                    "swimming", "mounted", "sneaking", "weaponDrawn", "combat"});
+                    "swimming", "mounted", "sneaking", "weaponDrawn", "combat", "attacking"});
         if (test == "relationship") valid = oneOf(predicate.option, {"hostile", "teammate"});
         if (test == "equippedKeyword") valid = oneOf(predicate.option, {"left", "right", "either"});
         if (test == "movementDirection") valid = oneOf(predicate.option, {"forward", "back", "left", "right", "none"});
@@ -237,8 +239,32 @@ Predicate ReadPredicate(XML n) {
                 Fail(n, "hitReceived within is 0~600 seconds");
         }
         if (n.attribute("actions") || n.attribute("ended")) Fail(n, "actions/ended require previousAction");
+    } else if (test == "recentEvent") {
+        // Animation events by name, the seconds since the last of them reached the subject.
+        const std::string list = Required(n, "events");
+        for (std::size_t at = 0; at <= list.size();) {
+            const auto end = std::min(list.find(',', at), list.size());
+            // "attackStop, attackPowerStop": spaces around a name are not part of it.
+            auto first = at, last = end;
+            while (first < last && list[first] == ' ') ++first;
+            while (last > first && list[last - 1] == ' ') --last;
+            if (last > first) predicate.eventNames.push_back(list.substr(first, last - first));
+            at = end + 1;
+        }
+        if (predicate.eventNames.empty() || predicate.eventNames.size() > 32) Fail(n, "recentEvent takes 1~32 events");
+        for (const auto& name : predicate.eventNames)
+            if (name.size() > 256 || std::any_of(name.begin(), name.end(), [](char c) {
+                    return static_cast<unsigned char>(c) <= ' ' || static_cast<unsigned char>(c) >= 0x7F;
+                }))
+                Fail(n, "invalid recentEvent event name");
+        predicate.within = n.attribute("within").as_float(-1.0f);
+        if (!n.attribute("within") || !std::isfinite(predicate.within) || predicate.within <= 0 ||
+            predicate.within > 600)
+            Fail(n, "recentEvent within is 0~600 seconds");
+        if (n.attribute("actions") || n.attribute("ended")) Fail(n, "actions/ended require previousAction");
     } else if (n.attribute("actions") || n.attribute("within") || n.attribute("ended"))
         Fail(n, "actions/within/ended require previousAction");
+    if (test != "recentEvent" && n.attribute("events")) Fail(n, "events requires recentEvent");
     if (predicate.test == Test::kEquippedType) {
         const auto hand = Required(n, "hand");
         if (hand != "left" && hand != "right") Fail(n, "invalid hand");

@@ -131,7 +131,7 @@ Common conditions:
 
 | `kind` | Also takes | Holds when |
 |---|---|---|
-| `actorStatus` | `option="weaponDrawn\|combat\|sneaking\|blocking\|sprinting\|swimming\|mounted\|staggered\|ragdoll\|recovering\|bleedingOut\|killmove\|paired"` (several, comma separated: any of them) | in that state |
+| `actorStatus` | `option="weaponDrawn\|combat\|sneaking\|blocking\|sprinting\|swimming\|mounted\|staggered\|ragdoll\|recovering\|bleedingOut\|killmove\|paired\|attacking"` (several, comma separated: any of them) | in that state. `attacking` is any attack stage (a swing, a bow draw, a bash and so on) or the graph's `IsAttacking` (attacks a behavior mod plays, such as BFCO) |
 | `air` | `option="any\|falling\|rising"`; `falling` and `rising` also take `compare` `value` (the height fallen) | in the air (at all / falling / rising) |
 | `protection` | `option="essential\|protected"` | essential or protected |
 | `female` `interior` `child` | nothing | when so |
@@ -146,6 +146,7 @@ Common conditions:
 | `previousAction` | `actions="A,B"` (this file's actions) `within="seconds"` | it did that action just before |
 | `weather` | `option="pleasant\|cloudy\|rainy\|snow"` | that weather |
 | `hitReceived` | `option="normal\|power\|bash\|sneak\|blocked"` `within="seconds"` | the last weapon hit it took was normal (no power attack, no bash), a power attack, a bash, a sneak attack or blocked. Spells do not count. On a block, use it in `<Start event="blockHitStart">` with `within="0.5"` |
+| `recentEvent` | `events="event,event"` `within="seconds"` | one of those animation events reached it within that time (events sent to the graph and events the graph sends). To skip the `sprintStop` right after a sprint attack: `<Check kind="recentEvent" events="attackStop" within="0.5" not="true"/>` |
 | `gameHour` | `compare` `value` | the game hour compares so |
 | `heldTime` | `compare` `value` | how long the key that started this action was held, in seconds; when an on="release" transition chooses, from the press to the release. The player only (unknown for an NPC) |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | there is that much open space that way |
