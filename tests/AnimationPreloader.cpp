@@ -193,12 +193,12 @@ int main(int argc, char** argv) {
     static_assert(ProjectPath("Actors\\Character\\DefaultMale.hkx") == Kind::kCharacter);
     static_assert(ProjectPath("Actors/chicken/ChickenCharater.hkx") == Kind::kUnsupported);
     static_assert(ProjectPath("Actors/chicken/DefaultChicken.hkx") == Kind::kUnsupported);
-    static_assert(SupportsRole(Kind::kChicken, Kind::kCharacter, 1));
-    static_assert(SupportsRole(Kind::kChicken, Kind::kChicken, 0));
-    static_assert(!SupportsRole(Kind::kChicken, Kind::kCharacter, 0));
-    static_assert(!SupportsRole(Kind::kChicken, Kind::kChicken, 1));
-    static_assert(!SupportsRole(Kind::kChicken, Kind::kUnsupported, 0));
-    static_assert(SupportsRole(Kind::kCharacter, Kind::kCharacter, 0));
+    static_assert(SupportsRole(Kind::kCharacter, Kind::kChicken, Kind::kCharacter, 1));
+    static_assert(SupportsRole(Kind::kCharacter, Kind::kChicken, Kind::kChicken, 0));
+    static_assert(!SupportsRole(Kind::kCharacter, Kind::kChicken, Kind::kCharacter, 0));
+    static_assert(!SupportsRole(Kind::kCharacter, Kind::kChicken, Kind::kChicken, 1));
+    static_assert(!SupportsRole(Kind::kCharacter, Kind::kChicken, Kind::kUnsupported, 0));
+    static_assert(SupportsRole(Kind::kCharacter, Kind::kCharacter, Kind::kCharacter, 0));
     for (const auto& profile : profiles) {
         const int before = manager.queues;
         strings.name = profile.character;

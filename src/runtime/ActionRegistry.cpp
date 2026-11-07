@@ -34,6 +34,7 @@
 #include "runtime/HitHistory.h"
 #include "runtime/TdmMovement.h"
 #include "runtime/HeldKeys.h"
+#include "core/StartupRecord.h"
 #include <atomic>
 #include <future>
 #include <shared_mutex>
@@ -313,7 +314,9 @@ Declared BuildDeclarations() {
     for (int i = 0; i < static_cast<int>(d.specs.size()); ++i) {
         const auto& spec = d.specs[i];
         d.ids.try_emplace(spec.id, i);
-        d.keyActions[spec.trigger.key].push_back(i);
+        // Key 0 is "no key": a keyless action registered under it would start on any keyboard event whose id
+        // is 0 (Skyrim Souls' favorites menu sends those for movement keys), every such action at once.
+        if (spec.trigger.key) d.keyActions[spec.trigger.key].push_back(i);
         if (spec.trigger.gamepad) d.padActions[spec.trigger.gamepad].push_back(i);
         if (spec.trigger.control != GameControl::kNone) {
             d.controlActions[static_cast<int>(spec.trigger.control)].push_back(i);
@@ -728,14 +731,22 @@ void Load() {
     g_loading = std::async(std::launch::async, [] {
         // An exception here would be rethrown in whichever thread reads the declarations first (a graph
         // loader, a message handler) and end the game. Nothing is declared then, and the reason is logged.
+        Declared d;
         try {
-            return BuildDeclarations();
+            d = BuildDeclarations();
+            // Logged here, not only by the first reader: a launch that dies during startup shows whether this
+            // thread was done.
+            logger::info("[Actions] declarations ready in the background: {} actions, loadMs={:.1f}", d.specs.size(),
+                d.loadMs + d.catalogMs);
         } catch (const std::exception& e) {
             logger::error("[Actions] declarations could not be loaded: {}; no action is declared", e.what());
+            d = {};
         } catch (...) {
             logger::error("[Actions] declarations could not be loaded (unknown error); no action is declared");
+            d = {};
         }
-        return Declared{};
+        StartupRecord::Mark("declarations-ready");
+        return d;
     });
     logger::info("[Actions] declarations loading in the background");
 }

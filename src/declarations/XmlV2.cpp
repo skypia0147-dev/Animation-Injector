@@ -568,8 +568,9 @@ struct Compiler {
     KeyResolver resolve;
     std::map<std::string, std::string> actions;
     std::set<std::string> singleActions;
-    std::set<std::string> putdownActions;  // Actions a Carry names as its putdown
-    View fileView = View::kThird;          // <AnimationSet view> (runtime/ViewSpec.h)
+    std::map<std::string, PairedRig::Kind> actionRigs;  // an Action's rig (creature actions, 11-05), a Pair's initiator
+    std::set<std::string> putdownActions;               // Actions a Carry names as its putdown
+    View fileView = View::kThird;                       // <AnimationSet view> (runtime/ViewSpec.h)
     std::map<std::string, InputInfo> inputs;
     std::set<std::string> actionIds, inputIds;
     std::vector<std::string> declared;  // every Action/Pair id in document order
@@ -1011,7 +1012,7 @@ struct Compiler {
         const bool pair = std::string_view(n.name()) == "Pair";
         shape(n,
             {"id", "clip", "view", "firstPerson", "air", "attack", "enter", "block", "safety", "lostBlend", "reorient",
-                "interruptOnHit", "loop", "maxHold"},
+                "interruptOnHit", "loop", "maxHold", "rig"},
             {"Exit", "Rotate", "IFrame", "HyperArmor", "TimeScale", "Cost", "MoveCancel", "Vanilla", "Transition",
                 "FindPartner", "Carry", "QTE", "CarryRelease", "EventValues", "Do", "Camera"});
         if (!pair) {
@@ -1029,6 +1030,31 @@ struct Compiler {
         s.id = get(n, "id");
         s.localId = s.id;
         s.source = sourceName;
+        // Whose graph plays it (11-05): a creature's own action plays in that creature's graph, its clip read from
+        // the creature's actor folder. A pair's rig is its initiator (11-05 phase 2); its clip stays relative to the
+        // character's folder (both roles read the one paired HKX), its partner is FindPartner rig.
+        if (n.attribute("rig")) {
+            s.rig = PairedRig::FromName(get(n, "rig"));
+            if (s.rig == PairedRig::Kind::kUnsupported) fail(n, "알 수 없는 스켈레톤: " + get(n, "rig"));
+        }
+        const bool creature = s.rig != PairedRig::Kind::kCharacter;
+        if (creature && pair) {
+            if (n.child("Carry")) fail(n.child("Carry"), "운반(Carry)은 사람이 시작하는 페어에만 씁니다");
+            // A creature's pair partners a character only, for now: creature to creature is untested.
+            if (auto t = n.child("FindPartner");
+                t && t.attribute("rig") && PairedRig::FromName(get(t, "rig")) != PairedRig::Kind::kCharacter)
+                fail(t, "크리처가 시작하는 페어의 상대는 사람(character)만 됩니다");
+        }
+        if (creature) {
+            if (putdownActions.contains(s.id)) fail(n, "운반의 내려놓기 동작은 사람(character) 동작이어야 합니다");
+            for (const char* human : {"view", "firstPerson", "air", "attack"})
+                if (n.attribute(human)) fail(n, std::string(human) + "는 사람(character) 동작에만 씁니다");
+            for (const char* human : {"QTE", "Camera", "CarryRelease"})
+                if (n.child(human)) fail(n.child(human), std::string(human) + "는 사람(character) 동작에만 씁니다");
+            for (auto d : n.children("Do"))
+                for (const char* op : {"hide", "show", "fireArrow"})
+                    if (get(d, "op") == op) fail(d, std::string("op=\"") + op + "\"는 사람(character) 동작에만 씁니다");
+        }
         // The camera view (runtime/ViewSpec.h): the file's unless written here. Pairs, carries and a carry's
         // putdown play in third person whatever the file says.
         const bool thirdOnly = pair || putdownActions.contains(get(n, "id"));
@@ -1216,6 +1242,9 @@ struct Compiler {
                 } else {
                     actionRef(t, "to");
                     connect.to = get(t, "to");
+                    if (const auto found = actionRigs.find(connect.to);
+                        found != actionRigs.end() && !PairedRig::SharesAssets(found->second, s.rig))
+                        fail(t, "다른 스켈레톤(rig)의 동작으로는 전환할 수 없습니다: " + connect.to);
                     num(t, "blend", 5);
                     if (t.attribute("blend") &&
                         (pair || get(n, "id") == get(t, "to") || !singleActions.contains(get(t, "to"))))
@@ -1224,6 +1253,11 @@ struct Compiler {
                         actionRef(t, "partnerTo");
                         if (!pair || actions.at(get(t, "to")) == "pair" || actions.at(get(t, "partnerTo")) == "pair")
                             fail(t, "partnerTo에는 페어에서 양쪽 일반 액션으로 가는 연결만 지정합니다");
+                        // The partner plays it: its rig is the pair's partner's.
+                        if (const auto found = actionRigs.find(get(t, "partnerTo"));
+                            found != actionRigs.end() && !PairedRig::SharesAssets(found->second, s.paired.targetRig))
+                            fail(t, "partnerTo는 상대 스켈레톤(FindPartner rig)의 동작이어야 합니다: " +
+                                        get(t, "partnerTo"));
                         connect.partner = true;
                         connect.partnerTo = get(t, "partnerTo");
                     }
@@ -1631,6 +1665,8 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
                 identifier(a, id);
                 if (!c.taken.insert(lower(id)).second) fail(a, "ID 중복: " + id);
                 if (kind == "Action") c.singleActions.insert(id);
+                c.actionRigs[id] =
+                    a.attribute("rig") ? PairedRig::FromName(get(a, "rig")) : PairedRig::Kind::kCharacter;
                 if (auto carry = a.child("Carry"); kind == "Pair" && carry.attribute("putdown"))
                     c.putdownActions.insert(get(carry, "putdown"));
                 c.actions.emplace(id, kind == "Pair" ? "pair" : "action");

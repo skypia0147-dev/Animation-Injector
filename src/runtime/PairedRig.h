@@ -49,9 +49,11 @@ constexpr bool SharesAssets(Kind a, Kind b) {
     const auto* second = Find(b);
     return first && second && Equal(first->actorRoot, second->actorRoot);
 }
-constexpr bool SupportsRole(Kind target, Kind project, int variant) {
+// The role of a pair this project's graph plays: variant 0 = the partner ("2_", lead) in the target rig's graph,
+// variant 1 = the initiator (support) in the initiator rig's graph (a creature's since 11-05 phase 2).
+constexpr bool SupportsRole(Kind initiator, Kind target, Kind project, int variant) {
     return variant == 0 ? project == target && target != Kind::kUnsupported
-                        : variant == 1 && project == Kind::kCharacter;
+                        : variant == 1 && project == initiator && initiator != Kind::kUnsupported;
 }
 constexpr const char* Name(Kind kind) {
     const auto* profile = Find(kind);

@@ -508,9 +508,18 @@ std::size_t BuildFiles(const std::vector<OrdinaryClip>& ordinary, std::uint64_t 
     };
     for (int a = 0; a < Actions::Count(); ++a) {
         const auto& spec = Actions::Spec(a);
+        if (spec.CreatureAction()) {
+            // A creature's own action (11-05): its clip is relative to its actor folder, preloaded like a pair's.
+            std::uint64_t rigs = 0;
+            for (const auto& profile : PairedRig::profiles)
+                if (PairedRig::SharesAssets(spec.rig, profile.kind)) rigs |= PairedRig::Mask(profile.kind);
+            for (const auto& clip : spec.clips) add(clip.file, clip.clipName + "_Preload", rigs, false);
+            continue;
+        }
         if (!spec.paired.enabled) continue;
+        // Both roles' rigs: the initiator's (the character, or a creature since 11-05 phase 2) and the partner's.
         for (const auto& clip : spec.clips)
-            for (const auto rig : {PairedRig::Kind::kCharacter, spec.paired.targetRig})
+            for (const auto rig : {spec.rig, spec.paired.targetRig})
                 add(PairedRig::ClipPath(clip.file, rig), clip.clipName + "_Preload", PairedRig::Mask(rig), true);
     }
     const auto mask = [&](const OrdinaryClip& clip) {
@@ -567,7 +576,7 @@ void Install() {
     if (settings.preloadOrdinary)
         for (int a = 0; a < Actions::Count(); ++a) {
             const auto& spec = Actions::Spec(a);
-            if (spec.paired.enabled) continue;
+            if (spec.paired.enabled || spec.CreatureAction()) continue;
             for (const auto& clip : spec.clips)
                 ordinary.push_back({clip.file, clip.clipName + "_Preload", spec.view.view});
         }

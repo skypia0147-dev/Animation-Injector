@@ -5,6 +5,12 @@
 
 namespace AnimationInjector::NodeFactory {
 
+namespace {
+thread_local std::size_t t_createdNodes = 0;
+}
+std::size_t CreatedNodes() { return t_createdNodes; }
+void NoteCreatedNode() { ++t_createdNodes; }
+
 RE::hkbNode* CloneActivityModifier(RE::hkbNode* source, const char* name) {
     if (!SameVTable(source, RE::VTABLE_BSIsActiveModifier) || source->cloneState == RE::hkbNode::CloneState::kClone)
         return nullptr;
@@ -25,6 +31,7 @@ RE::hkbNode* CloneActivityModifier(RE::hkbNode* source, const char* name) {
     // metadata; a guessed modifier size is never used for allocation or copying.
     node->referenceCount = 0x4000;
     MakeString(node->name, name);
+    NoteCreatedNode();
     return node;
 }
 
@@ -244,6 +251,7 @@ RE::hkbClipGenerator* MakeClip(const char* a_name, const char* a_animPath, std::
     EmptyArray(c->echos);
     const float identity[12] = {0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1};
     std::memcpy(&c->extractedMotion, identity, sizeof(identity));
+    NoteCreatedNode();
     return c;
 }
 
@@ -289,6 +297,7 @@ RE::hkbGenerator* MakeSyncClip(const char* a_name, RE::hkbClipGenerator* a_clip,
     std::memcpy(&g->startingWorldFromModel, identity, sizeof(identity));
     std::memcpy(&g->worldFromModelWithRootMotion, identity, sizeof(identity));
     std::memcpy(&g->unkTransform, identity, sizeof(identity));
+    NoteCreatedNode();
     return g;
 }
 
@@ -376,6 +385,7 @@ RE::hkReferencedObject* MakeBlendEffect(
     std::memset(e + kRuntime, 0, kSize - kRuntime);
     auto* arr = reinterpret_cast<RE::hkArray<RE::hkRefVariant>*>(e + kPoseArray);
     EmptyArray(*arr);
+    NoteCreatedNode();
     logger::debug("[Node] 블렌드 효과 '{}' 생성 (template '{}' {:.2f}s → {:.2f}s, self {} eventMode {}→{})", a_name,
         NodeName(a_template), tDur, a_duration, tSelf, tEvent, a_eventMode >= 0 ? a_eventMode : tEvent);
     return reinterpret_cast<RE::hkReferencedObject*>(e);

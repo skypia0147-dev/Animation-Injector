@@ -63,6 +63,64 @@ const RE::BSFixedString& VarInJump() {
 
 const ActionSpec& ActionRunner::Spec() const { return Actions::Spec(_idx); }
 
+namespace {
+// The skeleton an actor's race plays with (its third-person behavior project), or kUnsupported.
+PairedRig::Kind ActorRig(RE::Actor* a) {
+    auto* race = a ? a->GetRace() : nullptr;
+    const char* model = race ? race->behaviorGraphs[0].GetModel() : nullptr;
+    return model ? PairedRig::ProjectPath(model) : PairedRig::Kind::kUnsupported;
+}
+// The idle a creature's runtime pair idle descends from. The engine takes an idle only under an ancestry of the
+// actor's own behavior (CanUseIdle): the character's Dawnguard front feed was refused for a wolf (in-game 11-05).
+// The first top-level idle this actor accepts as the parent, else the first idle at all, found once per rig.
+RE::TESIdleForm* CreatureIdleParent(RE::Actor* actor, RE::TESIdleForm* injected) {
+    static std::unordered_map<int, RE::FormID> found;
+    static std::unordered_map<int, int> misses;  // a rig none was found for: tried again every 10th request
+    const auto rig = ActorRig(actor);
+    if (const auto it = found.find(static_cast<int>(rig)); it != found.end())
+        if (auto* idle = RE::TESForm::LookupByID<RE::TESIdleForm>(it->second)) return idle;
+    if (!injected || misses[static_cast<int>(rig)]++ % 10 != 0) return nullptr;
+    // Idles are not in the data handler's form arrays (0 found there in game, 11-05): read the global form table once.
+    static std::vector<RE::FormID> idleIds;
+    if (idleIds.empty()) {
+        const auto& [map, lock] = RE::TESForm::GetAllForms();
+        const RE::BSReadLockGuard guard{lock};
+        if (map)
+            for (const auto& [id, form] : *map)
+                if (form && form->GetFormType() == RE::FormType::Idle) idleIds.push_back(id);
+    }
+    std::size_t tested = 0;
+    for (const bool rootsOnly : {true, false})
+        for (const auto id : idleIds) {
+            auto* idle = RE::TESForm::LookupByID<RE::TESIdleForm>(id);
+            if (!idle || idle == injected || (rootsOnly != (idle->parentIdle == nullptr))) continue;
+            ++tested;
+            injected->parentIdle = idle;
+            if (actor->CanUseIdle(injected)) {
+                found[static_cast<int>(rig)] = id;
+                logger::info("[PairCreature] {} idle parent {:08X} '{}' top-level={} ({} tried)", PairedRig::Name(rig),
+                    id, idle->formEditorID.c_str(), rootsOnly, tested);
+                return idle;
+            }
+        }
+    injected->parentIdle = nullptr;
+    logger::warn("[PairCreature] {} actor {:08X} accepts no idle as a pair idle's parent ({} tried)",
+        PairedRig::Name(rig), actor->GetFormID(), tested);
+    return nullptr;
+}
+}
+// A creature's own action plays on its skeleton family (every creature sharing its folder, as the injection does); a
+// character action never on a known creature. Actors of other projects keep the character's rule as before (11-05).
+bool ActionRunner::MatchesRig(RE::Actor* a) const {
+    // A selecting action plays nothing: the action it picks checks its own rig (a creature action with several
+    // <Start>s gets one selecting start each, and those are the character's by default; in-game 11-05).
+    if (Spec().SelectsOnly()) return true;
+    const auto rig = ActorRig(a);
+    const auto wanted = Spec().rig;
+    if (wanted == PairedRig::Kind::kCharacter) return !PairedRig::IsCreature(rig);
+    return PairedRig::SharesAssets(wanted, rig);
+}
+
 bool ActionRunner::Conditions(RE::Actor* p, bool a_linkPreflight) const {
     const auto& c = Spec().condition;
     auto deny = [&](const char* a_why) {
@@ -70,6 +128,7 @@ bool ActionRunner::Conditions(RE::Actor* p, bool a_linkPreflight) const {
         return false;
     };
     if (!p || !p->Is3DLoaded() || p->IsDead()) return deny("액터 없음/사망");
+    if (!MatchesRig(p)) return deny("다른 스켈레톤(rig)");
     if (Carry::BlocksAction(p, _idx)) return deny("carry owns actor");
     PairedSession::Ticket pairTicket;
     if (!a_linkPreflight && PairedSession::TryGetTicket(p->GetHandle(), pairTicket) &&
@@ -422,8 +481,11 @@ bool ActionRunner::CanRequestPairLink(RE::ActorHandle target) const {
 bool ActionRunner::RequestPaired(RE::ActorHandle boundTarget) {
     auto* actor = Owner();
     if (!Conditions(actor)) return false;
-    if (!IsPairedRig(actor, PairedRig::Kind::kCharacter)) {
-        logger::warn("[PairRig] '{}' requires a human initiator", Spec().id);
+    // The initiator plays the pair's rig: the character, or a creature of its family (11-05 phase 2). Conditions()
+    // has checked it (MatchesRig); this names the failure if a caller skips it.
+    if (!MatchesRig(actor)) {
+        logger::warn("[PairRig] '{}' initiator {:08X} is not a {} (rig of its race: {})", Spec().id, actor->GetFormID(),
+            PairedRig::Name(Spec().rig), PairedRig::Name(ActorRig(actor)));
         return false;
     }
     auto retained = boundTarget.get();
@@ -469,10 +531,13 @@ bool ActionRunner::RequestPaired(RE::ActorHandle boundTarget) {
             lead);
         return false;
     }
-    // The engine owns forms. Keep only the runtime form ID between requests.
-    static std::unordered_map<int, RE::FormID> idleForms;
+    // The engine owns forms. Keep only the runtime form ID between requests: one idle per action and initiator rig
+    // (a creature's has its own behavior's ancestry, CreatureIdleParent).
+    static std::map<std::pair<int, int>, RE::FormID> idleForms;
+    const bool creature = Spec().rig != PairedRig::Kind::kCharacter;
+    const std::pair<int, int> idleKey{_idx, static_cast<int>(creature ? ActorRig(actor) : PairedRig::Kind::kCharacter)};
     auto* injectedIdle =
-        idleForms.contains(_idx) ? RE::TESForm::LookupByID<RE::TESIdleForm>(idleForms.at(_idx)) : nullptr;
+        idleForms.contains(idleKey) ? RE::TESForm::LookupByID<RE::TESIdleForm>(idleForms.at(idleKey)) : nullptr;
     if (!injectedIdle) {
         injectedIdle = RE::IFormFactory::Create<RE::TESIdleForm>();
         if (!injectedIdle) return false;
@@ -482,7 +547,11 @@ bool ActionRunner::RequestPaired(RE::ActorHandle boundTarget) {
         // CanUseIdle validates the root ancestor. Use the established vanilla
         // ancestry without editing the shared idle list or the original form.
         injectedIdle->parentIdle = idle;
-        idleForms[_idx] = injectedIdle->GetFormID();
+        if (creature) {
+            injectedIdle->parentIdle = CreatureIdleParent(actor, injectedIdle);
+            if (!injectedIdle->parentIdle) return false;
+        }
+        idleForms[idleKey] = injectedIdle->GetFormID();
         logger::debug("[PairB] runtime idle={:08X} parent={:08X} event='{}' flags={} group={}",
             injectedIdle->GetFormID(), idle->GetFormID(), injectedIdle->animEventName.c_str(),
             static_cast<int>(injectedIdle->data.flags.get()), injectedIdle->data.animationGroupSelection);

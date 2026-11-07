@@ -179,13 +179,22 @@ struct Deactivate {
 
 void Install() {
     REL::Relocation<std::uintptr_t> vtbl{RE::VTABLE_hkbClipGenerator[0]};
-    Activate::func = vtbl.write_vfunc(0x4, Activate::thunk);
     Deactivate::func = vtbl.write_vfunc(0x7, Deactivate::thunk);
     REL::Relocation<std::uintptr_t> svt{RE::VTABLE_BSSynchronizedClipGenerator[0]};
     SyncActivate::func = svt.write_vfunc(0x4, SyncActivate::thunk);
     SyncDeactivate::func = svt.write_vfunc(0x7, SyncDeactivate::thunk);
     SyncUpdate::func = svt.write_vfunc(0x5, SyncUpdate::thunk);
-    logger::debug("[Clip] hooks installed (hkbClipGenerator Activate/Deactivate)");
+    logger::debug("[Clip] hooks installed (hkbClipGenerator Deactivate; Activate at kPostLoad)");
+}
+
+void InstallActivation() {
+    static bool installed = false;
+    if (installed) return;
+    installed = true;
+    REL::Relocation<std::uintptr_t> vtbl{RE::VTABLE_hkbClipGenerator[0]};
+    Activate::func = vtbl.write_vfunc(0x4, Activate::thunk);
+    logger::info(
+        "[Clip] hkbClipGenerator Activate hooked after every plugin (previous target {:X})", Activate::func.address());
 }
 
 }  // namespace AnimationInjector::ClipHooks

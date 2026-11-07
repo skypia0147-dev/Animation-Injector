@@ -14,6 +14,11 @@ RE::hkbNode* CloneActivityModifier(RE::hkbNode* source, const char* name);
 
 constexpr std::uint32_t kDontDealloc = static_cast<std::uint32_t>(1) << 31;
 
+// The nodes (generators, modifiers, transition effects) this thread has made. Each takes one of its graph's 16-bit
+// node ids when the graph is linked (GraphInjector's node id budget).
+std::size_t CreatedNodes();
+void NoteCreatedNode();
+
 void* AllocZero(std::size_t a_size);
 void InitRefObj(void* a_obj, const std::array<REL::VariantID, 1>& a_vtable);
 void MakeString(RE::hkStringPtr& a_dst, const char* a_text);

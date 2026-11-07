@@ -1,6 +1,6 @@
 # Animation Injector
 
-**버전 1.0.2** · [English](README_EN.md)
+**버전 1.0.3** · [English](README_EN.md)
 
 새 애니메이션을 넣으려면 보통 Nemesis나 Pandora 같은 비헤이비어 도구로 비헤이비어 그래프를 패치해야 합니다. Animation Injector는 그 과정 없이 새 애니메이션을 넣는 SKSE 프레임워크입니다.
 
@@ -90,6 +90,8 @@ XML을 직접 쓰려면 `XML_GUIDE.md`를 보세요.
 1. INI에서 `bDebug = true`로 바꾸고 게임을 다시 시작합니다.
 2. 문제를 재현합니다.
 3. `문서\My Games\Skyrim Special Edition\SKSE\AnimationInjector.log`(직전 실행은 `AnimationInjector.previous.log`)를 보내 주세요. 크래시라면 크래시 로거의 로그도 함께 보내 주세요. 사용한 동작 모드와 마지막에 한 동작도 알려 주세요.
+
+게임이 메인 메뉴 전에 크래시 로그 없이 꺼지면, 한 번 더 실행한 뒤 `AnimationInjector.log`를 보내 주세요. 두 번째 실행이 첫 실행이 어느 단계에서 멈췄는지, Windows가 기록한 오류(멈춘 모듈·예외 코드)를 `[Startup]` 줄로 남깁니다.
 
 ## 크레딧
 

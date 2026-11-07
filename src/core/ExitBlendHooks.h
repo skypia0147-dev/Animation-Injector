@@ -21,4 +21,6 @@ void Reset();
 void SetMoveInput(bool held);
 void Tick(float delta);
 void Install();
+// hkbStateMachine Activate (vfunc 4), at kPostLoad for the reason in core/ClipHooks.h.
+void InstallActivation();
 }

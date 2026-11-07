@@ -1,6 +1,6 @@
 # Animation Injector
 
-**Version 1.0.2** · [한국어](README.md)
+**Version 1.0.3** · [한국어](README.md)
 
 Adding a new animation usually means patching the behavior graph with a tool such as Nemesis or Pandora. Animation Injector is an SKSE framework that skips that step.
 
@@ -90,6 +90,8 @@ The main entries of `SKSE/Plugins/AnimationInjector.ini`. See the INI's notes fo
 1. Set `bDebug = true` in the INI and restart the game.
 2. Reproduce the problem.
 3. Send `Documents\My Games\Skyrim Special Edition\SKSE\AnimationInjector.log` (`AnimationInjector.previous.log` for the run before). For a crash, also send your crash logger's log. Say which action mods you use and which action you did last.
+
+If the game closes before the main menu with no crash log, launch it once more and send `AnimationInjector.log`. The second launch writes `[Startup]` lines saying where the first one stopped and what Windows recorded about it (the faulting module and exception code).
 
 ## Credits
 

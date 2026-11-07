@@ -22,7 +22,8 @@ std::optional<PairPlacementMath::Mark> ReadMark(
         auto* data = setup ? setup->data.get() : nullptr;
         auto* strings = data ? data->stringData.get() : nullptr;
         const auto* project = strings ? strings->name.c_str() : nullptr;
-        if (!project || PairedRig::CharacterName(project) != rig) continue;
+        // A rig's family (dog for a wolf's pair, 11-05): the same folder and skeleton.
+        if (!project || !PairedRig::SharesAssets(PairedRig::CharacterName(project), rig)) continue;
         if (found) return std::nullopt;
         found = true;
         auto* set = static_cast<RE::hkbAnimationBindingSet*>(character.animationBindingSet.get());
@@ -77,7 +78,9 @@ std::optional<std::array<PairPlacementMath::Mark, 2>> ReadStartMarks(
     // leader (target, prefix 2_), role 1 is support (initiator, null -> NPC).
     const auto targetFile = PairedRig::ClipPath(spec.clips[0].file, spec.paired.targetRig);
     const auto leader = ReadMark(other.get(), targetFile.c_str(), "2_", spec.paired.targetRig);
-    const auto support = ReadMark(self.get(), spec.clips[1].file.c_str(), "NPC", PairedRig::Kind::kCharacter);
+    // The initiator's graph reads the same character-relative HKX (a creature's through its own folder).
+    const auto supportFile = PairedRig::ClipPath(spec.clips[1].file, spec.rig);
+    const auto support = ReadMark(self.get(), supportFile.c_str(), "NPC", spec.rig);
     if (!leader || !support) return std::nullopt;
     return std::array<PairPlacementMath::Mark, 2>{*leader, *support};
 }

@@ -364,12 +364,19 @@ void Tick(float delta) {
     }
 }
 void Install() {
-    REL::Relocation<std::uintptr_t> machine{RE::VTABLE_hkbStateMachine[0]};
-    LocomotionActivate::func = machine.write_vfunc(0x4, LocomotionActivate::thunk);
     REL::Relocation<std::uintptr_t> table{RE::VTABLE_hkbBlendingTransitionEffect[0]};
     Activate::func = table.write_vfunc(0x4, Activate::thunk);
     Update::func = table.write_vfunc(0x5, Update::thunk);
     Deactivate::func = table.write_vfunc(0x7, Deactivate::thunk);
     logger::info("[ExitBlendMove] normal exit input handoff installed; blend duration preserved");
+}
+void InstallActivation() {
+    static bool installed = false;
+    if (installed) return;
+    installed = true;
+    REL::Relocation<std::uintptr_t> machine{RE::VTABLE_hkbStateMachine[0]};
+    LocomotionActivate::func = machine.write_vfunc(0x4, LocomotionActivate::thunk);
+    logger::info("[ExitBlendMove] hkbStateMachine Activate hooked after every plugin (previous target {:X})",
+        LocomotionActivate::func.address());
 }
 }

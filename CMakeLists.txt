@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING "" FORCE)
-project(AnimationInjector VERSION 1.0.2)
+project(AnimationInjector VERSION 1.0.3)
 enable_language(RC)
 add_executable(AnimationInjectorFileLifetimeTests EXCLUDE_FROM_ALL tests/AnimationFileLifetime.cpp)
 target_include_directories(AnimationInjectorFileLifetimeTests PRIVATE tests/file_lifetime_stubs src)
@@ -184,6 +184,12 @@ target_compile_definitions(AnimationInjectorFormat6Tests PRIVATE UNICODE _UNICOD
 target_compile_options(AnimationInjectorFormat6Tests PRIVATE /utf-8)
 target_precompile_headers(AnimationInjectorFormat6Tests PRIVATE src/PCH.h)
 target_link_libraries(AnimationInjectorFormat6Tests PRIVATE CommonLibSSE::CommonLibSSE pugixml::pugixml)
+add_executable(AnimationInjectorCreatureActionsTests EXCLUDE_FROM_ALL tests/CreatureActions.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
+target_include_directories(AnimationInjectorCreatureActionsTests PRIVATE src)
+target_compile_definitions(AnimationInjectorCreatureActionsTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(AnimationInjectorCreatureActionsTests PRIVATE /utf-8)
+target_precompile_headers(AnimationInjectorCreatureActionsTests PRIVATE src/PCH.h)
+target_link_libraries(AnimationInjectorCreatureActionsTests PRIVATE CommonLibSSE::CommonLibSSE pugixml::pugixml)
 # Declaration folders named outside the ANSI code page load without throwing (code review 2026-09-30 R-14).
 add_executable(AnimationInjectorDeclarationPathsTests EXCLUDE_FROM_ALL tests/DeclarationPaths.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp src/runtime/RagdollProfile.cpp)
 target_include_directories(AnimationInjectorDeclarationPathsTests PRIVATE src)
@@ -380,6 +386,13 @@ target_compile_options(AnimationInjectorFireArrowTests PRIVATE /utf-8)
 target_precompile_headers(AnimationInjectorFireArrowTests PRIVATE src/PCH.h)
 target_link_libraries(AnimationInjectorFireArrowTests PRIVATE CommonLibSSE::CommonLibSSE pugixml::pugixml)
 
+# Startup record (core/StartupRecord.h): stages, exceptions and Windows' error record of a launch that died.
+# `AnimationInjectorStartupRecordTests --e2e` (by hand) really crashes two child processes.
+add_executable(AnimationInjectorStartupRecordTests EXCLUDE_FROM_ALL tests/StartupRecord.cpp src/core/StartupRecord.cpp)
+target_include_directories(AnimationInjectorStartupRecordTests PRIVATE src)
+target_compile_definitions(AnimationInjectorStartupRecordTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(AnimationInjectorStartupRecordTests PRIVATE /utf-8)
+
 # R-13: every unit test from one command.
 #   cmake --build build --config Release --target AnimationInjectorAllTests
 #   ctest --test-dir build -C Release --output-on-failure
@@ -435,7 +448,7 @@ add_test(NAME XmlCheck COMMAND AnimationInjectorXmlCheck --json "${AI_DDS_PORT}"
 # The XML guides' examples are files the runtime reads: a grammar change that breaks one fails here.
 foreach(guide XML_GUIDE XML_GUIDE_EN)
     add_test(NAME Doc_${guide} COMMAND ${CMAKE_COMMAND} -D "DOC=${CMAKE_SOURCE_DIR}/${guide}.md"
-        -D "CHECKER=$<TARGET_FILE:AnimationInjectorXmlCheck>" -D "OUT=${CMAKE_BINARY_DIR}/doc-examples" -D EXPECT=7
+        -D "CHECKER=$<TARGET_FILE:AnimationInjectorXmlCheck>" -D "OUT=${CMAKE_BINARY_DIR}/doc-examples" -D EXPECT=8
         -P "${CMAKE_SOURCE_DIR}/tests/DocExamples.cmake")
 endforeach()
 # --compare on cards: an empty False (format 5's Stop) equals none, and to="X" with common conditions equals the

@@ -222,6 +222,29 @@ void SetClipDuration(const char* a_clipName, float a_seconds) {
     }
 }
 
+namespace {
+// The skeleton an animation-data project belongs to: DefaultMale / DefaultFemale are the character's (first person
+// is not), a creature's is named as its behavior project file (WolfProject = wolfproject.hkx).
+PairedRig::Kind ProjectRig(const char* name) {
+    if (!name) return PairedRig::Kind::kUnsupported;
+    if (_strnicmp(name, "Default", 7) == 0) return PairedRig::Kind::kCharacter;
+    const std::string_view key(name);
+    for (const auto& profile : PairedRig::profiles)
+        for (const std::string_view file : {std::string_view(profile.project), std::string_view(profile.projectAlias)})
+            if (file.ends_with(".hkx") && PairedRig::Equal(file.substr(0, file.size() - 4), key)) return profile.kind;
+    return PairedRig::Kind::kUnsupported;
+}
+// The clips a project's animation data gets: every character action's in the character's projects (pairs included,
+// as before, and a creature-started pair whose partner is the character), a creature's own actions and the pairs it
+// starts in that creature's (and a creature sharing its folder). A creature partner's project never got its pairs.
+bool PlaysIn(const ActionSpec& spec, PairedRig::Kind project) {
+    if (project == PairedRig::Kind::kCharacter)
+        return spec.rig == PairedRig::Kind::kCharacter ||
+               (spec.paired.enabled && spec.paired.targetRig == PairedRig::Kind::kCharacter);
+    return PairedRig::IsCreature(project) && PairedRig::SharesAssets(spec.rig, project);
+}
+}
+
 bool TryRegister(const char* a_reason) {
     if (g_registered || Actions::Count() == 0) return g_registered;
     auto* s = FindSingleton();
@@ -233,8 +256,13 @@ bool TryRegister(const char* a_reason) {
     int targets = 0, done = 0;
     for (const auto& kv : s->animDatas) {
         const char* name = kv.first.c_str();
-        if (!name || _strnicmp(name, "Default", 7) != 0)
-            continue;  // DefaultMale / DefaultFemale (1인칭 FirstPerson 은 제외)
+        const auto rig = ProjectRig(name);
+        if (rig == PairedRig::Kind::kUnsupported) continue;
+        if (rig != PairedRig::Kind::kCharacter) {
+            bool any = false;
+            for (int a = 0; a < Actions::Count() && !any; ++a) any = PlaysIn(Actions::Spec(a), rig);
+            if (!any) continue;  // a creature without actions of its own
+        }
         ++targets;
         AnimationData* ad = kv.second;
         if (!ad) continue;
@@ -246,12 +274,21 @@ bool TryRegister(const char* a_reason) {
             ad->boundDatas.size, ad->boundDatas.cap);
         if (!ValidateLayout(ad)) {
             logger::warn("[AnimData] 배치 검증 실패 — 등록 안 함");
+            // A creature project that does not read as expected loses its own actions' root motion only; the
+            // character's projects (and other creatures) still register.
+            // It is not tried again (once logged): it would otherwise run on every request.
+            if (rig != PairedRig::Kind::kCharacter) {
+                g_doneProjects.insert(ad);
+                ++done;
+                continue;
+            }
             return false;
         }
         bool ok = true;
         int count = 0;
         for (int a = 0; a < Actions::Count() && ok; ++a) {
             const auto& spec = Actions::Spec(a);
+            if (!PlaysIn(spec, rig)) continue;
             for (const auto& c : spec.clips) {
                 ok = ok && RegisterClip(ad, name, spec, c);
                 ++count;

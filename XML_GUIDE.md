@@ -233,6 +233,35 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 
 타격(`strike`)은 설정이 많아 명령이 없습니다. 이벤트 등록으로 씁니다. 켜는 명령의 끄기는 위의 규칙을 따르고, 끄는 명령은 언제든 보낼 수 있으므로 끄는 명령을 넣지 않으면 사망·래그돌·불러오기 전까지 켜져 있습니다. 명령과 등록 이벤트는 같은 기능으로 취급합니다(`AI.IFrameOff`는 등록 이벤트가 켠 무적도 끕니다).
 
+## 크리처 동작
+
+`<Action>`에 `rig`를 쓰면 그 크리처가 혼자 재생하는 동작이 됩니다. 예: `<Action id="Howl" rig="wolf" clip="animations\MyMod\howl.hkx">`.
+
+- `rig`: `wolf` `bear` `sabrecat` `troll` `draugr` `werewolf` `vampirelord` 등 크리처 이름(페어의 `FindPartner rig`와 같은 목록). 생략하면 사람(`character`)입니다. 같은 폴더·골격을 쓰는 크리처는 함께 재생합니다(`wolf`와 `dog`, `draugr`와 `skeleton`): 한쪽만 원하면 종족 조건으로 거릅니다. 에디터는 HKX를 보고 이 값을 스스로 씁니다.
+- `clip`: 크리처 동작은 **그 크리처 폴더 기준**입니다(늑대는 `meshes\actors\canine\`, 곰은 `meshes\actors\bear\`). 사람 동작은 지금처럼 `meshes\actors\character\` 기준입니다.
+- 시작: 크리처가 보내는 이벤트로 `<Start event="…" actor="npc" to="…">`. 키·게임 조작 시작은 플레이어가 늑대인간·뱀파이어 군주일 때 그 크리처 동작을 재생합니다. 시작이 고른 동작의 `rig`가 그 액터와 다르면 시작하지 않으므로 한 파일에 사람 동작과 크리처 동작을 함께 둘 수 있습니다.
+- 쓸 수 있는 것: `loop`, `enter`, `<Exit>`, 같은 `rig` 동작으로의 `<Transition>`, `<Rotate>` `<IFrame>` `<HyperArmor>` `<MoveCancel>` `<Vanilla>` `<Cost>`, 시각 기능(`<Do at>`)과 이벤트 기능, 액터 공통 조건, `block`.
+- 사람 동작에만 쓰는 것: `view` `firstPerson` `air` `attack`, `<QTE>` `<Camera>` `<CarryRelease>`, `<Do op="hide|show|fireArrow">`. 다른 스켈레톤 계열의 동작으로 가는 `<Transition>`도 쓸 수 없습니다.
+
+### 크리처가 시작하는 페어
+
+`<Pair>`에 `rig`를 쓰면 그 크리처가 시작하는 쪽(가해자)입니다(크리처의 킬무브). 상대는 사람만 됩니다(`FindPartner rig`를 쓰지 않거나 `character`).
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="WolfKill">
+  <Start event="NPCWolfAttackA" block="NPCWolfAttackA" actor="npc" target="combatTarget" to="WolfPounce"/>
+  <Pair id="WolfPounce" rig="wolf" clip="animations\MyMod\WolfPounce.hkx">
+    <FindPartner range="200" angle="90"/>
+    <Exit blend="0.3"/>
+  </Pair>
+</AnimationSet>
+```
+
+- `clip`: 사람이 시작하는 페어와 같이 **사람 폴더 기준**입니다(`meshes\actors\character\`). 두 역할이 든 HKX 하나를 양쪽이 함께 읽습니다. 역할도 같습니다: 시작하는 크리처가 `NPC` 쪽, 상대 사람이 `2_` 쪽입니다.
+- 같은 폴더·골격의 크리처도 시작합니다(`wolf`면 개도).
+- 쓸 수 없는 것: 크리처 동작에서 막힌 것 전부, `<Carry>`, 크리처끼리의 페어. 전환(`<Transition to>`)은 같은 스켈레톤 계열의 동작으로, `partnerTo`는 사람 동작으로만 갑니다.
+
 ## 페어
 
 두 사람이 함께 하는 동작은 `<Pair>`로 씁니다. HKX는 두 역할(시작한 사람과 상대)이 함께 든 페어 HKX 하나입니다. 전투 중에 F를 누르면 앞에 있는 상대와 페어를 시작합니다.

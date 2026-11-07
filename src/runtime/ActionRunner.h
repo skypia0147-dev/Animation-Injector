@@ -92,6 +92,8 @@ public:
     std::uint64_t PlaybackSerial() const { return _playbackSerial.load(std::memory_order_relaxed); }
     bool BeginNormalExitMovement(std::uint64_t serial);
     const ActionSpec& Spec() const;
+    // True when this action's rig is the actor's skeleton (runtime/ActionSpec.h rig).
+    bool MatchesRig(RE::Actor* actor) const;
 
 private:
     bool RequestImpl(

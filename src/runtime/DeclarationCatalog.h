@@ -34,8 +34,15 @@ struct DeclarationCatalog {
         for (auto& list : rigFiles) list.clear();
         for (const auto& s : specs)
             for (const auto& c : s.clips) {
+                // A creature's own action plays in that creature's project only (its clip is relative to that
+                // creature's actor folder): the character's projects never bind it.
+                if (s.CreatureAction()) continue;
                 files.push_back(c.file);
-                if (s.paired.enabled || InThird(s.view.view)) thirdPersonFiles.push_back(c.file);
+                // A pair binds in the character's projects when the character plays one of its roles (a
+                // creature-started pair's partner, 11-05 phase 2).
+                const bool characterRole =
+                    s.rig == PairedRig::Kind::kCharacter || s.paired.targetRig == PairedRig::Kind::kCharacter;
+                if (s.paired.enabled ? characterRole : InThird(s.view.view)) thirdPersonFiles.push_back(c.file);
                 if (!s.paired.enabled && InFirst(s.view.view)) firstPersonFiles.push_back(c.file);
             }
         for (const auto& name : registered) events.push_back(name);
@@ -100,11 +107,17 @@ struct DeclarationCatalog {
             if (rig.kind == PairedRig::Kind::kCharacter) continue;
             std::unordered_set<std::string> wanted;
             for (const auto& s : specs)
-                if (s.paired.enabled && PairedRig::SharesAssets(s.paired.targetRig, rig.kind))
+                // Either role: the partner's, or a creature-started pair's initiator (11-05 phase 2).
+                if (s.paired.enabled &&
+                    (PairedRig::SharesAssets(s.paired.targetRig, rig.kind) || PairedRig::SharesAssets(s.rig, rig.kind)))
                     for (const auto& c : s.clips) wanted.insert(c.file);
             auto& list = rigFiles[static_cast<std::size_t>(rig.kind)];
             for (const auto& file : files)
                 if (wanted.contains(file)) list.push_back(PairedRig::ClipPath(file, rig.kind));
+            // The creature's own actions, as written (relative to its actor folder); rigs sharing a folder share them.
+            for (const auto& s : specs)
+                if (s.CreatureAction() && PairedRig::SharesAssets(s.rig, rig.kind))
+                    for (const auto& c : s.clips) list.push_back(c.file);
         }
     }
     const std::vector<std::string>& ForRig(PairedRig::Kind rig) const {

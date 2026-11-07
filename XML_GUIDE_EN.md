@@ -233,6 +233,35 @@ An HKX annotation `AI.Command|value|value` runs a feature at its time with no re
 
 A strike has no command for its many settings; register it on an event. An on command ends by the rules above; an off command can always be sent, so without one it stays on until death, ragdoll or a load. Commands and registered events are one feature (`AI.IFrameOff` also ends invulnerability a registered event turned on).
 
+## Creature actions
+
+An `<Action>` with `rig` is played by that creature on its own. Example: `<Action id="Howl" rig="wolf" clip="animations\MyMod\howl.hkx">`.
+
+- `rig`: a creature name such as `wolf` `bear` `sabrecat` `troll` `draugr` `werewolf` `vampirelord` (the same list as a pair's `FindPartner rig`). Without it the action is the character's. Creatures sharing a folder and skeleton play it together (`wolf` and `dog`, `draugr` and `skeleton`): filter with a race condition for one of them. The editor writes this value itself from the HKX.
+- `clip`: a creature action's clip is relative to **that creature's folder** (`meshes\actors\canine\` for wolves, `meshes\actors\bear\` for bears). A character action's stays relative to `meshes\actors\character\`.
+- Starting: on an event the creature sends, `<Start event="…" actor="npc" to="…">`. Key and game-control starts play a creature action when the player is a werewolf or vampire lord. A start never plays an action whose `rig` is not the actor's, so one file can hold character and creature actions together.
+- Available: `loop`, `enter`, `<Exit>`, `<Transition>` to an action of the same `rig`, `<Rotate>` `<IFrame>` `<HyperArmor>` `<MoveCancel>` `<Vanilla>` `<Cost>`, clip-time features (`<Do at>`) and event features, the conditions every actor has, `block`.
+- Character actions only: `view` `firstPerson` `air` `attack`, `<QTE>` `<Camera>` `<CarryRelease>`, `<Do op="hide|show|fireArrow">`. A `<Transition>` to an action of another skeleton family is refused too.
+
+### Pairs a creature starts
+
+A `<Pair>` with `rig` is started by that creature (a creature kill move). Its partner is a character only (no `FindPartner rig`, or `character`).
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="WolfKill">
+  <Start event="NPCWolfAttackA" block="NPCWolfAttackA" actor="npc" target="combatTarget" to="WolfPounce"/>
+  <Pair id="WolfPounce" rig="wolf" clip="animations\MyMod\WolfPounce.hkx">
+    <FindPartner range="200" angle="90"/>
+    <Exit blend="0.3"/>
+  </Pair>
+</AnimationSet>
+```
+
+- `clip`: relative to **the character's folder** (`meshes\actors\character\`), as for a pair a character starts. Both read the one HKX holding both roles, with the same roles: the creature starting it is the `NPC` side, the character partner the `2_` side.
+- Creatures sharing its folder and skeleton start it too (a dog for `wolf`).
+- Not available: everything a creature action may not have, `<Carry>`, a pair between creatures. A `<Transition to>` goes to an action of the same skeleton family, a `partnerTo` to a character action.
+
 ## Pairs
 
 An action two people do together is a `<Pair>`. Its HKX is one paired HKX holding both roles (the one who starts it and the partner). In combat, F starts the pair with the actor in front.

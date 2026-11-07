@@ -16,17 +16,22 @@ int main() {
         require(ProjectPath(std::string(p.actorRoot) + "/" + p.project) == p.kind);
         require(Mask(p.kind) != 0 && !(seen & Mask(p.kind)));
         seen |= Mask(p.kind);
-        require(SupportsRole(p.kind, p.kind, 0));
-        require(SupportsRole(p.kind, Kind::kCharacter, 1));
+        require(SupportsRole(Kind::kCharacter, p.kind, p.kind, 0));
+        require(SupportsRole(Kind::kCharacter, p.kind, Kind::kCharacter, 1));
+        // A creature initiator (11-05 phase 2): its own graph plays the initiator, the character the partner.
+        require(SupportsRole(p.kind, Kind::kCharacter, p.kind, 1));
+        require(SupportsRole(p.kind, Kind::kCharacter, Kind::kCharacter, 0));
         if (IsCreature(p.kind)) {
-            require(!SupportsRole(p.kind, Kind::kCharacter, 0));
-            require(!SupportsRole(p.kind, p.kind, 1));
+            require(!SupportsRole(Kind::kCharacter, p.kind, Kind::kCharacter, 0));
+            require(!SupportsRole(p.kind, Kind::kCharacter, Kind::kCharacter, 1));
+            require(!SupportsRole(Kind::kCharacter, p.kind, p.kind, 1));
             require(p.root[0] && p.wrapper[0] && p.activity[0] && p.eventProbe[0]);
             for (const auto* probe : p.probes) require(probe[0]);
         }
         for (const auto& other : profiles)
             if (p.kind != other.kind) {
-                require(!SupportsRole(p.kind, other.kind, 0));
+                require(!SupportsRole(Kind::kCharacter, p.kind, other.kind, 0));
+                require(!SupportsRole(p.kind, Kind::kCharacter, other.kind, 1));
                 require(!Equal(p.name, other.name));
             }
     }

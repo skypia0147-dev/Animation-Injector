@@ -12,6 +12,10 @@
 #include "Settings.h"
 #include "core/BoundedNodeSearch.h"
 #include <atomic>
+#include <bit>
+#include <format>
+#include <map>
+#include <tuple>
 #include <mutex>
 #include <shared_mutex>
 
@@ -58,6 +62,8 @@ struct Pass {
         bool filled = false;
     };
     std::unordered_map<const void*, Ids> ids;
+    // Link blends by (native template, duration bits, event mode): one immutable effect each (SharedLinkEffect).
+    std::map<std::tuple<const void*, std::uint32_t, int>, RE::hkReferencedObject*> linkEffects;
     struct FullBody {
         bool resolved = false;
         const char* failure = nullptr;
@@ -98,6 +104,25 @@ struct Pass {
     } pairs;
 };
 thread_local Pass* g_pass = nullptr;
+// The blend of a link (one action entering another). Every link into this graph with the same native template,
+// duration and event mode shares one effect: nothing changes a link effect after it is made (exit effects, which
+// ExitBlendHooks finds by name, are never shared), and native graphs share theirs the same way. Each effect is a
+// node and takes one of the graph's 16-bit node ids; one per link grew with the square of the linked actions
+// (11-07 Trung53: 98 actions linked to one another made 6072 effects and pushed a 59520-node graph past 65535, the
+// ids wrapped and a global transition of the cart driver read a null state machine).
+RE::hkReferencedObject* SharedLinkEffect(const RE::hkReferencedObject* a_template, float a_seconds, int a_eventMode) {
+    const float seconds = std::max(0.0f, a_seconds);
+    const auto make = [&] {
+        return MakeBlendEffect(a_template, std::format("AI_LinkBlend_{:.2f}s", seconds).c_str(), seconds, a_eventMode);
+    };
+    if (!g_pass || !a_template) return make();
+    const auto key =
+        std::tuple{static_cast<const void*>(a_template), std::bit_cast<std::uint32_t>(seconds), a_eventMode};
+    if (const auto it = g_pass->linkEffects.find(key); it != g_pass->linkEffects.end()) return it->second;
+    auto* effect = make();
+    if (effect) g_pass->linkEffects.emplace(key, effect);
+    return effect;
+}
 // The container exits by the blend variable their effect reads (core/PairEntry.h).
 enum PairExitKind : int { kPairExit, kPairLoss, kPairRecovery };
 void CommitPairContainers(Pass::Pairs& pairs);
@@ -487,7 +512,7 @@ void InjectPairedAction(int actionIndex, RE::hkbBehaviorGraph* graph, RE::hkbSta
     std::array<std::vector<StagedExit>, 2> staged;
     std::array<PairEntry::Blends, 2> blends{};
     for (int i = 0; i < 2; ++i) {
-        if (!PairedRig::SupportsRole(spec.paired.targetRig, PairedRig::Kind::kCharacter, i)) continue;
+        if (!PairedRig::SupportsRole(spec.rig, spec.paired.targetRig, PairedRig::Kind::kCharacter, i)) continue;
         const auto& variant = spec.clips[i];
         const auto& role = pairs.roles[i];
         const int enter = InjectEvent(graph, variant.enterEvent.c_str());
@@ -611,24 +636,58 @@ struct RawArr {
 struct ReadNodeName {
     const char* operator()(RE::hkbNode* node) const { return NodeName(node); }
 };
+// The node's children as the engine lists them (hkbNode virtuals 8 = their number, 9 = the list, no flags):
+// generators, modifiers and transition effects. A node listing more than a_cap gives none.
+int ListChildren(RE::hkbNode* node, std::vector<HkChild>& buffer, int a_cap) {
+    using GetMaxFn = int (*)(RE::hkbNode*, int);
+    using GetChildrenFn = void (*)(RE::hkbNode*, int, RawArr*);
+    auto** vt = *reinterpret_cast<void***>(node);
+    const int max = reinterpret_cast<GetMaxFn>(vt[8])(node, 0);
+    if (max <= 0 || max > a_cap) return 0;
+    buffer.assign(static_cast<std::size_t>(max), HkChild{});
+    RawArr arr{buffer.data(), 0, static_cast<std::int32_t>(static_cast<std::uint32_t>(max) | kDontDealloc)};
+    struct ChildrenOut {
+        RawArr* arr;
+        std::int32_t n;
+        std::int32_t pad;
+    } out{&arr, 0, 0};
+    reinterpret_cast<GetChildrenFn>(vt[9])(node, 0, reinterpret_cast<RawArr*>(&out));
+    return std::clamp(arr.size, 0, max);
+}
 struct ReadNodeChildren {
-    int operator()(RE::hkbNode* node, std::vector<HkChild>& buffer) const {
-        using GetMaxFn = int (*)(RE::hkbNode*, int);
-        using GetChildrenFn = void (*)(RE::hkbNode*, int, RawArr*);
-        auto** vt = *reinterpret_cast<void***>(node);
-        const int max = reinterpret_cast<GetMaxFn>(vt[8])(node, 0);
-        if (max <= 0 || max > 4096) return 0;
-        buffer.assign(static_cast<std::size_t>(max), HkChild{});
-        RawArr arr{buffer.data(), 0, static_cast<std::int32_t>(static_cast<std::uint32_t>(max) | kDontDealloc)};
-        struct ChildrenOut {
-            RawArr* arr;
-            std::int32_t n;
-            std::int32_t pad;
-        } out{&arr, 0, 0};
-        reinterpret_cast<GetChildrenFn>(vt[9])(node, 0, reinterpret_cast<RawArr*>(&out));
-        return std::clamp(arr.size, 0, max);
-    }
+    int operator()(RE::hkbNode* node, std::vector<HkChild>& buffer) const { return ListChildren(node, buffer, 4096); }
 };
+
+// ── Node id budget ───────────────────────────────────────────────────────────
+// The engine numbers a behavior graph's nodes with 16-bit ids when it links the graph (hkbNode::id, 0xFFFF = none;
+// hkbBehaviorGraph::numStaticNodes and nextUniqueID are 16-bit too). Past 65535 nodes the ids wrap: two state
+// machines share an id, the graph's id-to-machine table loses one, and a global transition through it reads null
+// (11-07 Trung53, SE 1.5.97: a 59520-node 0_master + 6170 AI nodes = 65690, the engine's nextUniqueID read 154 and
+// IdleCartDriverSway crashed in game+0xA1B2AB). Both numbers were measured: the native count below is what this walk
+// returns, and the engine's count was exactly it plus the nodes NodeFactory made. Runtime clones take further ids
+// after the static ones (nextUniqueID ran 3 past numStaticNodes in a test game), so some are kept free.
+constexpr std::size_t kNodeIdLimit = 0xFFFF;  // ids 0..0xFFFE
+constexpr std::size_t kNodeIdsKeptFree = 512;
+std::size_t CountNodes(RE::hkbNode* root) {
+    std::unordered_set<RE::hkbNode*> seen;
+    std::vector<RE::hkbNode*> stack{root};
+    std::vector<HkChild> buffer;
+    while (!stack.empty()) {
+        auto* node = stack.back();
+        stack.pop_back();
+        if (!node || !seen.insert(node).second) continue;
+        const int count = ListChildren(node, buffer, 1 << 20);
+        for (int i = count - 1; i >= 0; --i) stack.push_back(buffer[i].node);
+    }
+    return seen.size();
+}
+// The most nodes one action can make in a character graph: per clip its clip, a sync clip, a recovery effect and
+// cancel-window effects; the action's enter, exit and air-route effects; one shared effect per incoming link at most.
+std::size_t NodeReserve(int a_action) {
+    const auto& spec = Actions::Spec(a_action);
+    const std::size_t clips = spec.clips.size();
+    return clips * (4 + 2 * spec.cancels.size()) + Actions::IncomingLinks(a_action).size() + 16;
+}
 using NativeNodeSearch = BoundedNodeSearch<RE::hkbNode, HkChild, ReadNodeName, ReadNodeChildren>;
 RE::hkbNode* FindNodeByName(RE::hkbNode*, const char*, int, std::size_t&);
 
@@ -689,41 +748,44 @@ RE::hkbNode* CopyActivityFlag(RE::hkbNode* source, int originalVariable, int var
     return node;
 }
 
-void InjectCreaturePair(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateMachine* sm, RE::hkbCharacter* character,
-    const PairedRig::Profile& profile, NativeNodeSearch& search) {
-    const auto& spec = Actions::Spec(action);
-    auto fail = [&](const char* reason) {
-        logger::error("[PairRig] '{}' {} injection skipped: {}", spec.id, profile.name, reason);
-    };
-    if (spec.paired.targetRig != profile.kind || spec.clips.size() != 2) return;
-    LoadingProgress::Registration loading(LoadingProgress::Outcome::kFailed);
+// The native anchor of an injection into a creature's root (a pair target's role, the creature's own action, 11-05):
+// the profile's root machine and its start state, the activity modifier and the wrapper a new state copies. A profile
+// routed beneath native physics (the chicken) injects into its inner behavior machine. nullptr when the graph
+// matches the profile, else why not.
+struct CreatureAnchor {
+    RE::hkbStateMachine* sm = nullptr;
+    StateInfoLayout* start = nullptr;  // the root machine's start state
+    RE::hkbNode* activity = nullptr;
+    RE::hkbNode* wrapperSource = nullptr;
+    int returnState = 0;
+    TransitionInfoArrayLayout* wild = nullptr;
+};
+const char* ResolveCreatureAnchor(
+    RE::hkbStateMachine* sm, const PairedRig::Profile& profile, NativeNodeSearch& search, CreatureAnchor& out) {
     if (!SameVTable(sm, RE::VTABLE_hkbStateMachine) || !PairedRig::Equal(NodeName(sm), profile.root) ||
         sm->startStateID != profile.startId)
-        return fail("native root signature changed");
-    StateInfoLayout* start = nullptr;
+        return "native root signature changed";
     for (auto* item : sm->states) {
         auto* state = reinterpret_cast<StateInfoLayout*>(item);
         if (state && state->stateId == profile.startId && state->name.c_str() &&
             PairedRig::Equal(state->name.c_str(), profile.startName))
-            start = state;
+            out.start = state;
     }
-    if (!start || !start->generator) return fail("native default state missing");
-    auto* activity = search.FindNative(sm, profile.activity);
-    if (!SameVTable(activity, RE::VTABLE_BSIsActiveModifier)) return fail("native activity modifier missing");
-    auto* wrapperSource = search.FindNative(start->generator, profile.wrapper);
+    if (!out.start || !out.start->generator) return "native default state missing";
+    out.activity = search.FindNative(sm, profile.activity);
+    if (!SameVTable(out.activity, RE::VTABLE_BSIsActiveModifier)) return "native activity modifier missing";
+    out.wrapperSource = search.FindNative(out.start->generator, profile.wrapper);
     // Witchlight has no root physics wrapper. Its recoil wrapper is used only
     // as an allocation template; its recoil modifiers are never retained.
-    if (!wrapperSource && !profile.preserveModifiers) {
-        wrapperSource = search.FindNative(sm, profile.wrapper);
-    }
-    if (!SameVTable(wrapperSource, RE::VTABLE_hkbModifierGenerator)) return fail("native wrapper unavailable");
-    int returnState = profile.startId;
+    if (!out.wrapperSource && !profile.preserveModifiers) out.wrapperSource = search.FindNative(sm, profile.wrapper);
+    if (!SameVTable(out.wrapperSource, RE::VTABLE_hkbModifierGenerator)) return "native wrapper unavailable";
+    out.returnState = profile.startId;
     if (profile.innerRoute) {
         // Preserve the already verified chicken route beneath native physics.
-        auto* inner = search.FindNative(start->generator, "RootBehavior");
-        if (!SameVTable(inner, RE::VTABLE_hkbStateMachine)) return fail("inner behavior missing");
+        auto* inner = search.FindNative(out.start->generator, "RootBehavior");
+        if (!SameVTable(inner, RE::VTABLE_hkbStateMachine)) return "inner behavior missing";
         sm = static_cast<RE::hkbStateMachine*>(inner);
-        returnState = 0;
+        out.returnState = 0;
         bool found = false;
         for (auto* item : sm->states) {
             auto* state = reinterpret_cast<StateInfoLayout*>(item);
@@ -731,32 +793,186 @@ void InjectCreaturePair(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateMac
                 PairedRig::Equal(state->name.c_str(), "DefaultState"))
                 found = true;
         }
-        if (!found || sm->startStateID != 0) return fail("inner default state changed");
+        if (!found || sm->startStateID != 0) return "inner default state changed";
     }
-    auto* wild = reinterpret_cast<TransitionInfoArrayLayout*>(sm->wildcardTransitions.get());
-    if (!wild) return fail("native wildcard transitions missing");
+    out.sm = sm;
+    out.wild = reinterpret_cast<TransitionInfoArrayLayout*>(sm->wildcardTransitions.get());
+    if (!out.wild) return "native wildcard transitions missing";
+    return nullptr;
+}
+// A copy of the anchor's native wrapper holding child under modifier; nullptr when either is missing or the copy
+// lacks the fields.
+RE::hkbGenerator* WrapCreature(
+    const CreatureAnchor& anchor, RE::hkbGenerator* child, RE::hkbNode* modifier, const std::string& name) {
+    if (!child || !modifier) return nullptr;
+    auto* wrapper = CopyPairedWrapper(anchor.wrapperSource, name.c_str());
+    auto** gen = ReflectedPointer<RE::hkbGenerator*>(wrapper, "generator");
+    auto** mod = ReflectedPointer<RE::hkbNode*>(wrapper, "modifier");
+    if (!gen || !mod) return nullptr;
+    *gen = child;
+    AddRef(child);
+    *mod = modifier;
+    AddRef(modifier);
+    return reinterpret_cast<RE::hkbGenerator*>(wrapper);
+}
+// The wrappers above every creature state: animation driven (not beneath native physics, whose route drives it
+// already) and the profile's native physics modifier. nullptr when one is unavailable.
+RE::hkbGenerator* WrapCreatureNative(const CreatureAnchor& anchor, const PairedRig::Profile& profile,
+    RE::hkbGenerator* outer, int driven, const std::string& tag) {
+    if (profile.innerRoute) return outer;
+    outer = WrapCreature(anchor, outer,
+        CopyActivityFlag(anchor.activity, driven, driven, (tag + "DrivenActive").c_str()), tag + "DrivenWrapper");
+    if (!outer || !profile.preserveModifiers) return outer;
+    auto** nativeModifier = ReflectedPointer<RE::hkbNode*>(anchor.wrapperSource, "modifier");
+    return nativeModifier ? WrapCreature(anchor, outer, *nativeModifier, tag + "Physics") : nullptr;
+}
+// A state added to the anchor's machine: the graph rebinds its bindables.
+void InvalidateCreatureBindables(RE::hkbBehaviorGraph* graph, const CreatureAnchor& anchor) {
+    anchor.sm->areBindablesCached = false;
+    graph->areBindablesCached = false;
+    if (graph->rootGenerator) graph->rootGenerator->areBindablesCached = false;
+    anchor.start->generator->areBindablesCached = false;
+}
+// A creature's own action (11-05): one clip state in the creature's root machine, entered from any state by its
+// enter event (and by the enter events of transitions into it) and left to the start state on its exit events.
+// Wrapped as a pair target is (animation driven, the profile's native physics), without the synchronized flags.
+void InjectCreatureAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateMachine* sm, RE::hkbCharacter* character,
+    const PairedRig::Profile& profile, NativeNodeSearch& search) {
+    const auto& spec = Actions::Spec(action);
+    auto fail = [&](const char* reason) {
+        logger::error("[CreatureAction] '{}' {} injection skipped: {}", spec.id, profile.name, reason);
+    };
+    if (spec.clips.size() != 1) return;
+    LoadingProgress::Registration loading(LoadingProgress::Outcome::kFailed);
+    CreatureAnchor anchor;
+    if (const char* why = ResolveCreatureAnchor(sm, profile, search, anchor)) return fail(why);
+    sm = anchor.sm;
+    auto& ids = PassIds(sm);
+    const int driven = FindName(graph->data->stringData->variableNames, "bAnimationDriven");
+    if (driven < 0) return fail("bAnimationDriven unavailable");
+    const auto& c = spec.clips[0];
+    const int stateId = TakeStateIds(sm, ids, 1);
+    if (stateId < 0) return fail("state IDs exhausted");
+    const int enter = InjectEvent(graph, c.enterEvent.c_str());
+    const int exitEvent = InjectEvent(graph, spec.events.exit.c_str());
+    const int recover = spec.HasRecovery() ? InjectEvent(graph, spec.recovery.recoverEvent.c_str()) : -1;
+    const int index = EnsureAnimationName(character, c.file.c_str());
+    if (enter < 0 || exitEvent < 0 || (spec.HasRecovery() && recover < 0) || index < 0 ||
+        index > AnimationLimit::MaxBindingIndex())
+        return fail("event or clip registration failed");
+    const auto& effects = PassEffects(sm);
+    const float enterBlend = spec.enterBlend >= 0 ? spec.enterBlend : 0.2f;
+    const float exitBlend = spec.exitBlend >= 0 ? spec.exitBlend : 0.2f;
+    auto* enterEffect = MakeBlendEffect(effects.enter, (spec.id + "_CreatureActionEnter").c_str(), enterBlend, -1);
+    auto* exitEffect = MakeBlendEffect(effects.exit, (spec.id + "_CreatureActionExit").c_str(), exitBlend, -1);
+    if (!enterEffect || !exitEffect) return fail("native blend template unavailable");
+    std::vector<TriggerDef> triggers;
+    if (spec.exitTriggerBeforeEnd >= 0) triggers.push_back({spec.exitTriggerBeforeEnd, exitEvent, true});
+    auto* exits = MakeTransitionArray(0);
+    auto addExit = [&](int event, RE::hkReferencedObject* effect) {
+        TransitionInfo transition{};
+        FillTransition(transition, event, anchor.returnState, effect, TransitionInfo::kDisableCondition);
+        exits->transitions.push_back(transition);
+    };
+    addExit(exitEvent, exitEffect);
+    for (const auto& w : spec.cancels) {
+        const int open = InjectEvent(graph, w.openEvent.c_str());
+        const int close = InjectEvent(graph, w.closeEvent.c_str());
+        if (open < 0 || close < 0) return fail("window unavailable");
+        if (w.openAt >= 0) triggers.push_back({w.openAt, open, false});
+        if (w.closeAt >= 0) triggers.push_back({w.closeAt, close, true});
+        if (!w.vanillaMatches.empty()) {
+            const int cancel = InjectEvent(graph, w.nativeCancelEvent.c_str());
+            auto* effect = MakeBlendEffect(effects.exit, (spec.id + "_" + w.id + "CreatureCancel").c_str(),
+                w.blend >= 0 ? w.blend : exitBlend, -1);
+            if (cancel < 0 || !effect) return fail("cancel window unavailable");
+            addExit(cancel, effect);
+        }
+    }
+    if (spec.HasRecovery()) {
+        InjectEvent(graph, spec.recovery.event.c_str());
+        auto* effect = MakeBlendEffect(effects.exit, (spec.id + "_CreatureActionRecover").c_str(),
+            spec.recovery.blend >= 0 ? spec.recovery.blend : exitBlend, -1);
+        if (!effect) return fail("recovery effect unavailable");
+        addExit(recover, effect);
+    }
+    auto* clip = MakeClip(c.clipName.c_str(), c.file.c_str(), static_cast<std::uint16_t>(index),
+        MakeTriggerArray(triggers), nullptr, FrameworkSettings::Get().convertAnnotations);
+    if (!clip) return fail("clip allocation failed");
+    if (spec.loop.enabled) clip->mode = RE::hkbClipGenerator::kModeLooping;
+    auto* outer = WrapCreatureNative(anchor, profile, clip, driven, spec.id + "_CreatureAction");
+    if (!outer) return fail("wrapper fields unavailable");
+    // Its own enter event, and the enter events of transitions into it (a transition into itself restarts it).
+    struct Entry {
+        int event;
+        RE::hkReferencedObject* effect;
+        bool self;
+    };
+    std::vector<Entry> entries{{enter, enterEffect, false}};
+    for (const auto& [from, linkIndex] : Actions::IncomingLinks(action)) {
+        const auto& src = Actions::Spec(from);
+        if (src.paired.enabled || src.rig != spec.rig || src.clips.size() != 1) continue;
+        const auto& link = src.links[linkIndex];
+        const int event = InjectEvent(graph, link.enterEvent.c_str());
+        const float seconds = link.blend >= 0 ? link.blend : enterBlend;
+        auto* effect = SharedLinkEffect(effects.enter, seconds, 1);
+        if (event < 0 || !effect) return fail("transition entry unavailable");
+        entries.push_back({event, effect, from == action});
+    }
+    auto* state = MakeState(("AI_" + spec.id + "_CreatureState").c_str(), stateId, outer, exits);
+    sm->states.push_back(reinterpret_cast<RE::hkbStateMachine::StateInfo*>(state));
+    for (const auto& entry : entries) {
+        TransitionInfo transition{};
+        FillTransition(transition, entry.event, stateId, entry.effect,
+            static_cast<std::int16_t>(TransitionInfo::kDisableCondition | TransitionInfo::kIsLocalWildcard |
+                                      (entry.self ? TransitionInfo::kAllowSelfTransitionByTransitionFromAnyState : 0)));
+        anchor.wild->transitions.push_back(transition);
+    }
+    ExitBlendHooks::Register(exitEffect, exitBlend, action);
+    ids.insert(stateId);
+    InvalidateCreatureBindables(graph, anchor);
+    Result result;
+    result.actionIdx = action;
+    result.graph = NodeName(sm);
+    result.pairedRig = profile.kind;
+    result.injected = true;
+    result.enterIds = {enter};
+    result.stateIds = {stateId};
+    result.exitId = exitEvent;
+    result.recoverId = recover;
+    Publish(std::move(result));
+    loading.Ready();
+    logger::info("[CreatureAction] '{}' rig={} injected: state={} file='{}' index={} loop={} transitionsIn={}", spec.id,
+        profile.name, stateId, c.file, index, spec.loop.enabled, entries.size() - 1);
+}
+// A pair role in a creature's root state machine: the partner (role 0: "2_", lead) or, since 11-05 phase 2, the
+// initiator (role 1: a prefix-less support, read as "NPC"). Both roles read the one paired HKX from the
+// character's folder (PairedRig::ClipPath).
+void InjectCreaturePair(int action, int role, RE::hkbBehaviorGraph* graph, RE::hkbStateMachine* sm,
+    RE::hkbCharacter* character, const PairedRig::Profile& profile, NativeNodeSearch& search) {
+    const auto& spec = Actions::Spec(action);
+    const char* roleName = role == 0 ? "target" : "initiator";
+    auto fail = [&](const char* reason) {
+        logger::error("[PairRig] '{}' {} {} injection skipped: {}", spec.id, profile.name, roleName, reason);
+    };
+    if (spec.clips.size() != 2 || (role == 0 ? spec.paired.targetRig : spec.rig) != profile.kind) return;
+    const std::string tag = spec.id + (role == 0 ? "_Creature" : "_CreatureInit");
+    LoadingProgress::Registration loading(LoadingProgress::Outcome::kFailed);
+    CreatureAnchor anchor;
+    if (const char* why = ResolveCreatureAnchor(sm, profile, search, anchor)) return fail(why);
+    sm = anchor.sm;
+    const int returnState = anchor.returnState;
     auto& ids = PassIds(sm);
     const int driven = FindName(graph->data->stringData->variableNames, "bAnimationDriven");
     const int synced = EnsurePairFlag(graph, "bIsSynced"), pitch = EnsurePairFlag(graph, "DisablePitch");
     if (driven < 0 || synced < 0 || pitch < 0) return fail("activity variables unavailable");
-    auto* syncFlag = CopyActivityFlag(activity, driven, synced, (spec.id + "_CreatureSyncActive").c_str());
-    auto* pitchFlag = CopyActivityFlag(activity, driven, pitch, (spec.id + "_CreaturePitchActive").c_str());
+    auto* syncFlag = CopyActivityFlag(anchor.activity, driven, synced, (tag + "SyncActive").c_str());
+    auto* pitchFlag = CopyActivityFlag(anchor.activity, driven, pitch, (tag + "PitchActive").c_str());
     if (!syncFlag || !pitchFlag) {
-        LogReflectedFields(activity);
+        LogReflectedFields(anchor.activity);
         return fail("activity binding validation failed");
     }
-    auto wrap = [&](RE::hkbGenerator* child, RE::hkbNode* modifier, const char* name) -> RE::hkbGenerator* {
-        auto* wrapper = CopyPairedWrapper(wrapperSource, name);
-        auto** gen = ReflectedPointer<RE::hkbGenerator*>(wrapper, "generator");
-        auto** mod = ReflectedPointer<RE::hkbNode*>(wrapper, "modifier");
-        if (!gen || !mod) return nullptr;
-        *gen = child;
-        AddRef(child);
-        *mod = modifier;
-        AddRef(modifier);
-        return reinterpret_cast<RE::hkbGenerator*>(wrapper);
-    };
-    auto variant = spec.clips[0];
+    auto variant = spec.clips[role];
     variant.file = PairedRig::ClipPath(variant.file, profile.kind);
     const int stateId = TakeStateIds(sm, ids, 1);
     if (stateId < 0) return fail("state IDs exhausted");
@@ -771,29 +987,17 @@ void InjectCreaturePair(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateMac
     auto* clip = MakeClip(variant.clipName.c_str(), variant.file.c_str(), static_cast<std::uint16_t>(index),
         MakeTriggerArray(triggers), nullptr, true);
     auto* sync = static_cast<RE::BSSynchronizedClipGenerator*>(
-        MakeSyncClip(variant.enterEvent.c_str(), clip, "2_", true, spec.paired.getToMarkTime,
+        MakeSyncClip(variant.enterEvent.c_str(), clip, role == 0 ? "2_" : "", role == 0, spec.paired.getToMarkTime,
             spec.paired.markErrorThreshold, spec.paired.reorientSupport, spec.paired.applyMotionFromRoot, nullptr));
     if (!sync) return fail("sync allocation failed");
-    auto* inner = wrap(sync, syncFlag, (spec.id + "_CreatureSyncWrapper").c_str());
-    auto* outer = inner ? wrap(inner, pitchFlag, (spec.id + "_CreaturePitchWrapper").c_str()) : nullptr;
-    if (!profile.innerRoute) {
-        auto* drivenFlag = CopyActivityFlag(activity, driven, driven, (spec.id + "_CreatureDrivenActive").c_str());
-        if (outer && drivenFlag)
-            outer = wrap(outer, drivenFlag, (spec.id + "_CreatureDrivenWrapper").c_str());
-        else
-            outer = nullptr;
-    }
-    if (outer && profile.preserveModifiers && !profile.innerRoute) {
-        auto** nativeModifier = ReflectedPointer<RE::hkbNode*>(wrapperSource, "modifier");
-        outer = nativeModifier && *nativeModifier ? wrap(outer, *nativeModifier, (spec.id + "_CreaturePhysics").c_str())
-                                                  : nullptr;
-    }
+    auto* flagged = WrapCreature(
+        anchor, WrapCreature(anchor, sync, syncFlag, tag + "SyncWrapper"), pitchFlag, tag + "PitchWrapper");
+    auto* outer = WrapCreatureNative(anchor, profile, flagged, driven, tag);
     if (!outer) return fail("wrapper fields unavailable");
     const auto& effects = PassEffects(sm);
-    auto* entryEffect =
-        MakeBlendEffect(effects.enter, (spec.id + "_CreatureEnter").c_str(), std::max(0.0f, spec.enterBlend), -1);
+    auto* entryEffect = MakeBlendEffect(effects.enter, (tag + "Enter").c_str(), std::max(0.0f, spec.enterBlend), -1);
     const float blend = spec.exitBlend >= 0 ? spec.exitBlend : 0.2f;
-    auto* exitEffect = MakeBlendEffect(effects.exit, (spec.id + "_CreatureExit").c_str(), blend, -1);
+    auto* exitEffect = MakeBlendEffect(effects.exit, (tag + "Exit").c_str(), blend, -1);
     if (!entryEffect || !exitEffect) return fail("native blend template unavailable");
     auto* exits = MakeTransitionArray(0);
     for (const char* name : {spec.events.exit.c_str(), "PairEnd", "2_PairEnd", "pairedStop", "NPCpairedStop"}) {
@@ -805,7 +1009,7 @@ void InjectCreaturePair(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateMac
     }
     if (spec.paired.lossBlend > 0) {
         const int event = InjectEvent(graph, spec.paired.lossExitEvent.c_str());
-        auto* effect = MakeBlendEffect(effects.exit, (spec.id + "_CreatureLoss").c_str(), spec.paired.lossBlend, -1);
+        auto* effect = MakeBlendEffect(effects.exit, (tag + "Loss").c_str(), spec.paired.lossBlend, -1);
         if (event < 0 || !effect) return fail("loss exit unavailable");
         TransitionInfo transition{};
         FillTransition(transition, event, returnState, effect, TransitionInfo::kDisableCondition,
@@ -815,7 +1019,7 @@ void InjectCreaturePair(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateMac
     if (spec.recovery.enabled) {
         const int event = InjectEvent(graph, spec.recovery.recoverEvent.c_str());
         const float seconds = spec.recovery.blend >= 0 ? spec.recovery.blend : blend;
-        auto* effect = MakeBlendEffect(effects.exit, (spec.id + "_CreatureRecovery").c_str(), seconds, -1);
+        auto* effect = MakeBlendEffect(effects.exit, (tag + "Recovery").c_str(), seconds, -1);
         if (event < 0 || !effect) return fail("recovery exit unavailable");
         TransitionInfo transition{};
         FillTransition(transition, event, returnState, effect, TransitionInfo::kDisableCondition,
@@ -827,27 +1031,24 @@ void InjectCreaturePair(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateMac
     FillTransition(
         entry, enter, stateId, entryEffect, TransitionInfo::kDisableCondition | TransitionInfo::kIsLocalWildcard);
     sm->states.push_back(reinterpret_cast<RE::hkbStateMachine::StateInfo*>(state));
-    wild->transitions.push_back(entry);
+    anchor.wild->transitions.push_back(entry);
     ExitBlendHooks::Register(exitEffect, blend, action);
     ids.insert(stateId);
-    sm->areBindablesCached = false;
-    graph->areBindablesCached = false;
-    if (graph->rootGenerator) graph->rootGenerator->areBindablesCached = false;
-    start->generator->areBindablesCached = false;
+    InvalidateCreatureBindables(graph, anchor);
     Result result;
     result.actionIdx = action;
     result.graph = NodeName(sm);
     result.pairedRig = profile.kind;
     result.injected = true;
-    result.enterIds = {enter, -1};
+    result.enterIds = role == 0 ? std::vector<int>{enter, -1} : std::vector<int>{-1, enter};
     result.stateIds = {stateId};
     result.exitId = end;
     Publish(std::move(result));
     loading.Ready();
-    PublishSync({sync, clip, variant.file, action, 0, -1, false, profile.kind});
+    PublishSync({sync, clip, variant.file, action, role, -1, false, profile.kind});
     logger::info(
-        "[PairRig] '{}' rig={} target injected: state={} prefix=2_ file='{}' index={} flags={}/{}; native ragdoll routes retained",
-        spec.id, profile.name, stateId, variant.file, index, synced, pitch);
+        "[PairRig] '{}' rig={} {} injected: state={} prefix={} file='{}' index={} flags={}/{}; native ragdoll routes retained",
+        spec.id, profile.name, roleName, stateId, role == 0 ? "2_" : "NPC", variant.file, index, synced, pitch);
 }
 
 // ── Event registration (0.12.209) ────────────────────────────────────────────────────────────────
@@ -1108,6 +1309,7 @@ const char* PreparePairContainers(RE::hkbBehaviorGraph* graph, RE::hkbStateMachi
         auto* machine = static_cast<RE::hkbStateMachine*>(AllocZero(sizeof(RE::hkbStateMachine)));
         auto* startBindings = WithBinding(nullptr, *templates.startState, state);
         if (!machine || !startBindings) return "container machine unavailable";
+        NoteCreatedNode();
         std::memcpy(machine, root, sizeof(RE::hkbStateMachine));
         // Reference members copied from the root are cleared before any is set (nothing is released).
         auto clear = [](auto& member) { std::memset(&member, 0, sizeof(member)); };
@@ -1403,7 +1605,7 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
             const auto& link = src.links[linkIndex];
             const int event = InjectEvent(graph, link.enterEvent.c_str());
             const float seconds = link.blend >= 0 ? link.blend : spec.enterBlend >= 0 ? spec.enterBlend : 0.0f;
-            auto* eff = MakeBlendEffect(entry.transition, (link.enterEvent + "_FullBody").c_str(), seconds, 1);
+            auto* eff = SharedLinkEffect(entry.transition, seconds, 1);
             if (event >= 0 && eff) {
                 addEntry(event, base, eff, link.enterEvent, seconds, true);
                 entries.back().self = from == action;
@@ -1705,8 +1907,8 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
             static_cast<std::int16_t>(TransitionInfo::kIsLocalWildcard | TransitionInfo::kDisableCondition), prio);
         wild->transitions.push_back(ti);
     }
-    // Each ordinary link has its own immutable effect and event. Never mutate
-    // a shared destination effect while another actor is blending through it.
+    // Each ordinary link has its own event; a link with its own blend gets an immutable effect shared by every link
+    // with that blend (SharedLinkEffect). Never mutate the destination's effect while another actor blends through it.
     if (!spec.paired.enabled && n == 1)
         for (const auto& [source, linkIndex] : Actions::IncomingLinks(a_actionIdx)) {
             const auto& from = Actions::Spec(source);
@@ -1717,7 +1919,7 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
             if (event < 0) continue;
             auto* effect = enterEff;
             if (link.blend >= 0) {
-                effect = MakeBlendEffect(eff.enter, name.c_str(), link.blend, 1);
+                effect = SharedLinkEffect(eff.enter, link.blend, 1);
                 if (!effect) continue;
             }
             // A transition into itself restarts the clip (10-31).
@@ -1773,10 +1975,25 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
         for (int a = 0; a < Actions::Count(); ++a) {
             const auto& spec = Actions::Spec(a);
             if (spec.clips.empty()) continue;  // a selecting action has nothing to play (XmlV2, 0.12.244)
-            if (spec.paired.enabled && PairedRig::SharesAssets(spec.paired.targetRig, rig) &&
-                PairedRig::Equal(PairedRig::Find(spec.paired.targetRig)->root, actual->root))
-                InjectCreaturePair(a, a_graph, static_cast<RE::hkbStateMachine*>(root), a_character,
-                    *PairedRig::Find(spec.paired.targetRig), search);
+            if (spec.paired.enabled) {
+                // Each role whose rig this graph shares (same folder and root behavior): the partner's and, for a
+                // creature-started pair (11-05 phase 2), the initiator's.
+                const auto plays = [&](PairedRig::Kind wanted) {
+                    return PairedRig::IsCreature(wanted) && PairedRig::SharesAssets(wanted, rig) &&
+                           PairedRig::Equal(PairedRig::Find(wanted)->root, actual->root);
+                };
+                if (plays(spec.paired.targetRig))
+                    InjectCreaturePair(a, 0, a_graph, static_cast<RE::hkbStateMachine*>(root), a_character,
+                        *PairedRig::Find(spec.paired.targetRig), search);
+                if (plays(spec.rig))
+                    InjectCreaturePair(a, 1, a_graph, static_cast<RE::hkbStateMachine*>(root), a_character,
+                        *PairedRig::Find(spec.rig), search);
+            }
+            // A creature's own action plays on its whole skeleton family (11-05): every creature sharing its folder
+            // and skeleton (dog and wolf, draugr and skeleton), each through its own graph's anchor. An HKX cannot
+            // tell those creatures apart, so the editor writes whichever one it matched.
+            else if (PairedRig::SharesAssets(spec.rig, rig))
+                InjectCreatureAction(a, a_graph, static_cast<RE::hkbStateMachine*>(root), a_character, *actual, search);
         }
         logger::info("[InjectProfile] creature={} visits={} nativeCacheHits={} bufferGrowths={}", actual->name,
             search.visits, search.cacheHits, search.bufferGrowths);
@@ -1864,15 +2081,33 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
     // Events go into this graph right before its first action (a validated target that no action
     // enters gets none).
     const bool rootTarget = std::strcmp(tgt->smName, "RootBehaviorGraph") == 0;
+    // The node id budget: the graph's own nodes now, then every node an action makes. An action that might not fit
+    // is left out whole, and the graph keeps working (see "Node id budget" above).
+    const char* viewLabel = g_currentFirstPerson ? "first-person" : "third-person";
+    const std::size_t nativeNodes = rootTarget ? CountNodes(root) : 0;
+    const std::size_t createdBefore = CreatedNodes();
+    const auto made = [&] { return CreatedNodes() - createdBefore; };
+    std::vector<const std::string*> overBudget;
+    const auto fits = [&](int action) {
+        if (nativeNodes + made() + NodeReserve(action) + kNodeIdsKeptFree <= kNodeIdLimit) return true;
+        overBudget.push_back(&Actions::Spec(action).id);
+        return false;
+    };
     int firstPersonPairs = 0;
     for (int a = 0; a < Actions::Count(); ++a) {
         const auto& spec = Actions::Spec(a);
         if (spec.clips.empty()) continue;  // a selecting action has nothing to play (XmlV2, 0.12.244)
+        if (spec.CreatureAction()) continue;
         if (spec.paired.enabled) {
+            // A creature-started pair (11-05 phase 2) gives the character its partner role only, none to a pair
+            // between creatures.
+            if (!PairedRig::SupportsRole(spec.rig, spec.paired.targetRig, PairedRig::Kind::kCharacter, 0) &&
+                !PairedRig::SupportsRole(spec.rig, spec.paired.targetRig, PairedRig::Kind::kCharacter, 1))
+                continue;
             // Pairs play in third person; the first-person root gets none (one line below, not one each).
             if (rootTarget && g_currentFirstPerson)
                 ++firstPersonPairs;
-            else if (rootTarget) {
+            else if (rootTarget && fits(a)) {
                 RegisterEvents(a_graph);
                 InjectPairedAction(a, a_graph, sm, wild, ids, a_character, tgt->startStateId);
             }
@@ -1880,7 +2115,7 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
         }
         // Each view's graphs get the actions that play in it (runtime/ViewSpec.h).
         if (g_currentFirstPerson ? !InFirst(spec.view.view) : !InThird(spec.view.view)) continue;
-        if (!rootTarget) continue;
+        if (!rootTarget || !fits(a)) continue;
         RegisterEvents(a_graph);
         if (!g_currentFirstPerson && spec.condition.inAir != 0)
             InjectAction(a, *tgt, a_graph, sm, startState, wild, ids, a_character, true);
@@ -1889,6 +2124,27 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
     if (firstPersonPairs)
         logger::info("[PairB] first-person {}: {} paired actions not injected (pairs play in third person)",
             tgt->smName, firstPersonPairs);
+    if (rootTarget) {
+        // Counted again, for the log: the engine numbered 33 more than native + made in a test game 11-07 (7010 + 506,
+        // numStaticNodes 7549), likely native nodes an action newly reaches; this count should include them.
+        const std::size_t counted = CountNodes(root);
+        logger::info(
+            "[NodeBudget] {} 0_master: native {} + AI {} = {}, counted after {} node ids of {} ({} kept free for clones)",
+            viewLabel, nativeNodes, made(), nativeNodes + made(), counted, kNodeIdLimit, kNodeIdsKeptFree);
+        if (counted + kNodeIdsKeptFree > kNodeIdLimit)
+            logger::error("[NodeBudget] {} 0_master: {} nodes leave fewer than {} of the {} node ids free", viewLabel,
+                counted, kNodeIdsKeptFree, kNodeIdLimit);
+        if (!overBudget.empty()) {
+            std::string names;
+            for (std::size_t i = 0; i < overBudget.size() && i < 40; ++i) names += (i ? ", " : "") + *overBudget[i];
+            if (overBudget.size() > 40) names += std::format(", ... ({} more)", overBudget.size() - 40);
+            logger::error(
+                "[NodeBudget] {} 0_master: {} actions left out — the behavior graph is full (Havok numbers its nodes "
+                "with 16-bit ids; more would make two nodes share one and crash). Fewer behavior mods (Nemesis/"
+                "Pandora) free room: {}",
+                viewLabel, overBudget.size(), names);
+        }
+    }
 }
 
 // ── 훅 1: CreateSymbolIdMap ─────────────────────────────────────────────────
@@ -2113,16 +2369,18 @@ bool AnyInjected(int a_actionIdx) {
 }
 bool HasPairedRoutes(int action) {
     if (action < 0 || action >= Actions::Count()) return false;
-    bool human = false, target = false;
+    // Both roles' graphs: the initiator's (the character, or a creature since 11-05 phase 2) and the partner's.
+    const auto& spec = Actions::Spec(action);
+    bool initiator = false, target = false;
     std::shared_lock lock(g_publishLock);
     AnyResultOf(action, [&](const Result& r) {
         if (r.injected) {
-            human |= r.pairedRig == PairedRig::Kind::kCharacter;
-            target |= r.pairedRig == Actions::Spec(action).paired.targetRig;
+            initiator |= r.pairedRig == spec.rig;
+            target |= r.pairedRig == spec.paired.targetRig;
         }
         return false;
     });
-    return human && target;
+    return initiator && target;
 }
 bool HasAirRoute(int a_actionIdx) {
     std::shared_lock lock(g_publishLock);

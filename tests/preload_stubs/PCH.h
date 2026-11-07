@@ -141,6 +141,8 @@ struct SpecType {
     } paired;
     std::vector<Clip> clips;
     ViewSpec view;
+    PairedRig::Kind rig = PairedRig::Kind::kCharacter;  // a creature's own action (11-05)
+    bool CreatureAction() const { return !paired.enabled && rig != PairedRig::Kind::kCharacter; }
 };
 inline std::vector<SpecType> specs;
 inline int Count() { return static_cast<int>(specs.size()); }

@@ -182,9 +182,13 @@ void Ensure(RE::Actor* p, const std::vector<std::string>& a_names) {
     if (PairedRig::IsCreature(rig))
         for (int i = 0; i < Actions::Count(); ++i) {
             const auto& spec = Actions::Spec(i);
-            if (spec.paired.enabled && PairedRig::SharesAssets(spec.paired.targetRig, rig) &&
-                PairedRig::Equal(PairedRig::Find(spec.paired.targetRig)->root, profile->root))
-                needsCreatureVariables = true;
+            // Either role of a pair this creature plays: the partner's, or the initiator's (11-05 phase 2).
+            for (const auto role : {spec.paired.targetRig, spec.rig})
+                if (spec.paired.enabled && PairedRig::IsCreature(role) && PairedRig::SharesAssets(role, rig) &&
+                    PairedRig::Equal(PairedRig::Find(role)->root, profile->root))
+                    needsCreatureVariables = true;
+            // A creature's own action needs none of these: they are the synchronized clip's flags (bIsSynced,
+            // DisablePitch), which only a pair target's state reads (in-game 11-05: the check failed every 2 s).
         }
     if (needsCreatureVariables && !EnsureCreatureVariables(g.get(), *profile)) {
         logger::error("[PairRig] {} variable lookup validation failed; native start remains gated by graph-state reads",

@@ -41,6 +41,7 @@
 #include "runtime/PairStartCamera.h"
 #include "runtime/ActorImmunity.h"
 #include "runtime/AnnotationCommands.h"
+#include "core/StartupRecord.h"
 #include <spdlog/sinks/basic_file_sink.h>
 
 // Runtime behavior injection, XML declarations and actor action lifecycles.
@@ -81,6 +82,20 @@ void SetupLog() {
     spdlog::set_level(spdlog::level::info);
     spdlog::flush_on(spdlog::level::info);
 }
+// The previous launch's startup record goes into this log (it died during startup when it did not finish), and
+// this launch's starts (core/StartupRecord.h).
+void BeginStartupRecord() {
+    const auto dir = SKSE::log::log_directory();
+    if (!dir) return;
+    const auto about =
+        std::format("AnimationInjector {}, runtime {}", AI_VERSION_STRING, REL::Module::get().version().string());
+    const auto previous = AnimationInjector::StartupRecord::Begin(*dir / "AnimationInjector.startup.txt", about);
+    for (const auto& line : previous.lines)
+        if (previous.complete)
+            logger::info("[Startup] {}", line);
+        else
+            logger::warn("[Startup] {}", line);
+}
 // The previous session ends before a load and before a new game (kNewGame comes without kPreLoadGame):
 // pair features release their leases (immunity, spells, controls, time), a carry releases the
 // target, head tracking and its start control, and every per-session table is dropped.
@@ -115,6 +130,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
     SetupLog();
     logger::info("AnimationInjector {} (format 6 only, no older forms) loaded (runtime {})", AI_VERSION_STRING,
         REL::Module::get().version().string());
+    BeginStartupRecord();
     AnimationInjector::Carry::InstallSerialization();
     SKSE::AllocTrampoline(4096);
 
@@ -132,10 +148,20 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
     PlayerHooks::Install();      // NotifyAnimationGraph: HyperArmor, native cancels, event triggers
     AirControl::Install();       // Install before the optional diagnostic wrapper.
     GraphEventHooks::Install();  // hkbStateMachine::handleEvent: handoff guard, exit-blend capture, diagnostics
+    StartupRecord::Mark("plugin-loaded");
 
     SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* msg) {
         using namespace AnimationInjector;
         switch (msg->type) {
+        case SKSE::MessagingInterface::kPostLoad:
+            StartupRecord::Mark("all-plugins-loaded");
+            // Slots other plugins check at their own load stay theirs until every plugin has loaded
+            // (core/ClipHooks.h); no graph activates before the game data is loaded.
+            ClipHooks::InstallActivation();
+            ExitBlendHooks::InstallActivation();
+            break;
+        case SKSE::MessagingInterface::kPostPostLoad: StartupRecord::Mark("post-post-load"); break;
+        case SKSE::MessagingInterface::kInputLoaded: StartupRecord::Mark("input-loaded"); break;
         case SKSE::MessagingInterface::kDataLoaded:
             Actions::OnDataLoaded();
             TdmMovement::Load();  // Optional: movement conditions and the Rotate-window turn follow TDM's settings.
@@ -165,6 +191,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
                 {FrameworkSettings::Get().pressHoldTime, FrameworkSettings::Get().pressDoubleWindow});
             InputSink::Register();
             HitDispatch::Register();  // Gameplay hit dispatch and optional diagnostics
+            StartupRecord::Finish("data-loaded");
             break;
         case SKSE::MessagingInterface::kPreLoadGame:
             AnimationPreloader::ResetProgress();

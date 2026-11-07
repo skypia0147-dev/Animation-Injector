@@ -165,6 +165,9 @@ struct ActionSpec {
     std::string id;       // "Dodge"
     std::string localId;  // the id as written in its file, before the file's qualifier: names its ragdoll file
     ViewSpec view;        // the camera view it plays in (runtime/ViewSpec.h); pairs and carries: third
+    // Whose graph plays it (11-05): character, or a creature of runtime/PairedRigCatalog.h. A creature action's
+    // clip is relative to that creature's actor folder and it is injected into that creature's root machine.
+    PairedRig::Kind rig = PairedRig::Kind::kCharacter;
     ConditionFlowXml::Program flow;
     std::vector<std::string> flowActions;
     // Ordinary actions join the root's FullBodyPlayerIdles machine in both views; pairs the root (0.12.232).
@@ -266,6 +269,9 @@ struct ActionSpec {
     // A selecting action (0.12.244): no clip, its Flow sends every route to another action. It is never injected;
     // its start gates and Flow are all it has, and the action the Flow picks is checked when it starts.
     bool SelectsOnly() const { return clips.empty() && !flow.nodes.empty(); }
+    // A creature's own action (11-05): not a pair, played in that creature's graph with its clip relative to that
+    // creature's actor folder.
+    bool CreatureAction() const { return !paired.enabled && rig != PairedRig::Kind::kCharacter; }
 };
 
 }  // namespace AnimationInjector

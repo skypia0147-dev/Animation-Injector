@@ -507,7 +507,8 @@ int wmain(int argc, wchar_t** argv) {
         std::cout << "Valid: " << out.size() << " actions, " << events.size() << " registered events\n";
         for (auto& a : out) {
             std::cout << a.id << " key=" << a.trigger.key << " clips=" << a.clips.size()
-                      << " targetRig=" << PairedRig::Name(a.paired.targetRig) << '\n';
+                      << " rig=" << PairedRig::Name(a.rig) << " targetRig=" << PairedRig::Name(a.paired.targetRig)
+                      << '\n';
             if (a.carryRelease.enabled)
                 std::cout << "CarryRelease event=" << a.carryRelease.event << " at=" << a.carryRelease.at << '\n';
             if (a.recovery.enabled)
