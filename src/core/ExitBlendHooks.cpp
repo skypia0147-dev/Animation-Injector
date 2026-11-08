@@ -36,11 +36,14 @@ struct NameHash {
     std::size_t operator()(std::string_view text) const noexcept { return std::hash<std::string_view>{}(text); }
 };
 std::shared_mutex exitsLock;
-// Exit effect name -> action, or kSessionPair / kSessionPairLoss for the shared pair exits.
+// Exit effect name -> action, or kSharedExit / kSessionPair / kSessionPairLoss for the shared exits.
 std::unordered_map<std::string, int, NameHash, std::equal_to<>> exits;
 constexpr int kSessionPair = -2;
 // The shared partner-loss exit (0.12.286): the survivor's blend when its partner dies or ragdolls.
 constexpr int kSessionPairLoss = -3;
+// An exit effect every action with that exit blend shares (core/GraphInjector SharedEffect, 11-08): its action is the
+// one the player is leaving, read on the main thread (Drain) since runners are not read on the animation threads.
+constexpr int kSharedExit = -4;
 ExitBlendMailbox<Request> mailbox;
 // The mailbox's held items, read without the lock: with none, an activation has nothing to clear.
 std::atomic<std::size_t> mailboxItems{0};
@@ -189,7 +192,8 @@ struct Activate {
             action = SessionPairAction(context);
         else if (action == kSessionPairLoss)
             action = SessionPairLossAction(context);
-        if (action >= 0 && action < Actions::Count()) {
+        const bool shared = action == kSharedExit;
+        if (shared || (action >= 0 && action < Actions::Count())) {
             // Keep the last pair pose before the first blend step.
             Carry::ObserveExitBlend(context);
             auto* actor = ClipHooks::ActorForContext(context);
@@ -197,14 +201,14 @@ struct Activate {
                 Request request;
                 request.actor = actor->GetHandle();
                 request.action = action;
-                request.paired = Actions::Spec(action).paired.enabled;
+                request.paired = !shared && Actions::Spec(action).paired.enabled;
                 RE::ActorHandle participant;
                 const bool valid = request.paired
                                        ? PairedSession::TryGetParticipant(context, participant, request.pair) &&
                                              participant == request.actor
                                        : true;
                 if (valid) {
-                    if (!request.paired) request.serial = Actions::Runner(action).PlaybackSerial();
+                    if (!request.paired && !shared) request.serial = Actions::Runner(action).PlaybackSerial();
                     std::lock_guard lock(mutex);
                     mailbox.Activate(Key(node, context), request);
                     mailboxItems.store(mailbox.Active(), std::memory_order_release);
@@ -300,6 +304,12 @@ void Register(RE::hkReferencedObject* effect, float duration, int action) {
     std::lock_guard lock(mutex);
     if (action < Actions::Count() && Actions::Spec(action).paired.enabled) AddDestinationEvents(action);
 }
+void RegisterSharedExit(RE::hkReferencedObject* effect) {
+    auto* node = static_cast<RE::hkbNode*>(effect);
+    if (!node || !node->name.c_str()) return;
+    std::unique_lock lock(exitsLock);
+    exits.insert_or_assign(node->name.c_str(), kSharedExit);
+}
 void RegisterSharedPairExit(RE::hkReferencedObject* effect) {
     auto* node = static_cast<RE::hkbNode*>(effect);
     if (!node || !node->name.c_str()) return;
@@ -329,8 +339,23 @@ void Drain() {
         const auto& request = requests[i];
         auto actor = request.actor.get();
         if (!actor || !actor->IsPlayerRef() || !actor->Is3DLoaded() || actor->IsDead() || actor->IsInRagdollState() ||
-            request.action < 0 || request.action >= Actions::Count())
+            (request.action != kSharedExit && (request.action < 0 || request.action >= Actions::Count())))
             continue;
+        if (request.action == kSharedExit) {
+            // The one action the player is leaving through an authored exit blend; none or several: nothing to hand.
+            ActionRunner* leaving = nullptr;
+            int count = 0;
+            Actions::FindRunner(actor.get(), [&](int, ActionRunner& r) {
+                if (r.GetState() == ActionRunner::State::kExiting && !r.Spec().paired.enabled &&
+                    r.Spec().exitBlend > 0.0f) {
+                    leaving = &r;
+                    ++count;
+                }
+                return false;
+            });
+            if (count == 1) leaving->BeginNormalExitMovement(leaving->PlaybackSerial());
+            continue;
+        }
         if (request.paired)
             PairedSession::BeginNormalExitMovement(request.pair, request.actor, request.action);
         else

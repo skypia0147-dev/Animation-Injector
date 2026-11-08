@@ -63,8 +63,8 @@ struct Pass {
         bool filled = false;
     };
     std::unordered_map<const void*, Ids> ids;
-    // Link blends by (native template, duration bits, event mode): one immutable effect each (SharedLinkEffect).
-    std::map<std::tuple<const void*, std::uint32_t, int>, RE::hkReferencedObject*> linkEffects;
+    // Blends by (native template, duration bits, event mode, exit): one immutable effect each (SharedEffect).
+    std::map<std::tuple<const void*, std::uint32_t, int, bool>, RE::hkReferencedObject*> sharedEffects;
     // Runs once the staged exits and pair containers have joined the graph (the node id budget counts then).
     std::function<void()> afterCommit;
     struct FullBody {
@@ -107,24 +107,35 @@ struct Pass {
     } pairs;
 };
 thread_local Pass* g_pass = nullptr;
-// The blend of a link (one action entering another). Every link into this graph with the same native template,
-// duration and event mode shares one effect: nothing changes a link effect after it is made (exit effects, which
-// ExitBlendHooks finds by name, are never shared), and native graphs share theirs the same way. Each effect is a
-// node and takes one of the graph's 16-bit node ids; one per link grew with the square of the linked actions
-// (11-07 Trung53: 98 actions linked to one another made 6072 effects and pushed a 59520-node graph past 65535, the
-// ids wrapped and a global transition of the cart driver read a null state machine).
-RE::hkReferencedObject* SharedLinkEffect(const RE::hkReferencedObject* a_template, float a_seconds, int a_eventMode) {
+// A blend effect: every enter, exit, recovery, cancel and link blend in this graph with the same native template,
+// duration and event mode shares one effect. Nothing changes an effect after it is made, and native graphs share
+// theirs the same way. Each effect is a node and takes one of the graph's 16-bit node ids: one per link grew with the
+// square of the linked actions (11-07 Trung53: 98 actions linked to one another made 6072 effects and pushed a
+// 59520-node graph past 65535, the ids wrapped and a global transition of the cart driver read a null state
+// machine), and one enter, exit and recovery effect per action made three of an action's four nodes (11-08).
+// Exit effects are kept apart from the others (ExitBlendHooks knows them by name and hands movement back during them:
+// RegisterSharedExit); an exit effect used as an enter would hand movement back at an action's start. A creature pair
+// keeps its own exit effect: ExitBlendHooks finds that pair by the effect's name.
+RE::hkReferencedObject* SharedEffect(
+    const RE::hkReferencedObject* a_template, float a_seconds, int a_eventMode, bool a_exit = false) {
     const float seconds = std::max(0.0f, a_seconds);
     const auto make = [&] {
-        return MakeBlendEffect(a_template, std::format("AI_LinkBlend_{:.2f}s", seconds).c_str(), seconds, a_eventMode);
+        return MakeBlendEffect(a_template,
+            std::format("{}_{:.2f}s{}", a_exit ? "AI_ExitBlend" : "AI_Blend", seconds, a_eventMode > 0 ? "_e" : "")
+                .c_str(),
+            seconds, a_eventMode);
     };
-    if (!g_pass || !a_template) return make();
+    if (!a_template) return nullptr;
+    if (!g_pass) return make();
     const auto key =
-        std::tuple{static_cast<const void*>(a_template), std::bit_cast<std::uint32_t>(seconds), a_eventMode};
-    if (const auto it = g_pass->linkEffects.find(key); it != g_pass->linkEffects.end()) return it->second;
+        std::tuple{static_cast<const void*>(a_template), std::bit_cast<std::uint32_t>(seconds), a_eventMode, a_exit};
+    if (const auto it = g_pass->sharedEffects.find(key); it != g_pass->sharedEffects.end()) return it->second;
     auto* effect = make();
-    if (effect) g_pass->linkEffects.emplace(key, effect);
+    if (effect) g_pass->sharedEffects.emplace(key, effect);
     return effect;
+}
+RE::hkReferencedObject* SharedLinkEffect(const RE::hkReferencedObject* a_template, float a_seconds, int a_eventMode) {
+    return SharedEffect(a_template, a_seconds, a_eventMode);
 }
 // The container exits by the blend variable their effect reads (core/PairEntry.h).
 enum PairExitKind : int { kPairExit, kPairLoss, kPairRecovery };
@@ -876,8 +887,8 @@ void InjectCreatureAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
     const auto& effects = PassEffects(sm);
     const float enterBlend = spec.enterBlend >= 0 ? spec.enterBlend : 0.2f;
     const float exitBlend = spec.exitBlend >= 0 ? spec.exitBlend : 0.2f;
-    auto* enterEffect = MakeBlendEffect(effects.enter, (spec.id + "_CreatureActionEnter").c_str(), enterBlend, -1);
-    auto* exitEffect = MakeBlendEffect(effects.exit, (spec.id + "_CreatureActionExit").c_str(), exitBlend, -1);
+    auto* enterEffect = SharedEffect(effects.enter, enterBlend, -1);
+    auto* exitEffect = SharedEffect(effects.exit, exitBlend, -1, true);
     if (!enterEffect || !exitEffect) return fail("native blend template unavailable");
     std::vector<TriggerDef> triggers;
     if (spec.exitTriggerBeforeEnd >= 0) triggers.push_back({spec.exitTriggerBeforeEnd, exitEvent, true});
@@ -896,16 +907,14 @@ void InjectCreatureAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
         if (w.closeAt >= 0) triggers.push_back({w.closeAt, close, true});
         if (!w.vanillaMatches.empty()) {
             const int cancel = InjectEvent(graph, w.nativeCancelEvent.c_str());
-            auto* effect = MakeBlendEffect(effects.exit, (spec.id + "_" + w.id + "CreatureCancel").c_str(),
-                w.blend >= 0 ? w.blend : exitBlend, -1);
+            auto* effect = SharedEffect(effects.exit, w.blend >= 0 ? w.blend : exitBlend, -1);
             if (cancel < 0 || !effect) return fail("cancel window unavailable");
             addExit(cancel, effect);
         }
     }
     if (spec.HasRecovery()) {
         InjectEvent(graph, spec.recovery.event.c_str());
-        auto* effect = MakeBlendEffect(effects.exit, (spec.id + "_CreatureActionRecover").c_str(),
-            spec.recovery.blend >= 0 ? spec.recovery.blend : exitBlend, -1);
+        auto* effect = SharedEffect(effects.exit, spec.recovery.blend >= 0 ? spec.recovery.blend : exitBlend, -1);
         if (!effect) return fail("recovery effect unavailable");
         addExit(recover, effect);
     }
@@ -941,7 +950,7 @@ void InjectCreatureAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
                                       (entry.self ? TransitionInfo::kAllowSelfTransitionByTransitionFromAnyState : 0)));
         anchor.wild->transitions.push_back(transition);
     }
-    ExitBlendHooks::Register(exitEffect, exitBlend, action);
+    if (exitBlend > 0) ExitBlendHooks::RegisterSharedExit(exitEffect);
     ids.insert(stateId);
     InvalidateCreatureBindables(graph, anchor);
     Result result;
@@ -1008,8 +1017,9 @@ void InjectCreaturePair(int action, int role, RE::hkbBehaviorGraph* graph, RE::h
     auto* outer = WrapCreatureNative(anchor, profile, flagged, driven, tag);
     if (!outer) return fail("wrapper fields unavailable");
     const auto& effects = PassEffects(sm);
-    auto* entryEffect = MakeBlendEffect(effects.enter, (tag + "Enter").c_str(), std::max(0.0f, spec.enterBlend), -1);
+    auto* entryEffect = SharedEffect(effects.enter, std::max(0.0f, spec.enterBlend), -1);
     const float blend = spec.exitBlend >= 0 ? spec.exitBlend : 0.2f;
+    // Its own exit effect: ExitBlendHooks finds the pair by this name and records its destination events.
     auto* exitEffect = MakeBlendEffect(effects.exit, (tag + "Exit").c_str(), blend, -1);
     if (!entryEffect || !exitEffect) return fail("native blend template unavailable");
     auto* exits = MakeTransitionArray(0);
@@ -1022,7 +1032,7 @@ void InjectCreaturePair(int action, int role, RE::hkbBehaviorGraph* graph, RE::h
     }
     if (spec.paired.lossBlend > 0) {
         const int event = InjectEvent(graph, spec.paired.lossExitEvent.c_str());
-        auto* effect = MakeBlendEffect(effects.exit, (tag + "Loss").c_str(), spec.paired.lossBlend, -1);
+        auto* effect = SharedEffect(effects.exit, spec.paired.lossBlend, -1);
         if (event < 0 || !effect) return fail("loss exit unavailable");
         TransitionInfo transition{};
         FillTransition(transition, event, returnState, effect, TransitionInfo::kDisableCondition,
@@ -1032,7 +1042,7 @@ void InjectCreaturePair(int action, int role, RE::hkbBehaviorGraph* graph, RE::h
     if (spec.recovery.enabled) {
         const int event = InjectEvent(graph, spec.recovery.recoverEvent.c_str());
         const float seconds = spec.recovery.blend >= 0 ? spec.recovery.blend : blend;
-        auto* effect = MakeBlendEffect(effects.exit, (tag + "Recovery").c_str(), seconds, -1);
+        auto* effect = SharedEffect(effects.exit, seconds, -1);
         if (event < 0 || !effect) return fail("recovery exit unavailable");
         TransitionInfo transition{};
         FillTransition(transition, event, returnState, effect, TransitionInfo::kDisableCondition,
@@ -1532,13 +1542,14 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
     const int exitEvent = InjectEvent(graph, spec.events.exit.c_str());
     const int recover = spec.HasRecovery() ? InjectEvent(graph, spec.recovery.recoverEvent.c_str()) : -1;
     if (exitEvent < 0 || (spec.HasRecovery() && recover < 0)) return fail("exit event unavailable");
-    auto effect = [&](RE::hkReferencedObject* source, const std::string& name, float duration) {
-        return duration < 0 ? source : MakeBlendEffect(source, name.c_str(), duration, -1);
+    // An unset duration keeps the native effect; a set one shares the graph's effect of that duration (SharedEffect).
+    auto effect = [&](RE::hkReferencedObject* source, float duration, bool exit = false) {
+        return duration < 0 ? source : SharedEffect(source, duration, -1, exit);
     };
-    auto* enterEffect = effect(entry.transition, spec.id + "_FullBodyEnter", spec.enterBlend);
-    auto* exitEffect = effect(exit.transition, spec.id + "_FullBodyExit", spec.exitBlend);
+    auto* enterEffect = effect(entry.transition, spec.enterBlend);
+    auto* exitEffect = effect(exit.transition, spec.exitBlend, true);
     if (!enterEffect || !exitEffect) return fail("effects unavailable");
-    if (spec.exitBlend >= 0) ExitBlendHooks::Register(exitEffect, spec.exitBlend, action);
+    if (spec.exitBlend > 0) ExitBlendHooks::RegisterSharedExit(exitEffect);
     struct Window {
         int open, close, cancel;
         RE::hkReferencedObject* effect;
@@ -1548,8 +1559,7 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
     for (const auto& w : spec.cancels) {
         Window ids{InjectEvent(graph, w.openEvent.c_str()), InjectEvent(graph, w.closeEvent.c_str()),
             w.vanillaMatches.empty() ? -1 : InjectEvent(graph, w.nativeCancelEvent.c_str()),
-            effect(entry.transition, spec.id + "_" + w.id + "Blend", w.blend),
-            effect(exit.transition, spec.id + "_" + w.id + "CancelBlend", w.blend)};
+            effect(entry.transition, w.blend), effect(exit.transition, w.blend)};
         if (ids.open < 0 || ids.close < 0 || !ids.effect || !ids.exitEffect ||
             (!w.vanillaMatches.empty() && ids.cancel < 0))
             return fail("window unavailable");
@@ -1601,8 +1611,7 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
         const auto& recovery = spec.recovery;
         if (recovery.enabled) {
             InjectEvent(graph, recovery.event.c_str());
-            auto* recoverEffect = effect(exit.transition, spec.id + "_FullBodyRecover_" + c.tag,
-                recovery.blend >= 0 ? recovery.blend : spec.exitBlend);
+            auto* recoverEffect = effect(exit.transition, recovery.blend >= 0 ? recovery.blend : spec.exitBlend);
             if (!recoverEffect) return fail("clip recovery effect unavailable");
             addExit(recover, base + i, recoverEffect);
         }
@@ -1781,15 +1790,15 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
     RE::hkReferencedObject* exitEff = eff.exit;
     std::string exitName = eff.exitName;
     if (spec.enterBlend >= 0.0f)
-        if (auto* e = MakeBlendEffect(eff.enter, ("AI_" + spec.id + "_EnterBlend").c_str(), spec.enterBlend, 1)) {
+        if (auto* e = SharedEffect(eff.enter, spec.enterBlend, 1)) {
             enterEff = e;
             enterName = NodeName(e);
         }
     if (spec.exitBlend >= 0.0f)
-        if (auto* e = MakeBlendEffect(eff.exit, ("AI_" + spec.id + "_ExitBlend").c_str(), spec.exitBlend, 1)) {
+        if (auto* e = SharedEffect(eff.exit, spec.exitBlend, 1, true)) {
             exitEff = e;
             exitName = NodeName(e);
-            ExitBlendHooks::Register(e, spec.exitBlend, a_actionIdx);
+            if (spec.exitBlend > 0.0f) ExitBlendHooks::RegisterSharedExit(e);
         }
     // stateId 범위 (겹치지 않게)
     const std::int32_t base = TakeStateIds(sm, ids, n);
@@ -1864,9 +1873,7 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
         FillTransition(arr->transitions._data[at++], res.exitId, tgt.startStateId, exitEff, 0);
         if (recovery.enabled) {
             const float seconds = recovery.blend >= 0 ? recovery.blend : spec.exitBlend;
-            auto* recoverEff = seconds < 0 ? eff.exit
-                                           : MakeBlendEffect(eff.exit,
-                                                 ("AI_" + spec.id + "_RecoverBlend_" + c.tag).c_str(), seconds, 1);
+            auto* recoverEff = seconds < 0 ? eff.exit : SharedEffect(eff.exit, seconds, 1);
             if (!recoverEff) return fail("clip recovery effect unavailable");
             FillTransition(arr->transitions._data[at++], res.recoverId, tgt.startStateId, recoverEff, 0, prio);
         }  // Recovery → 이동

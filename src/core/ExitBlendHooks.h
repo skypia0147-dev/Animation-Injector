@@ -6,6 +6,9 @@ namespace AnimationInjector::ExitBlendHooks {
 void CaptureDestination(RE::hkbStateMachine* root, const RE::hkbContext& context, const RE::hkbEvent& event);
 // Register only explicitly authored normal exits, never entry or link effects (a pair's loss exit: below).
 void Register(RE::hkReferencedObject* effect, float duration, int action);
+// A normal exit effect shared by every non-pair action with that exit blend (core/GraphInjector SharedEffect): its
+// action is the one the player is leaving when it activates.
+void RegisterSharedExit(RE::hkReferencedObject* effect);
 // The normal exit effect shared by every pair of one role (core/PairEntry.h). Its action is the pair
 // the actor plays, and it counts only when that pair authored an exit blend, as with Register.
 void RegisterSharedPairExit(RE::hkReferencedObject* effect);
