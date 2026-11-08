@@ -35,6 +35,7 @@
 #include "runtime/HitHistory.h"
 #include "runtime/TdmMovement.h"
 #include "runtime/HeldKeys.h"
+#include "ui/QteMenu.h"
 #include "core/StartupRecord.h"
 #include <atomic>
 #include <future>
@@ -719,6 +720,7 @@ struct
         UpdateNpcRunners(a_delta);
         static float ensureTimer = 0.0f;  // NPC 프로젝트 DB 에 이벤트 이름 등록 (외부 진입 이벤트가 오기 전에)
         Qte::Update(a_delta);
+        QteMenu::Sync();  // the QTE menu is open only while a QTE is on screen
         GetUpHandoff::Update(a_delta);
         InputSink::Get()->Tick(a_delta);                    // press kinds: a wait ends, a late game press goes out
         HeldKeys::Get().SetMoveDirection(MoveDirection());  // on="move" transitions

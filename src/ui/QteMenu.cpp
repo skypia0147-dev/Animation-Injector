@@ -13,6 +13,15 @@ namespace AnimationInjector::QteMenu {
 namespace {
 constexpr std::string_view name = "AnimationInjectorQTE";
 bool registered = false;
+// Main thread. A show sent and not yet seen open (Sync re-sends after a while if it never arrives); a close sent.
+bool showSent = false, closeSent = false;
+int showWait = 0;
+// Seconds with no QTE on screen before the menu closes (a QTE right after another reuses it).
+constexpr float kIdleClose = 1.0f;
+const RE::BSFixedString& MenuName() {
+    static const RE::BSFixedString value(name);
+    return value;
+}
 constexpr double tau = 2 * std::numbers::pi;
 void Arc(RE::GFxValue& clip, double radius, double start, double end, double width, unsigned color, double alpha) {
     const RE::GFxValue style[]{
@@ -473,11 +482,26 @@ public:
         uiMovie->SetVisible(false);
     }
     RE::UI_MESSAGE_RESULTS ProcessMessage(RE::UIMessage& message) override {
-        if (message.type == RE::UI_MESSAGE_TYPE::kHide) return RE::UI_MESSAGE_RESULTS::kIgnore;
+        if (message.type == RE::UI_MESSAGE_TYPE::kShow) showSent = false;
+        if (message.type == RE::UI_MESSAGE_TYPE::kHide) {
+            closeSent = false;
+            // A QTE on screen keeps the menu, whoever asks; otherwise it goes and Sync reopens it for the next one.
+            if (Qte::AnyDrawn()) return RE::UI_MESSAGE_RESULTS::kIgnore;
+        }
         if (message.type == RE::UI_MESSAGE_TYPE::kScaleformEvent) return RE::UI_MESSAGE_RESULTS::kPassOn;
         return RE::IMenu::ProcessMessage(message);
     }
     void AdvanceMovie(float delta, std::uint32_t) override {
+        // Idle, it leaves the menu stack: an always-open menu above the HUD makes mods that read the top menu think a
+        // menu is open (Screen Archer Menu turns its hotkeys off).
+        if (Qte::AnyDrawn())
+            idle = 0;
+        else if ((idle += std::max(delta, 0.0f)) >= kIdleClose && !closeSent) {
+            if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
+                queue->AddMessage(MenuName(), RE::UI_MESSAGE_TYPE::kHide, nullptr);
+                closeSent = true;
+            }
+        }
         if (!ready || !uiMovie) return;
         const auto views = Qte::ReadViews();
         auto* ui = RE::UI::GetSingleton();
@@ -641,14 +665,23 @@ private:
     std::array<Slot, Qte::kChannels> slots;
     Paint paint;
     bool ready = false, visible = false;
+    float idle = 0;
 };
 }
-void Show() {
-    if (!registered) return;
+void Sync() {
+    if (!registered || !Qte::AnyDrawn()) return;
     auto* ui = RE::UI::GetSingleton();
     auto* queue = RE::UIMessageQueue::GetSingleton();
-    static const RE::BSFixedString menuName(name);
-    if (ui && queue && !ui->IsMenuOpen(name)) queue->AddMessage(menuName, RE::UI_MESSAGE_TYPE::kShow, nullptr);
+    if (!ui || !queue) return;
+    if (ui->IsMenuOpen(MenuName())) {
+        showSent = false;
+        return;
+    }
+    // One show at a time; one that never arrived (dropped by a menu change) is sent again after about half a second.
+    if (showSent && ++showWait < 30) return;
+    queue->AddMessage(MenuName(), RE::UI_MESSAGE_TYPE::kShow, nullptr);
+    showSent = true;
+    showWait = 0;
 }
 void Register() {
     if (registered) return;
@@ -656,6 +689,5 @@ void Register() {
     if (!ui) return;
     ui->Register(name, Menu::Create);
     registered = true;
-    Show();
 }
 }

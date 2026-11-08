@@ -30,6 +30,8 @@ void DisconnectInput();
 void Update(float delta);
 void ResetOnLoad();
 View ReadView(std::size_t channel = 0);
+// A QTE is on screen (visible and not hidden): the QTE menu is open only then (ui/QteMenu.h).
+bool AnyDrawn();
 // Every channel's view; the QTE menu draws each visible one.
 std::array<View, kChannels> ReadViews();
 }

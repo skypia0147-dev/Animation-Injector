@@ -207,7 +207,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
             AnimationPreloader::RequestCheck();
             LoadingProgress::GameLoaded();
             LoadingMenu::Show();
-            QteMenu::Show();
             Actions::OnGameLoad();
             EventEffects::PostLoad();
             if (const auto restored = ActorImmunity::PostLoad())
@@ -224,7 +223,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
             LoadingProgress::GameLoaded();
             logger::info("[LoadingUI] initial new-game session opened");
             LoadingMenu::Show();
-            QteMenu::Show();
             Actions::OnGameLoad();
             AnnounceEventsNextFrame();
             break;

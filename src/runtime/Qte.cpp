@@ -396,6 +396,12 @@ View ReadView(std::size_t channel) {
     std::lock_guard lock(mutex);
     return channels[std::min(channel, kChannels - 1)].view;
 }
+bool AnyDrawn() {
+    std::lock_guard lock(mutex);
+    for (const auto& c : channels)
+        if (c.view.visible && !c.view.spec.hidden) return true;
+    return false;
+}
 std::array<View, kChannels> ReadViews() {
     std::lock_guard lock(mutex);
     std::array<View, kChannels> out;

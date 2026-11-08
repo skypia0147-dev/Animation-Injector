@@ -9,6 +9,9 @@ namespace AnimationInjector::LoadingMenu {
 namespace {
 constexpr std::string_view name = "AnimationInjectorLoading";
 bool registered = false;
+bool closeSent = false;  // UI thread
+// Seconds with nothing to show before the menu closes (Show opens it again for the next load).
+constexpr float kIdleClose = 1.0f;
 
 // The panel (stage units; the movie is scaled to the screen): a title row with the progress, then one row per known
 // engine limit (core/LoadingProgressModel.h Usage). It sits in the top right corner under where OAR draws its
@@ -112,14 +115,29 @@ public:
     RE::UI_MESSAGE_RESULTS ProcessMessage(RE::UIMessage& message) override {
         // An always-open, input-free host keeps completed short batches until
         // the next UI frame. Visibility belongs solely to the progress model.
-        if (message.type == RE::UI_MESSAGE_TYPE::kHide) return RE::UI_MESSAGE_RESULTS::kIgnore;
+        // Once its session is over it goes, whoever asks.
+        if (message.type == RE::UI_MESSAGE_TYPE::kHide) {
+            closeSent = false;
+            if (visible || LoadingProgress::IsActive()) return RE::UI_MESSAGE_RESULTS::kIgnore;
+        }
         if (message.type == RE::UI_MESSAGE_TYPE::kScaleformEvent) return RE::UI_MESSAGE_RESULTS::kPassOn;
         return RE::IMenu::ProcessMessage(message);
     }
     void AdvanceMovie(float delta, std::uint32_t) override {
+        // No menu/player queries or progress mutex after session completion. Idle, it leaves the menu stack: an
+        // always-open menu above the HUD makes mods that read the top menu think a menu is open (Screen Archer Menu
+        // turns its hotkeys off).
+        if (!visible && !LoadingProgress::IsActive()) {
+            if ((idle += std::max(delta, 0.0f)) >= kIdleClose && !closeSent)
+                if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
+                    static const RE::BSFixedString menuName(name);
+                    queue->AddMessage(menuName, RE::UI_MESSAGE_TYPE::kHide, nullptr);
+                    closeSent = true;
+                }
+            return;
+        }
+        idle = 0;
         if (!ready || !uiMovie) return;
-        // No menu/player queries or progress mutex after session completion.
-        if (!visible && !LoadingProgress::IsActive()) return;
         if (auto* ui = RE::UI::GetSingleton(); ui && !ui->IsShowingMenus()) {
             uiMovie->SetVisible(false);
             visible = false;
@@ -208,6 +226,7 @@ private:
     std::array<Row, 2> rows;
     std::uint64_t revision = 0;
     bool ready = false, visible = false;
+    float idle = 0;
 };
 }
 void Show() {
