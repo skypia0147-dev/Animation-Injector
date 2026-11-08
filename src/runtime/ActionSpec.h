@@ -20,7 +20,6 @@ namespace AnimationInjector {
 // The player's movement input direction (InputSink::CurrentMoveDir): recovery and exit blends read it. Actions
 // no longer pick clips by it (0.12.231): a clip moves only by its HKX's AMR annotations.
 enum class MoveDir : std::uint8_t { kForward = 0, kBack = 1, kLeft = 2, kRight = 3, kNone = 4 };
-constexpr int kMoveDirCount = 4;
 
 // 변형 = 상태 하나. 일반 액션은 클립 1개, 페어는 같은 HKX 의 두 역할(Lead·Support). 콤보(Step 사슬)는 형식 4에서
 // 없어졌다: 이어지는 동작은 액션마다 하나씩 두고 Connect 로 잇는다.

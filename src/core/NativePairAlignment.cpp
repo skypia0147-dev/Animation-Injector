@@ -639,7 +639,7 @@ Start::Start(RE::BGSSynchronizedAnimationInstance* scene) : state(std::make_uniq
     logger::debug("[NativePairAlign] scene={:X} awaiting native approval and marks; original poses captured", sceneId);
 }
 Start::Move Start::NativeMove(
-    std::uint64_t request, const RE::bhkCharacterController* moving, RE::hkVector4& position) {
+    std::uint64_t request, const RE::bhkCharacterController* moving, RE::hkVector4& position, bool chained) {
     if (!state || state->completed || !state->deferred || !moving) return Move::kNative;
     const auto& pending = *state->deferred;
     const auto role = PivotRole(pending);
@@ -653,16 +653,27 @@ Start::Move Start::NativeMove(
         auto attacker = pending.roles[mover].actor.get(), victim = pending.roles[pivot].actor.get();
         if (!plan || !attacker || !victim) return Move::kNative;
         const auto& goal = plan->goals[mover];
-        // The engine checks only the destination; the sweep also refuses a move through a wall.
-        const auto path = SpaceProbe::Path(request, attacker.get(), victim.get(), {goal.x, goal.y, goal.z});
+        const float move = PairAlignmentMath::Distance(pending.roles[mover].before, goal);
+        // The engine checks only the destination; the sweep also refuses a move through a wall. Not probed:
+        // - a pair-to-pair transition: the two actors already stand together where the last pair left them (a
+        //   space check, when wanted, is the author's condition card);
+        // - a move shorter than kNegligibleMove, which passes through nothing.
+        // The probe also counts what the attacker already touches where it stands: it refused a 0.2-unit move next
+        // to a rock (11-09, the Pounding -> carry lift transition was cancelled).
+        constexpr float kNegligibleMove = 1.0f;
+        const bool probed = !chained && move >= kNegligibleMove;
+        const auto path = probed ? SpaceProbe::Path(request, attacker.get(), victim.get(), {goal.x, goal.y, goal.z})
+                                 : ConditionFlow::Value::kTrue;
         logger::info(
             "[NativePairAlign] #{} pivot victim={:08X} turn={:.1f}deg attacker={:08X} move={:.1f} turn={:.1f}deg path={}",
             request, victim->GetFormID(),
             std::abs(PairAlignmentMath::Wrap(plan->goals[pivot].yaw - pending.roles[pivot].before.yaw)) * 180 /
                 PairAlignmentMath::pi,
-            attacker->GetFormID(), PairAlignmentMath::Distance(pending.roles[mover].before, goal),
+            attacker->GetFormID(), move,
             std::abs(PairAlignmentMath::Wrap(goal.yaw - pending.roles[mover].before.yaw)) * 180 / PairAlignmentMath::pi,
-            path == ConditionFlow::Value::kTrue    ? "clear"
+            chained                                ? "not-probed (pair to pair)"
+            : !probed                              ? "not-probed (short move)"
+            : path == ConditionFlow::Value::kTrue  ? "clear"
             : path == ConditionFlow::Value::kFalse ? "blocked"
                                                    : "unavailable");
         if (path == ConditionFlow::Value::kFalse) return Move::kBlocked;

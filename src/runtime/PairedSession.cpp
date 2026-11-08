@@ -705,6 +705,8 @@ void Update(float a_gameDelta) {
                 idle->parentIdle ? idle->parentIdle->GetFormID() : 0);
         }
         const bool accepted = [&] {
+            // Both actors left a pair within PairStartAir::kWindow: a pair-to-pair transition (PairedStartHooks).
+            int leftPair = 0;
             for (int role = 0; role < 2; ++role) {
                 auto* actor = role == 0 ? self.get() : target.get();
                 if (!actor || !actor->Is3DLoaded() || actor->IsDead() || actor->IsInRagdollState()) continue;
@@ -720,8 +722,10 @@ void Update(float a_gameDelta) {
                 {
                     std::lock_guard lock(mutex);
                     const auto handle = actor->GetHandle();
-                    for (const auto& recent : recentExits)
+                    for (const auto& recent : recentExits) {
                         inherited = inherited || PairStartAir::Inherited(air, recent.actor == handle, recent.exit);
+                        if (recent.actor == handle && recent.exit.age <= PairStartAir::kWindow) ++leftPair;
+                    }
                     auto& participant = role == 0 ? status.initiator : status.target;
                     participant.startGrounded = !air || inherited;
                     participant.inheritedAir = inherited;
@@ -732,7 +736,7 @@ void Update(float a_gameDelta) {
             }
             TracePlacement(copy.ticket.request, "before-native-start", 0, self.get(), target.get());
             PairedStartHooks::Attempt trace(
-                copy.ticket.request, request.initiator, request.target, request.actionIndex);
+                copy.ticket.request, request.initiator, request.target, request.actionIndex, leftPair == 2);
             return process && idle && target &&
                    process->SetupSpecialIdle(
                        self.get(), RE::DEFAULT_OBJECT::kActionIdle, idle, true, true, target.get());

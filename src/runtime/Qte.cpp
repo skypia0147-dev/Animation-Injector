@@ -163,9 +163,11 @@ void ObserveEvent(RE::ActorHandle actor, const RE::BSFixedString& event) {
                 if (c.active.token == e.token && c.active.node == i) Cancel(c);
             } else if (!q.ready && !q.spec.event.empty() && event == q.event) {
                 // Each time its event comes the rule asks again (0.12.262: an HKX may send the same event several
-                // times), unless it is still on screen from the last time.
+                // times), unless its last prompt is still waiting for input. A prompt already resolved and only
+                // showing its result does not count: the next stage's prompt replaces it.
                 auto& c = channels[ChannelOf(q.spec)];
-                if (q.fired && c.active.token == e.token && c.active.node == i && c.view.visible) continue;
+                if (q.fired && c.active.token == e.token && c.active.node == i && c.view.visible && !c.view.clock.sent)
+                    continue;
                 q.fired = false;
                 q.ready = true;
                 logger::debug("[QTE] event ready id={} clipTime={:.3f}", q.spec.id, e.time);

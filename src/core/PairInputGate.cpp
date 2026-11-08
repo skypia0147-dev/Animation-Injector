@@ -32,13 +32,16 @@ void InstallMotion() {
     const auto end = function ? imageBase + function->EndAddress : 0;
     if (!function || imageBase + function->BeginAddress != begin || begin < text.address() ||
         end > text.address() + text.size()) {
-        logger::error("[PairMoveMotion] movement function range unavailable; original motion retained");
+        logger::warn("[PairMoveMotion] skipped: movement function not found; game unchanged, movement during a "
+                     "pair's exit waits for the pair to end");
         return;
     }
     const auto site = FindMotionCall(begin, end, REL::RelocationID(11308, 11437).address(),
         static_cast<std::uint32_t>(offsetof(RE::FixedStrings, bIsSynced)));
     if (!site) {
-        logger::error("[PairMoveMotion] unique sync movement gate not found; original motion retained");
+        // Not an error: the code differs here (another mod's patch, another runtime), so nothing is written.
+        logger::warn("[PairMoveMotion] skipped: the code at this spot differs (another mod may have patched it); "
+                     "game unchanged, movement during a pair's exit waits for the pair to end");
         return;
     }
     // The resolver verified the complete seven-byte indirect virtual call.
@@ -67,14 +70,16 @@ void Install() {
     const auto end = function ? imageBase + function->EndAddress : 0;
     if (!function || imageBase + function->BeginAddress != begin || begin < text.address() ||
         end > text.address() + text.size()) {
-        logger::error("[PairMoveInput] input function range unavailable; original sync gate retained");
+        logger::warn("[PairMoveInput] skipped: input function not found; game unchanged, controls during a pair's "
+                     "exit wait for the pair to end");
         return;
     }
     // OAR Offsets.h documents the same native synchronized-animation singleton.
     const auto global = REL::RelocationID(514960, 401100).address();
     const auto site = FindCall(begin, end, global);
     if (!site) {
-        logger::error("[PairMoveInput] unique sync input gate not found; original controls retained");
+        logger::warn("[PairMoveInput] skipped: the code at this spot differs (another mod may have patched it); "
+                     "game unchanged, controls during a pair's exit wait for the pair to end");
         return;
     }
     original = reinterpret_cast<Query>(SKSE::GetTrampoline().write_call<5>(site, QuerySync));

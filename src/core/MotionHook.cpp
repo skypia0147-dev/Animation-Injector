@@ -158,8 +158,9 @@ void Install() {
     const std::array<std::uintptr_t, 2> prevR{CallTarget(r1), CallTarget(r2)};
     const bool splitT = prevT[0] != prevT[1], splitR = prevR[0] != prevR[1];
     if (splitT || splitR)
-        logger::warn(
-            "[Motion] call sites chain to different targets (translation={}, rotation={}); each site keeps its own chain",
+        // Normal with motion mods such as AMR that hook one of the two sites: not a problem.
+        logger::info("[Motion] another mod hooks some of these call sites (translation={}, rotation={}); chained "
+                     "after it at each site",
             splitT, splitR);
     TransHook th0{reinterpret_cast<std::uintptr_t>(&ProcessTranslationAt<0>)},
         th1{reinterpret_cast<std::uintptr_t>(&ProcessTranslationAt<1>)};

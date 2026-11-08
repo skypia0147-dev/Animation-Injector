@@ -155,6 +155,26 @@ int main() {
             Qte::Update(0);
             Check(Qte::ReadView().visible && Qte::ReadView().session != first, "the same event later asks again");
         }
+        // The next stage's event can come while the last prompt still shows its result (Grapple pounding: carry
+        // prompt failed, the next stage 0.6 s later): it asks again instead of being dropped.
+        Reset();
+        {
+            auto& q = Actions::specs[0].qtes[0];
+            q.at = -1;
+            q.event = "Stage";
+            Qte::Begin({1}, 0);
+            Qte::ObserveTime({1}, 0, 0);
+            Qte::ObserveEvent({1}, "Stage");
+            Qte::Update(0);
+            const auto first = Qte::ReadView().session;
+            Qte::Update(2.5f);
+            Check(Qte::ReadView().visible && sends.size() == 1, "first prompt timed out, result still on screen");
+            Qte::ObserveEvent({1}, "Stage");
+            Qte::Update(0);
+            const auto view = Qte::ReadView();
+            Check(view.visible && view.session != first && view.clock.outcome == QteOutcome::None,
+                "the next stage's event during the result asks again");
+        }
         Reset();
         Qte::Input({}, true);
         Start();

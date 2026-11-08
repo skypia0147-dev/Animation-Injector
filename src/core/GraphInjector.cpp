@@ -630,7 +630,7 @@ void InjectPairedAction(int actionIndex, RE::hkbBehaviorGraph* graph, RE::hkbSta
         for (const auto& exit : staged[i]) StagePairExit(graph, role, exit.transition, exit.kind);
         PairEntry::Register(spec.clips[i].enterEvent.c_str(),
             i == 0 ? PairEntry::Role::kLead : PairEntry::Role::kSupport, base, blends[i]);
-        PublishSync({newSync[i], newSync[i]->clipGenerator, spec.clips[i].file, actionIndex, i, -1, false});
+        PublishSync({newSync[i], newSync[i]->clipGenerator, spec.clips[i].file, actionIndex, i, false});
         logger::debug(
             "[PairB] injected role={} container={} state={} event='{}' clip='{}' id={} clone={} referenceId={} "
             "referenceClone={}",
@@ -1068,7 +1068,7 @@ void InjectCreaturePair(int action, int role, RE::hkbBehaviorGraph* graph, RE::h
     result.exitId = end;
     Publish(std::move(result));
     loading.Ready();
-    PublishSync({sync, clip, variant.file, action, role, -1, false, profile.kind});
+    PublishSync({sync, clip, variant.file, action, role, false, profile.kind});
     logger::info(
         "[PairRig] '{}' rig={} {} injected: state={} prefix={} file='{}' index={} flags={}/{}; native ragdoll routes retained",
         spec.id, profile.name, roleName, stateId, role == 0 ? "2_" : "NPC", variant.file, index, synced, pitch);
@@ -1903,7 +1903,7 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
             // ★생성기 이름 = 진입 이벤트 이름 (바닐라: 상태·생성기 'HugA' ↔ 이벤트 'HugA'). 엔진은 상대 이벤트를 "pa_" 뗀 이름의 sync 생성기로 찾는다
             gen = MakeSyncClip(c.enterEvent.c_str(), clip, c.syncRole == 1 ? "2_" : "", c.syncRole == 1,
                 pd.getToMarkTime, pd.markErrorThreshold, pd.reorientSupport, pd.applyMotionFromRoot, tmpl);
-            PublishSync({static_cast<RE::BSSynchronizedClipGenerator*>(gen), clip, c.file, a_actionIdx, i, -1,
+            PublishSync({static_cast<RE::BSSynchronizedClipGenerator*>(gen), clip, c.file, a_actionIdx, i,
                 g_currentFirstPerson});
         }
         newStates.push_back(MakeState(

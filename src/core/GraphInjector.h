@@ -35,14 +35,12 @@ struct Result {
 };
 
 // Paired template metadata for diagnostics. Binding creation is engine-owned.
-// rawIndex is retained for source compatibility; PairB never uses it to patch a live node.
 struct SyncNode {
     RE::BSSynchronizedClipGenerator* gen;
     RE::hkbClipGenerator* clip;
     std::string file;
     int actionIdx;
     int variant;
-    int rawIndex = -1;
     bool firstPerson = false;
     PairedRig::Kind rig = PairedRig::Kind::kCharacter;
 };

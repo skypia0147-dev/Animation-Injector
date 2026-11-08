@@ -22,7 +22,9 @@ public:
     //   kBlocked    = reject the start (the attacker's path to its goal is obstructed).
     //   kNative     = let the engine place as it would (no usable plan yet).
     enum class Move { kNative, kRedirected, kSkipped, kBlocked };
-    Move NativeMove(std::uint64_t request, const RE::bhkCharacterController* moving, RE::hkVector4& position);
+    // chained: a pair-to-pair transition (PairedStartHooks::Attempt); the attacker's path is not probed.
+    Move NativeMove(
+        std::uint64_t request, const RE::bhkCharacterController* moving, RE::hkVector4& position, bool chained);
     Start(const Start&) = delete;
     Start& operator=(const Start&) = delete;
 

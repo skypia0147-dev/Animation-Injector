@@ -5,7 +5,6 @@
 #include "runtime/PairMotionMath.h"
 #include "runtime/ActionLinks.h"
 #include "runtime/Qte.h"
-#include "runtime/PairSpatial.h"
 #include "runtime/CameraRecovery.h"
 #include "runtime/PairEventRoles.h"
 #include "Settings.h"

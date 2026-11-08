@@ -66,6 +66,7 @@ struct State {
     RE::NiPointer<RE::NiAVObject> rootOwner;  // graph bone 0: a plain node or a flattened bone tree
     std::int32_t rootEntry = -1;
     float sampleAge = 0;
+    float subdueIn = 0;  // seconds to the next out-of-combat check (Subdue)
     RE::FormID lastCarrierCell = 0, lastTargetCell = 0;
     bool hasGround = false;
     RE::FormID targetId = 0;
@@ -75,6 +76,10 @@ struct State {
     // The held bone (CarrySpec::part) in the grip at the first attach: a cell transfer holds it there.
     RE::NiTransform heldInHand;
     bool haveHeld = false;
+    // The target's skeleton pose (bone locals below its root) as the physics first started from it. A cell
+    // transfer's new 3D loads in another pose and its graph barely generates while carried, so the physics would
+    // restart from that pose (11-09: after a door the upper body hung straight, its joints limited around it).
+    std::vector<std::pair<RE::BSFixedString, RE::NiTransform>> bodyPose;
     CarryContinuity::TransferGate transfer;
     RE::NiPointer<RE::NiAVObject> hiddenScene;
     bool hiddenOwned = false;
@@ -141,6 +146,64 @@ void TraceDropWatch(float delta) {
         target->IsMoving(), moved, cc ? static_cast<int>(cc->context.currentState) : -1,
         cc ? static_cast<unsigned>(cc->flags.get()) : 0, drivenRead, drivenValue, syncedRead, syncedValue, position.x,
         position.y, position.z);
+}
+// A carried target is subdued: out of combat, so bystanders do not come to the carrier's aid against it (11-09:
+// Riverwood villagers ran at a carried bandit that was still fighting the player; none was hostile to the player).
+// Its AI is off while carried, so it does not re-engage by itself; the drop restores its AI and combat is the
+// game's again.
+void Subdue(RE::Actor* target) {
+    if (!target || !target->IsInCombat()) return;
+    target->StopCombat();
+    logger::info("[Carry] target {:08X} taken out of combat", target->GetFormID());
+}
+// The carried target's activation prompt: once out of combat (Subdue) the HUD offered "Talk" on it although its
+// putdown key takes E (11-09). TESNPC::GetActivateText gives no text for it, so no prompt is drawn. The reference's
+// ExtraFlags (kBlockActivate, kBlockActivateText) did not hide an NPC's prompt (tried 11-09, reverted).
+std::atomic<RE::FormID> promptHidden{0};
+struct ActivateText {
+    static bool thunk(RE::TESNPC* npc, RE::TESObjectREFR* ref, RE::BSString& text) {
+        if (ref && promptHidden.load(std::memory_order_relaxed) == ref->GetFormID()) return false;
+        return original(npc, ref, text);
+    }
+    static inline REL::Relocation<decltype(thunk)> original;
+};
+void InstallActivatePrompt() {
+    static bool installed = false;
+    if (installed) return;
+    installed = true;
+    REL::Relocation<std::uintptr_t> table{RE::VTABLE_TESNPC[0]};
+    ActivateText::original = table.write_vfunc(0x4C, ActivateText::thunk);
+    logger::info("[Carry] activation prompt hidden on a carried target (TESNPC::GetActivateText)");
+}
+// The skeleton's bone locals below its root ("NPC " bones; the root and above are the placement's).
+void CaptureBodyPose(RE::Actor* target) {
+    auto* scene = target ? target->Get3D(false) : nullptr;
+    if (!scene) return;
+    state.bodyPose.clear();
+    const auto visit = [&](auto&& self, RE::NiAVObject* node, int depth) -> void {
+        if (!node || depth > 64) return;
+        const char* name = node->name.c_str();
+        if (name && std::strncmp(name, "NPC ", 4) == 0 && std::strcmp(name, "NPC Root [Root]") != 0)
+            state.bodyPose.emplace_back(node->name, node->local);
+        if (auto* n = node->AsNode())
+            for (const auto& child : n->GetChildren()) self(self, child.get(), depth + 1);
+    };
+    visit(visit, scene, 0);
+}
+// A transferred target's new 3D takes the captured pose before it is placed and its physics starts.
+void RestoreBodyPose(RE::Actor* target) {
+    auto* scene = target ? target->Get3D(false) : nullptr;
+    if (!scene || state.bodyPose.empty()) return;
+    std::size_t restored = 0;
+    for (const auto& [name, local] : state.bodyPose)
+        if (auto* node = scene->GetObjectByName(name)) {
+            node->local = local;
+            ++restored;
+        }
+    RE::NiUpdateData data{};
+    data.flags = RE::NiUpdateData::Flag::kDisableCollision;
+    scene->UpdateDownwardPass(data, 0);
+    logger::info("[CarryTransfer] restored the physics start pose bones={}/{}", restored, state.bodyPose.size());
 }
 // TDM head tracking is held off only while the lift pair or the putdown Action plays.
 PairStartControl::HeadtrackingLease headtracking;
@@ -358,7 +421,10 @@ bool Release(bool placeOnGround, bool restoreAI = true) {
     if (!contactsRestored)
         logger::info("[CarryContacts] restoration deferred owned={:08X}", state.filterFlags.acquired);
     state.controller.reset();
-    if (restoreAI) state.aiChanged = false;
+    if (restoreAI) {
+        promptHidden = 0;
+        state.aiChanged = false;
+    }
     state.flags = {};
     return contactsRestored;
 }
@@ -503,6 +569,8 @@ bool Attach(RE::Actor* carrier, RE::Actor* target, bool resume = false) {
     state.gravity = cc->gravity;
     state.aiChanged = state.aiChanged || target->IsAIEnabled();
     if (target->IsAIEnabled()) target->EnableAI(false);
+    Subdue(target);
+    promptHidden = target->GetFormID();
     cc->flags =
         static_cast<RE::CHARACTER_FLAGS>(state.flags.Acquire(static_cast<std::uint32_t>(cc->flags.get()), wanted));
     cc->gravity = 0;
@@ -698,7 +766,8 @@ void ContinueTransfer(RE::Actor* carrier, RE::Actor* target, float delta) {
     const auto age = state.age, distance = state.distance;
     const auto attempts = state.transfer.attempts;
     const auto waited = state.transfer.readyAge;
-    Release(false, false);  // Reacquire the new physics lease atomically with attachment.
+    Release(false, false);    // Reacquire the new physics lease atomically with attachment.
+    RestoreBodyPose(target);  // before the held bone's placement and the physics read the pose
     if (!Attach(carrier, target, true)) {
         Stop("transfer-attach-failed", false);
         return;
@@ -1005,6 +1074,7 @@ void Register() {
                 carry.part, carry.fixAt, CarryWeaponName(carry.weapon));
         }
     if (entries.empty()) return;
+    InstallActivatePrompt();
     static TransferEvents transferEvents;
     if (auto* ui = RE::UI::GetSingleton()) ui->AddEventSink<RE::MenuOpenCloseEvent>(&transferEvents);
     if (auto* events = RE::ScriptEventSourceHolder::GetSingleton()) {
@@ -1280,6 +1350,7 @@ void BeforeGameLoad() {
 }
 void OnGameLoad() {
     dropWatch = {};
+    promptHidden = 0;
     PrecisionLink::ReleaseAll();
     // Also release retained old 3D if no pre-load callback reached this session.
     CarryWeaponCover::Reset("load");
@@ -1448,6 +1519,11 @@ void Update(float delta) {
     }
     state.age += delta;
     state.sampleAge += delta;
+    // Once a second while held: a target pulled back into combat (by another actor) leaves it again.
+    if ((state.subdueIn -= delta) <= 0) {
+        state.subdueIn = 1.0f;
+        Subdue(target.get());
+    }
     const auto pair = PairedSession::ReadStatus();
     if (state.phase == Phase::kLifting) {
         // The carry key does nothing until the lift ends; a press here is dropped, not kept for the
@@ -1563,6 +1639,7 @@ void Update(float delta) {
         const bool restart = state.bodyRestarts > 0;
         // The declaration file's path is UTF-8 (Settings PathText).
         const auto actionXml = std::filesystem::path(std::u8string(lift.source.begin(), lift.source.end()));
+        if (state.bodyPose.empty()) CaptureBodyPose(state.target.get().get());
         const auto started = CarryBody::Begin(state.carrier, state.target, lift.paired.targetRig, actionXml,
             lift.localId, entries[state.entry].part, AnchorName(), state.ticket.request);
         if (started == CarryBody::Start::kTargetSimulating) {

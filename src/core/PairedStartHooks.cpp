@@ -13,6 +13,7 @@
 namespace AnimationInjector::PairedStartHooks {
 namespace {
 thread_local std::uint64_t requestId = 0;
+thread_local bool chainedStart = false;  // Attempt::chained
 thread_local RE::ActorHandle initiatorHandle, targetHandle;
 thread_local std::optional<PairPreflight::Placement> preflightPlacement;
 bool oarLoaded = false;
@@ -188,7 +189,7 @@ bool MoveHook(RE::bhkCharacterController* controller, const RE::hkVector4& posit
     // position and the attacker's placement goes to its pivot goal, still checked by the engine there.
     if (currentStart && currentAlignment) {
         using Move = NativePairAlignment::Start::Move;
-        const auto move = currentAlignment->NativeMove(requestId, controller, placed);
+        const auto move = currentAlignment->NativeMove(requestId, controller, placed, chainedStart);
         if (move == Move::kSkipped || move == Move::kBlocked) {
             ++currentStart->moves;
             if (move == Move::kBlocked) ++currentStart->movesRejected;
@@ -364,9 +365,10 @@ std::vector<std::uintptr_t> FindCalls(REL::RelocationID parent, REL::RelocationI
     return sites;
 }
 }
-Attempt::Attempt(std::uint64_t request, RE::ActorHandle initiator, RE::ActorHandle target, int action)
-    : previous(requestId), previousInitiator(initiatorHandle), previousTarget(targetHandle),
-      previousPlacement(preflightPlacement) {
+Attempt::Attempt(std::uint64_t request, RE::ActorHandle initiator, RE::ActorHandle target, int action, bool chained)
+    : previous(requestId), previousChained(chainedStart), previousInitiator(initiatorHandle),
+      previousTarget(targetHandle), previousPlacement(preflightPlacement) {
+    chainedStart = chained;
     requestId = (FrameworkSettings::Get().debug || FrameworkSettings::Get().spaceProbe) ? request : 0;
     initiatorHandle = initiator;
     targetHandle = target;
@@ -388,6 +390,7 @@ Attempt::Attempt(std::uint64_t request, RE::ActorHandle initiator, RE::ActorHand
 }
 Attempt::~Attempt() {
     requestId = previous;
+    chainedStart = previousChained;
     initiatorHandle = previousInitiator;
     targetHandle = previousTarget;
     preflightPlacement = previousPlacement;

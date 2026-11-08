@@ -12,14 +12,17 @@ namespace AnimationInjector::PairedStartHooks {
 void Install();
 class Attempt {
 public:
-    explicit Attempt(
-        std::uint64_t request, RE::ActorHandle initiator = {}, RE::ActorHandle target = {}, int action = -1);
+    // chained: both actors left a pair together just before (a pair-to-pair transition); the alignment then
+    // does not probe the attacker's path (a condition card's space check is the author's own).
+    explicit Attempt(std::uint64_t request, RE::ActorHandle initiator = {}, RE::ActorHandle target = {},
+        int action = -1, bool chained = false);
     ~Attempt();
     Attempt(const Attempt&) = delete;
     Attempt& operator=(const Attempt&) = delete;
 
 private:
     std::uint64_t previous;
+    bool previousChained = false;
     RE::ActorHandle previousInitiator, previousTarget;
     std::optional<PairPreflight::Placement> previousPlacement;
 };

@@ -1,6 +1,6 @@
 # Animation Injector
 
-**버전 1.0.5** · [English](README_EN.md)
+**버전 1.0.6** · [English](README_EN.md)
 
 새 애니메이션을 넣으려면 보통 Nemesis나 Pandora 같은 비헤이비어 도구로 비헤이비어 그래프를 패치해야 합니다. Animation Injector는 그 과정 없이 새 애니메이션을 넣는 SKSE 프레임워크입니다.
 
