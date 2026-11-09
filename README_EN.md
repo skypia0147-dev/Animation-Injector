@@ -1,6 +1,6 @@
 # Animation Injector
 
-**Version 1.0.6** · [한국어](README.md)
+**Version 1.0.7** · [한국어](README.md)
 
 Adding a new animation usually means patching the behavior graph with a tool such as Nemesis or Pandora. Animation Injector is an SKSE framework that skips that step.
 
@@ -75,7 +75,8 @@ The main entries of `SKSE/Plugins/AnimationInjector.ini`. See the INI's notes fo
 | `iNativePairAlignment` | 2 | Lining up position and facing when a pair starts. 0 off / 1 this mod's pairs only / 2 all pairs (killmoves included). |
 | `iPairEndPosition` | 2 | Position correction when a pair ends. 0 off / 1 this mod's pairs only / 2 all pairs |
 | `bOrdinary` | true | Preload the animations of single-actor actions too (pairs are always preloaded) |
-| `bLoadingProgress` | true | Show preparation progress and the engine limits (graph nodes, animations) when the game starts and a save loads. Amber from 90%, red when something was left out |
+| `bLoadingProgress` | true | Show preparation progress and the engine limits (graph nodes, animations) when the game starts and a save loads. Amber from 90%, red when something was left out. The graph bar spans twice the vanilla limit (65,535) with a mark at the limit; the part past it is purple (`extended`) when the graph was renumbered, red when it could not be. Shown even with no action XML installed |
+| `bNodeIdRenumber` | true | When many behavior mods take a graph past 65,535 nodes, give every state machine its own node id so the game does not crash, and this mod's actions are not left out. SE 1.5.97 and AE |
 | `bDebug` | false | Detailed log. Turn it on only to report a problem |
 
 ## Compatibility

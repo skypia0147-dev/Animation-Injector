@@ -39,9 +39,10 @@ Snapshot Read() {
     std::lock_guard lock(mutex);
     return model.Read();
 }
-void ReportNodes(std::size_t used, std::size_t limit, bool shortfall) {
+void ReportNodes(
+    std::size_t used, std::size_t limit, bool shortfall, std::size_t machinesUsed, std::size_t machinesLimit) {
     std::lock_guard lock(mutex);
-    model.ReportNodes(used, limit, shortfall);
+    model.ReportNodes(used, limit, shortfall, machinesUsed, machinesLimit);
 }
 void ReportAnimations(std::size_t used, std::size_t limit, bool shortfall) {
     std::lock_guard lock(mutex);

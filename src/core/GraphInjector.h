@@ -60,5 +60,7 @@ bool HasFullBodyRoute(int action);
 // True only after an airborne master-graph entry was successfully injected.
 bool HasAirRoute(int a_actionIdx);
 bool IsOurStateId(const char* a_smName, std::int32_t a_stateId);  // 프로브용
+// Every node under root once, as the engine lists children (the set it numbers when it links the graph).
+std::vector<RE::hkbNode*> AllNodes(RE::hkbNode* root);
 
 }  // namespace AnimationInjector::GraphInjector

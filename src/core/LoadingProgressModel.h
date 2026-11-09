@@ -15,8 +15,13 @@ enum class Session { kStartup, kSaveLoading, kInitialGameplay, kClosed };
 struct Usage {
     std::size_t used = 0, limit = 0;
     bool shortfall = false;  // something was left out because it would not fit
+    // Node ids past the limit are renumbered (core/NodeIdRenumber): what has to fit is the state machine ids.
+    std::size_t machinesUsed = 0, machinesLimit = 0;
     bool Known() const { return limit > 0; }
-    bool Warn() const { return Known() && used * 10 >= limit * 9; }
+    bool Extended() const { return machinesLimit > 0; }
+    bool Warn() const {
+        return Extended() ? machinesUsed * 10 >= machinesLimit * 9 : Known() && used * 10 >= limit * 9;
+    }
     float Fraction() const {
         return Known() ? std::min(1.0f, static_cast<float>(used) / static_cast<float>(limit)) : 0;
     }
@@ -72,8 +77,11 @@ public:
     }
     Snapshot Read() const { return snapshot; }
     // The fuller report wins (third and first person, male and female projects report separately).
-    void ReportNodes(std::size_t used, std::size_t limit, bool shortfall) {
-        Report(snapshot.nodes, used, limit, shortfall);
+    // a_machinesLimit 0: the engine's own numbering; otherwise the graph is renumbered and a_machinesUsed of those
+    // ids are taken. The fullest graph by its node count is shown.
+    void ReportNodes(std::size_t used, std::size_t limit, bool shortfall, std::size_t machinesUsed = 0,
+        std::size_t machinesLimit = 0) {
+        Report(snapshot.nodes, used, limit, shortfall, machinesUsed, machinesLimit);
     }
     void ReportAnimations(std::size_t used, std::size_t limit, bool shortfall) {
         Report(snapshot.animations, used, limit, shortfall);
@@ -124,15 +132,20 @@ private:
         snapshot.nodes = nodes;
         snapshot.animations = animations;
     }
-    void Report(Usage& usage, std::size_t used, std::size_t limit, bool shortfall) {
+    void Report(Usage& usage, std::size_t used, std::size_t limit, bool shortfall, std::size_t machinesUsed = 0,
+        std::size_t machinesLimit = 0) {
         if (!limit) return;
         Usage next = usage;
         if (!usage.Known() || used * usage.limit >= usage.used * limit) {
             next.used = used;
             next.limit = limit;
+            next.machinesUsed = machinesUsed;
+            next.machinesLimit = machinesLimit;
         }
         next.shortfall = usage.shortfall || shortfall;
-        if (next.used == usage.used && next.limit == usage.limit && next.shortfall == usage.shortfall) return;
+        if (next.used == usage.used && next.limit == usage.limit && next.shortfall == usage.shortfall &&
+            next.machinesUsed == usage.machinesUsed && next.machinesLimit == usage.machinesLimit)
+            return;
         usage = next;
         ++snapshot.revision;
     }

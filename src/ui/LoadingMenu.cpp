@@ -27,6 +27,10 @@ constexpr double kWidth = 168, kPad = 7, kInner = kWidth - 2 * kPad;
 constexpr double kRowHeight = 22, kTitleHeight = 26;
 constexpr double kTop = 34, kRight = 4;
 constexpr unsigned kProgressColor = 0x9FC5CE, kUsageColor = 0x5DCAA5, kWarnColor = 0xEF9F27, kShortColor = 0xE24B4A;
+// The graph row (11-09, design B2): its bar spans twice the engine's node ids with a mark at the engine's limit in the
+// middle; past it, purple when the graph is renumbered (core/NodeIdRenumber), red when it could not be.
+constexpr unsigned kExtendedColor = 0xAFA9EC, kMarkUnder = 0x888780, kMarkOver = 0xF3F4F5;
+constexpr double kSubHeight = 11;
 
 bool Rectangle(RE::GFxValue& clip, double width, double height, unsigned color, double alpha) {
     const RE::GFxValue fill[]{RE::GFxValue(color), RE::GFxValue(alpha)};
@@ -52,13 +56,14 @@ void Place(RE::GFxValue& clip, double x, double y) {
     clip.SetDisplayInfo(position);
 }
 // A bar's fill: redrawn in its color, scaled to the fraction.
-void Fill(RE::GFxValue& bar, unsigned color, float fraction) {
+void Fill(RE::GFxValue& bar, unsigned color, double fraction) {
     bar.Invoke("clear");
     Rectangle(bar, kInner, 3, color, 100);
     RE::GFxValue::DisplayInfo scale;
-    scale.SetXScale(std::clamp(fraction, 0.0f, 1.0f) * 100.0);
+    scale.SetXScale(std::clamp(fraction, 0.0, 1.0) * 100.0);
     bar.SetDisplayInfo(scale);
 }
+void SetShown(RE::GFxValue& clip, bool shown) { clip.SetMember("_visible", RE::GFxValue(shown)); }
 // 65535 -> "65,535".
 std::string Grouped(std::size_t value) {
     auto text = std::to_string(value);
@@ -101,6 +106,15 @@ public:
                       panel.CreateEmptyMovieClip(&row->bar, ("bar" + suffix).c_str(), depth + 3);
             depth += 4;
         }
+        created = created && panel.CreateEmptyMovieClip(&graph.over, "graphOver", depth) &&
+                  panel.CreateEmptyMovieClip(&graph.mark, "graphMark", depth + 1) &&
+                  panel.CreateEmptyMovieClip(&graph.pill, "graphPill", depth + 2) &&
+                  Text(panel, graph.sub, "graphSub", depth + 3, kPad - 2, 0, kInner + 4) &&
+                  Text(panel, graph.tag, "graphTag", depth + 4, 0, 0, 60);
+        if (created) {
+            graph.tag.SetMember("autoSize", RE::GFxValue("left"));
+            for (auto* clip : {&graph.over, &graph.mark, &graph.pill, &graph.tag, &graph.sub}) SetShown(*clip, false);
+        }
         if (!created || !Rectangle(background, kWidth, kTitleHeight + 2 * kRowHeight, 0x181A1D, 90) ||
             !Rectangle(progress.track, kInner, 3, 0x4C5157, 100) ||
             !Rectangle(rows[0].track, kInner, 3, 0x4C5157, 100) ||
@@ -112,7 +126,7 @@ public:
         Place(progress.track, kPad, 20);
         Place(progress.bar, kPad, 20);
         title.SetTextHTML(Html("Animation Injector", 11, "#F3F4F5").c_str());
-        rows[0].name = "Graph nodes";
+        rows[0].name = "Graph";
         rows[1].name = "Animations";
         root.Invoke("stop");
         uiMovie->SetVisible(false);
@@ -170,10 +184,13 @@ public:
             visible = state.visible;
             uiMovie->SetVisible(visible);
             logger::info(
-                "[LoadingUI] {} ready={} total={} pending={} failed={} cancelled={} nodes={}/{}{} animations={}/{}{}",
+                "[LoadingUI] {} ready={} total={} pending={} failed={} cancelled={} nodes={}/{}{}{} animations={}/{}{}",
                 visible ? "show" : "hide", state.ready, state.total, state.pending, state.failed, state.cancelled,
-                state.nodes.used, state.nodes.limit, state.nodes.shortfall ? " (left out)" : "", state.animations.used,
-                state.animations.limit, state.animations.shortfall ? " (left out)" : "");
+                state.nodes.used, state.nodes.limit, state.nodes.shortfall ? " (left out)" : "",
+                state.nodes.Extended() ? std::format(" (renumbered: state machines {}/{})", state.nodes.machinesUsed,
+                                             state.nodes.machinesLimit)
+                                       : std::string(),
+                state.animations.used, state.animations.limit, state.animations.shortfall ? " (left out)" : "");
         }
         if (!visible) return;
         const auto rect = uiMovie->GetVisibleFrameRect();
@@ -203,6 +220,10 @@ private:
         RE::GFxValue label, value;
         const char* name = "";
     };
+    // The graph row's extras: the part past the engine's node ids, the mark at its limit, the tag, the small line.
+    struct GraphExtras {
+        RE::GFxValue over, mark, pill, tag, sub;
+    };
     void Draw(const LoadingProgress::Snapshot& state) {
         const auto shown = state.total - state.cancelled;
         const auto progressText = state.pending  ? std::format("{} / {}", state.ready, shown)
@@ -216,9 +237,15 @@ private:
             auto& row = rows[i];
             const auto& usage = *usages[i];
             const bool known = usage.Known();
-            for (auto* clip : {&row.label, &row.value, &row.track, &row.bar})
-                clip->SetMember("_visible", RE::GFxValue(known));
+            for (auto* clip : {&row.label, &row.value, &row.track, &row.bar}) SetShown(*clip, known);
+            if (i == 0)
+                for (auto* clip : {&graph.over, &graph.mark, &graph.pill, &graph.tag, &graph.sub})
+                    SetShown(*clip, false);
             if (!known) continue;
+            if (i == 0) {
+                y += DrawGraph(row, usage, y);
+                continue;
+            }
             const unsigned color = usage.shortfall ? kShortColor : usage.Warn() ? kWarnColor : kUsageColor;
             const char* text = usage.shortfall ? "#F09595" : usage.Warn() ? "#EF9F27" : "#D2D7DC";
             row.label.SetTextHTML(Html(row.name, 10, "#B4B2A9").c_str());
@@ -235,9 +262,62 @@ private:
         height.SetYScale((y + 2) / (kTitleHeight + 2 * kRowHeight) * 100.0);
         background.SetDisplayInfo(height);
     }
+    // The graph row at y; returns its height. The bar spans twice the engine's node ids, the mark sits at the limit.
+    double DrawGraph(Row& row, const LoadingProgress::Usage& usage, double y) {
+        const bool extended = usage.Extended();
+        const bool over = usage.used > usage.limit;
+        const double span = 2.0 * static_cast<double>(usage.limit);
+        const char* text = usage.shortfall ? "#F09595" : usage.Warn() ? "#EF9F27" : "#D2D7DC";
+        row.label.SetTextHTML(Html(row.name, 10, "#B4B2A9").c_str());
+        Place(row.label, kPad - 2, y - 2);
+        const auto value =
+            extended ? Grouped(usage.used) + " nodes" : Grouped(usage.used) + " / " + Grouped(usage.limit) + " nodes";
+        row.value.SetTextHTML(Html(value.c_str(), 10, text, true).c_str());
+        Place(row.value, kPad - 2, y - 2);
+        if (extended) {
+            RE::GFxValue width;
+            const double labelWidth =
+                row.label.GetMember("textWidth", &width) && width.IsNumber() ? width.GetNumber() : 22;
+            // A text field's own background fills its whole line box: the tag gets a box drawn to the text.
+            graph.tag.SetTextHTML(Html("extended", 8, "#CECBF6").c_str());
+            RE::GFxValue tagWidth, tagHeight;
+            const double w =
+                graph.tag.GetMember("textWidth", &tagWidth) && tagWidth.IsNumber() ? tagWidth.GetNumber() : 30;
+            const double h =
+                graph.tag.GetMember("textHeight", &tagHeight) && tagHeight.IsNumber() ? tagHeight.GetNumber() : 9;
+            const double x = kPad - 2 + labelWidth + 6;
+            graph.pill.Invoke("clear");
+            Rectangle(graph.pill, w + 6, h, 0x3C3489, 85);
+            Place(graph.pill, x, y + 2);
+            Place(graph.tag, x + 1, y);
+            SetShown(graph.pill, true);
+            SetShown(graph.tag, true);
+        }
+        Place(row.track, kPad, y + 15);
+        Place(row.bar, kPad, y + 15);
+        const unsigned color = usage.shortfall ? kShortColor : !extended && usage.Warn() ? kWarnColor : kUsageColor;
+        Fill(row.bar, color, std::min<double>(usage.used, usage.limit) / span);
+        graph.mark.Invoke("clear");
+        Rectangle(graph.mark, 1, 7, over ? kMarkOver : kMarkUnder, 100);
+        Place(graph.mark, kPad + kInner / 2, y + 13);
+        SetShown(graph.mark, true);
+        if (!over) return kRowHeight;
+        Place(graph.over, kPad + kInner / 2, y + 15);
+        Fill(graph.over, extended ? kExtendedColor : kShortColor,
+            (std::min<double>(usage.used, span) - static_cast<double>(usage.limit)) / span);
+        SetShown(graph.over, true);
+        const auto line = extended ? std::format("vanilla {} | state machines {} / {}", Grouped(usage.limit),
+                                         Grouped(usage.machinesUsed), Grouped(usage.machinesLimit))
+                                   : std::string("actions left out | renumbering unavailable");
+        graph.sub.SetTextHTML(Html(line.c_str(), 8, extended ? "#888780" : "#F09595").c_str());
+        Place(graph.sub, kPad - 2, y + 17);
+        SetShown(graph.sub, true);
+        return kRowHeight + kSubHeight;
+    }
     RE::GFxValue panel, background, title, count;
     Bar progress;
     std::array<Row, 2> rows;
+    GraphExtras graph;
     std::uint64_t revision = 0;
     bool ready = false, visible = false;
     float idle = 0;

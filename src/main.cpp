@@ -1,4 +1,5 @@
 #include "core/AnimationFileLifetime.h"
+#include "core/NodeIdRenumber.h"
 #include "core/PairRootScale.h"
 #include "core/CarryPoseLock.h"
 #include "core/PairRootRuntime.h"
@@ -139,8 +140,9 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
     using namespace AnimationInjector;
     FrameworkSettings::Get().Load();
     LoadingProgress::SetEnabled(FrameworkSettings::Get().loadingProgress);
-    Actions::Load();           // XML declarations and runners
-    GraphInjector::Install();  // CreateSymbolIdMap / LoadClips
+    Actions::Load();                                                   // XML declarations and runners
+    GraphInjector::Install();                                          // CreateSymbolIdMap / LoadClips
+    NodeIdRenumber::Install(FrameworkSettings::Get().nodeIdRenumber);  // graphs past 65535 nodes
     // A carry start gives a bAllowRotation true back only to an action still wanting it.
     PairStartControl::SetRotationOwner(Actions::RotationWindowOpen);
     ExitBlendHooks::Install();

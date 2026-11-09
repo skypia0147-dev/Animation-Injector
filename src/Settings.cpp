@@ -57,6 +57,8 @@ void FrameworkSettings::Load() {
     debug = ini.Bool(L"Debug", L"bDebug", false);
     spaceProbe = ini.Bool(L"Debug", L"bSpaceProbe", false);
     ragdollTrace = ini.Bool(L"Debug", L"bRagdollTrace", false);
+    nodeIdRenumber = ini.Bool(L"Compatibility", L"bNodeIdRenumber", true);
+    nodeIdStressNodes = std::clamp(ini.Int(L"Debug", L"iNodeIdStressNodes", 0), 0, 200000);
     logger::info("[RagdollTrace] enabled={}", ragdollTrace);
     if (debug) {
         spdlog::set_level(spdlog::level::debug);

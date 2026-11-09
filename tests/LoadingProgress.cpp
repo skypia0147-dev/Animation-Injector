@@ -130,6 +130,19 @@ int main() {
     assert(usage.Read().animations.used == 29900 && usage.Read().animations.shortfall);
     usage.ReportNodes(1, 0, true);  // no limit: ignored
     assert(!usage.Read().nodes.shortfall);
+    // A graph past the node ids that gets renumbered reports its state machine ids; the fuller row is shown.
+    Model renumbered;
+    renumbered.ReportNodes(4211, 65535, false);                       // first person, fits
+    renumbered.ReportNodes(72330, 65535, false, 9290 + 4096, 32767);  // third person, renumbered: fuller
+    {
+        const auto nodes = renumbered.Read().nodes;
+        assert(nodes.Extended() && nodes.used == 72330 && nodes.machinesUsed == 13386 && !nodes.shortfall);
+        assert(!nodes.Warn());  // judged by the state machine ids, not by 72330 of 65535
+    }
+    renumbered.ReportNodes(60000, 65535, false);  // a smaller graph does not take the row
+    assert(renumbered.Read().nodes.Extended() && renumbered.Read().nodes.used == 72330);
+    renumbered.ReportNodes(73000, 65535, true);  // a fuller graph that could not be renumbered does
+    assert(!renumbered.Read().nodes.Extended() && renumbered.Read().nodes.shortfall);
     const auto job = usage.Begin(Phase::kAnimation);
     assert(usage.Read().nodes.used == 7549 && usage.Read().animations.shortfall);
     usage.Finish(job, Outcome::kReady);

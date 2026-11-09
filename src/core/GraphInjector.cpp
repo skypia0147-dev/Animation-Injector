@@ -2,6 +2,7 @@
 #include "core/ExitBlendHooks.h"
 #include "core/AirControl.h"
 #include "core/GraphInjector.h"
+#include "core/NodeIdRenumber.h"
 #include "core/LoadingProgress.h"
 #include "core/NodeFactory.h"
 #include "core/AnimationLimit.h"
@@ -1974,6 +1975,67 @@ RE::hkbNode* FindNodeByName(RE::hkbNode* node, const char* name, int depth, std:
 }
 
 // ── 그래프 하나: 자가검증 뒤 모든 액션 삽입 ────────────────────────────────
+// A 0_master right before the engine numbers it: the loading panel's graph row, the log, and past the id limit the
+// set core/NodeIdRenumber renumbers. Counted once everything Animation Injector adds is in (a test game 11-07: 7010 +
+// 506 = 7516 counted before the commit as 7244, the engine 7549).
+void ReportNodeIds(RE::hkbBehaviorGraph* a_graph, RE::hkbNode* a_root, const char* a_label, std::size_t a_native,
+    std::size_t a_made, bool a_renumbering, bool a_leftOut) {
+    const std::size_t counted = CountNodes(a_root);
+    logger::info(
+        "[NodeBudget] {} 0_master: native {} + AI {} = {}, counted {} node ids of {} ({} kept free for clones)",
+        a_label, a_native, a_made, a_native + a_made, counted, kNodeIdLimit, kNodeIdsKeptFree);
+    if (counted + kNodeIdsKeptFree <= kNodeIdLimit) {
+        LoadingProgress::ReportNodes(counted, kNodeIdLimit, a_leftOut);
+        return;
+    }
+    // Past the id limit core/NodeIdRenumber needs the set the engine is about to number.
+    auto nodes = AllNodes(a_root);
+    const std::size_t machines = NodeIdRenumber::Machines(nodes);
+    NodeIdRenumber::NoteCounted(a_graph, std::move(nodes));
+    const std::size_t machineIds = machines + NodeIdRenumber::kCloneIds;
+    if (a_renumbering && machineIds < NodeIdRenumber::kMachineIdLimit) {
+        logger::info(
+            "[NodeBudget] {} 0_master: {} nodes pass the {} node ids; state machines get their own ids when the engine "
+            "numbers it ({} machines + {} for clones of {})",
+            a_label, counted, kNodeIdLimit, machines, NodeIdRenumber::kCloneIds, NodeIdRenumber::kMachineIdLimit);
+        LoadingProgress::ReportNodes(counted, kNodeIdLimit, a_leftOut, machineIds, NodeIdRenumber::kMachineIdLimit);
+        return;
+    }
+    LoadingProgress::ReportNodes(counted, kNodeIdLimit, true);
+    logger::error("[NodeBudget] {} 0_master: {} nodes leave fewer than {} of the {} node ids free", a_label, counted,
+        kNodeIdsKeptFree, kNodeIdLimit);
+}
+
+// No action installed: Animation Injector still shows the character's limits on every load (some install it for the
+// panel alone) and keeps a graph past the node ids safe. Nothing is added to any graph.
+void MeasureCharacterProject(
+    const RE::BSScrapArray<RE::hkbBehaviorGraph*>& a_graphs, RE::hkbCharacter* a_character, bool a_firstPerson) {
+    auto* setup = a_character ? a_character->setup.get() : nullptr;
+    auto* data = setup ? setup->data.get() : nullptr;
+    auto* strings = data ? data->stringData.get() : nullptr;
+    const char* project = strings && strings->name.c_str() ? strings->name.c_str() : "";
+    if (!a_firstPerson && PairedRig::CharacterName(project) != PairedRig::Kind::kCharacter) return;
+    LoadingProgress::Registration loading;  // the panel shows this load, with nothing else to load
+    if (strings)
+        LoadingProgress::ReportAnimations(static_cast<std::size_t>(std::max(0, strings->animationNames._size)),
+            static_cast<std::size_t>(AnimationLimit::Get().bindingCap), false);
+    for (auto* graph : a_graphs) {
+        auto* root = graph ? graph->rootGenerator.get() : nullptr;
+        const char* name = root ? NodeName(root) : nullptr;
+        if (!name || _stricmp(name, "Master_Behavior") != 0 || !Claim(graph)) continue;
+        // Test mode: as a load order with many behavior mods.
+        if (const auto stress = static_cast<std::size_t>(FrameworkSettings::Get().nodeIdStressNodes);
+            stress && !a_firstPerson) {
+            std::size_t seen = 0;
+            if (auto* machine = FindNodeByName(root, "RootBehaviorGraph", 0, seen);
+                machine && SameVTable(machine, RE::VTABLE_hkbStateMachine))
+                NodeIdStress::Inflate(graph, static_cast<RE::hkbStateMachine*>(machine), stress);
+        }
+        ReportNodeIds(graph, root, a_firstPerson ? "first-person" : "third-person", CountNodes(root), 0,
+            NodeIdRenumber::Active(), false);
+    }
+}
+
 void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character) {
     if (!a_graph || Claimed(a_graph)) return;
     PassScope pass;
@@ -2104,12 +2166,24 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
     // The node id budget: the graph's own nodes now, then every node an action makes. An action that might not fit
     // is left out whole, and the graph keeps working (see "Node id budget" above).
     const char* viewLabel = g_currentFirstPerson ? "first-person" : "third-person";
+    // Test mode: the graph passes the id limit before any action is counted, as a load order with many behavior mods.
+    if (const auto stress = static_cast<std::size_t>(FrameworkSettings::Get().nodeIdStressNodes);
+        stress && rootTarget && !g_currentFirstPerson)
+        NodeIdStress::Inflate(a_graph, sm, stress);
     const std::size_t nativeNodes = rootTarget ? CountNodes(root) : 0;
     const std::size_t createdBefore = CreatedNodes();
     const auto made = [&] { return CreatedNodes() - createdBefore; };
+    // With core/NodeIdRenumber running, a graph past the node id limit is renumbered and only its state machines need
+    // ids of their own: an action fits while they do.
+    const bool renumbering = rootTarget && NodeIdRenumber::Active();
+    const std::size_t nativeMachines = renumbering ? NodeIdRenumber::Machines(AllNodes(root)) : 0;
+    const bool machinesFit =
+        renumbering && nativeMachines + NodeIdRenumber::kInjectedMachinesReserve + NodeIdRenumber::kCloneIds <
+                           NodeIdRenumber::kMachineIdLimit;
     std::vector<const std::string*> overBudget;
     const auto fits = [&](int action) {
         if (nativeNodes + made() + NodeReserve(action) + kNodeIdsKeptFree <= kNodeIdLimit) return true;
+        if (machinesFit) return true;
         overBudget.push_back(&Actions::Spec(action).id);
         return false;
     };
@@ -2151,15 +2225,7 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
     // numbers (native + made misses native nodes an action newly reaches; a count before the commit misses the
     // committed parts). A test game 11-07: 7010 + 506 = 7516, counted before the commit 7244, engine 7549.
     pass.pass.afterCommit = [=, label = std::string(viewLabel), made = CreatedNodes() - createdBefore] {
-        const std::size_t counted = CountNodes(root);
-        logger::info(
-            "[NodeBudget] {} 0_master: native {} + AI {} = {}, counted {} node ids of {} ({} kept free for clones)",
-            label, nativeNodes, made, nativeNodes + made, counted, kNodeIdLimit, kNodeIdsKeptFree);
-        LoadingProgress::ReportNodes(
-            counted, kNodeIdLimit, !leftOut.empty() || counted + kNodeIdsKeptFree > kNodeIdLimit);
-        if (counted + kNodeIdsKeptFree > kNodeIdLimit)
-            logger::error("[NodeBudget] {} 0_master: {} nodes leave fewer than {} of the {} node ids free", label,
-                counted, kNodeIdsKeptFree, kNodeIdLimit);
+        ReportNodeIds(a_graph, root, label.c_str(), nativeNodes, made, renumbering, !leftOut.empty());
         if (!leftOut.empty()) {
             std::string names;
             for (std::size_t i = 0; i < leftOut.size() && i < 40; ++i) names += (i ? ", " : "") + leftOut[i];
@@ -2253,7 +2319,8 @@ HkbSymbolIdMap* SymbolHook(RE::hkbBehaviorGraph* a_master, const RE::BSScrapArra
                 TryInjectGraph(graph, a_character);
         }
         g_currentFirstPerson = previousFirstPerson;
-    }
+    } else if (mapsEmpty)
+        MeasureCharacterProject(a_graphs, a_character, firstPersonPath);
     const double statesMs = ElapsedMs(statesStart);
     // The event registry's names go into every graph of the project: a registered name is an annotation
     // any clip may carry (a vanilla or OAR clip in a graph no action is injected into), and an
@@ -2419,6 +2486,21 @@ bool IsOurStateId(const char* a_smName, std::int32_t a_stateId) {
             for (auto s : r.stateIds)
                 if (s == a_stateId) return true;
     return false;
+}
+std::vector<RE::hkbNode*> AllNodes(RE::hkbNode* root) {
+    std::vector<RE::hkbNode*> nodes;
+    std::unordered_set<RE::hkbNode*> seen;
+    std::vector<RE::hkbNode*> stack{root};
+    std::vector<HkChild> buffer;
+    while (!stack.empty()) {
+        auto* node = stack.back();
+        stack.pop_back();
+        if (!node || !seen.insert(node).second) continue;
+        nodes.push_back(node);
+        const int count = ListChildren(node, buffer, 1 << 20);
+        for (int i = count - 1; i >= 0; --i) stack.push_back(buffer[i].node);
+    }
+    return nodes;
 }
 
 }  // namespace AnimationInjector::GraphInjector
