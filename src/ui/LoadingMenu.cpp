@@ -12,6 +12,13 @@ bool registered = false;
 bool closeSent = false;  // UI thread
 // Seconds with nothing to show before the menu closes (Show opens it again for the next load).
 constexpr float kIdleClose = 1.0f;
+// In the game world: no main menu, no loading screen, the player's 3D loaded.
+bool InWorld() {
+    auto* ui = RE::UI::GetSingleton();
+    auto* player = RE::PlayerCharacter::GetSingleton();
+    return ui && player && player->Is3DLoaded() && !ui->IsMenuOpen(RE::MainMenu::MENU_NAME) &&
+           !ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
+}
 
 // The panel (stage units; the movie is scaled to the screen): a title row with the progress, then one row per known
 // engine limit (core/LoadingProgressModel.h Usage). It sits in the top right corner under where OAR draws its
@@ -128,6 +135,13 @@ public:
         // always-open menu above the HUD makes mods that read the top menu think a menu is open (Screen Archer Menu
         // turns its hotkeys off).
         if (!visible && !LoadingProgress::IsActive()) {
+            // Only in the world, where the top menu matters. At the main menu and through a loading screen a session
+            // may begin at any moment, and nothing would open the menu again for it (11-09, 1.0.5: users whose first
+            // batch came more than a second after the menu opened never saw the panel, at start or on a load).
+            if (!InWorld()) {
+                idle = 0;
+                return;
+            }
             if ((idle += std::max(delta, 0.0f)) >= kIdleClose && !closeSent)
                 if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
                     static const RE::BSFixedString menuName(name);

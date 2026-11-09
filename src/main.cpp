@@ -200,6 +200,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
             AnimationLoadObserver::ResetProgress();
             LoadingProgress::Reset(true);
             logger::info("[LoadingUI] initial save-load session opened");
+            LoadingMenu::Show();  // closed while idle in the world: the session is drawn from its start
             EndSession();
             break;
         case SKSE::MessagingInterface::kPostLoadGame:
