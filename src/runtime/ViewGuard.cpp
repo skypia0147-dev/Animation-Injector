@@ -1,4 +1,5 @@
 #include "runtime/ViewGuard.h"
+#include "core/GraphInjector.h"
 #include "runtime/ActionLinks.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionRunner.h"
@@ -70,12 +71,23 @@ void Switch(CameraView to) {
     } else
         camera->ForceFirstPerson();
 }
-// What the player plays now and the view it plays in (third for a pair or a carry).
+bool PlaysInFirst(int action) {
+    return action >= 0 && action < Actions::Count() && Actions::Spec(action).paired.enabled &&
+           InFirst(Actions::Spec(action).view.view) && GraphInjector::HasFirstPersonPair(action);
+}
+// What the player plays now and the view it plays in (third for a carry or a pair, unless the pair plays in first
+// person too).
 bool Playing(RE::PlayerCharacter* player, View& view) {
     const auto handle = player->GetHandle();
     PairedSession::Ticket ticket;
-    if (PairedSession::TryGetTicket(handle, ticket) || Carry::BlocksAction(player)) {
+    if (Carry::BlocksAction(player)) {
         view = View::kThird;
+        return true;
+    }
+    if (PairedSession::TryGetTicket(handle, ticket)) {
+        // A both-view pair whose first-person states are there plays in the camera's view (1.0.8).
+        const auto status = PairedSession::ReadStatus();
+        view = status.ticket == ticket && PlaysInFirst(status.action) ? View::kBoth : View::kThird;
         return true;
     }
     int action = -1;
@@ -135,8 +147,18 @@ bool AllowStart(int action) {
     // view (third, first person blocked by default) refused every first-person start of a mod that picks its
     // dodge by direction (Dynamic Dodge Shot), though each dodge it picks switches to third person.
     if (Actions::Spec(action).SelectsOnly()) return true;
-    return MayStart(Actions::Spec(action).view, Current());
+    const auto& spec = Actions::Spec(action);
+    // A first-person pair has nothing to play in first person without its first-person states (no copy installed).
+    if (spec.paired.enabled && spec.view.view == View::kFirst && !GraphInjector::HasFirstPersonPair(action)) {
+        static std::unordered_set<int> told;
+        if (told.insert(action).second)
+            logger::warn(
+                "[ViewGuard] '{}' is a first-person pair without its first-person copy: it does not start", spec.id);
+        return false;
+    }
+    return MayStart(spec.view, Current());
 }
+bool FirstPersonPair(int action) { return Current() == CameraView::kFirst && PlaysInFirst(action); }
 void ExpectCamera(CameraView to) {
     expected = to;
     expectedAge = 0.0f;
@@ -161,6 +183,7 @@ void Update(float delta) {
         run.idle = 0.0f;
         if (!run.active) {
             // The camera it starts from is the baseline; a later change is measured against it.
+            const auto before = last;  // the frame before the run
             if (camera != CameraView::kOther) last = camera;
             run = {};
             run.active = true;
@@ -170,6 +193,11 @@ void Update(float delta) {
             restorePending = false;
             if (run.view == View::kThird && camera == CameraView::kFirst) {
                 Switch(CameraView::kThird);
+                run.switched = true;
+            } else if (run.view == View::kThird && before == CameraView::kFirst) {
+                // The engine moved the first-person player to third person itself as the pair started, before this
+                // update saw the run (11-10, a pair with no first-person states): it returns to first person at its
+                // end as one this plugin switched.
                 run.switched = true;
             }
             logger::debug(

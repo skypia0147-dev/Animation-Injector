@@ -518,9 +518,13 @@ std::size_t BuildFiles(const std::vector<OrdinaryClip>& ordinary, std::uint64_t 
         }
         if (!spec.paired.enabled) continue;
         // Both roles' rigs: the initiator's (the character, or a creature since 11-05 phase 2) and the partner's.
-        for (const auto& clip : spec.clips)
+        for (const auto& clip : spec.clips) {
             for (const auto rig : {spec.rig, spec.paired.targetRig})
                 add(PairedRig::ClipPath(clip.file, rig), clip.clipName + "_Preload", PairedRig::Mask(rig), true);
+            // A both-view pair (1.0.8): its first-person copy, when installed, for the player's first-person project.
+            if (InFirst(spec.view.view) && firstPerson(clip.file))
+                add(clip.file, clip.clipName + "_Preload", kFirstPerson, true);
+        }
     }
     const auto mask = [&](const OrdinaryClip& clip) {
         std::uint64_t bits = InThird(clip.view) ? PairedRig::Mask(PairedRig::Kind::kCharacter) : 0;
@@ -563,11 +567,25 @@ std::optional<std::uint64_t> LooseFileSize(const std::string& file) {
 }
 // A declared clip's first-person copy, loose or in an archive (the engine's own file lookup).
 bool InFirstPerson(const std::string& file) {
-    RE::BSResourceNiBinaryStream stream(std::string("Meshes\\Actors\\Character\\_1stPerson\\") + file);
-    if (stream.good()) return true;
+    if (HasFirstPersonCopy(file)) return true;
     logger::warn("[Preload] no first-person copy of '{}' (Meshes\\Actors\\Character\\_1stPerson): not preloaded", file);
     return false;
 }
+std::mutex copiesLock;
+std::unordered_map<std::string, bool> copies;  // lowercase file -> its first-person copy is installed
+}
+bool HasFirstPersonCopy(const std::string& file) {
+    std::string key = file;
+    for (auto& c : key) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    {
+        std::lock_guard lock(copiesLock);
+        if (const auto it = copies.find(key); it != copies.end()) return it->second;
+    }
+    RE::BSResourceNiBinaryStream stream(std::string("Meshes\\Actors\\Character\\_1stPerson\\") + file);
+    const bool found = stream.good();
+    std::lock_guard lock(copiesLock);
+    copies.emplace(std::move(key), found);
+    return found;
 }
 void Install() {
     const auto& settings = FrameworkSettings::Get();

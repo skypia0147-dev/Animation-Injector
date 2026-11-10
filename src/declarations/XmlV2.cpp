@@ -1056,14 +1056,15 @@ struct Compiler {
                     if (get(d, "op") == op) fail(d, std::string("op=\"") + op + "\"는 사람(character) 동작에만 씁니다");
         }
         // The camera view (runtime/ViewSpec.h): the file's unless written here. Pairs, carries and a carry's
-        // putdown play in third person whatever the file says.
-        const bool thirdOnly = pair || putdownActions.contains(get(n, "id"));
-        s.view.view = thirdOnly ? View::kThird : fileView;
+        // putdown play in third person whatever the file says. A pair may be written first or both (1.0.8): in first
+        // person the player plays its first-person copy; a carry stays third.
+        const bool carries = (pair && n.child("Carry")) || putdownActions.contains(get(n, "id"));
+        s.view.view = pair || carries ? View::kThird : fileView;
         if (n.attribute("view")) {
             const auto view = ParseView(get(n, "view"));
             if (!view) fail(n, "view는 third, first, both 중 하나입니다");
-            if (thirdOnly && *view != View::kThird)
-                fail(n, "페어·운반(내려놓기 포함)은 3인칭(view=\"third\")으로만 재생됩니다");
+            if (carries && *view != View::kThird)
+                fail(n, "운반(내려놓기 포함)은 3인칭(view=\"third\")으로만 재생됩니다");
             s.view.view = *view;
         }
         if (n.attribute("firstPerson")) {

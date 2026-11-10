@@ -9,6 +9,7 @@
 #include "core/AnimDataRegistry.h"
 #include "core/FullBodyEntry.h"
 #include "core/PairEntry.h"
+#include "core/AnimationPreloader.h"
 #include "runtime/ActionRegistry.h"
 #include "Settings.h"
 #include "core/BoundedNodeSearch.h"
@@ -646,6 +647,135 @@ void InjectPairedAction(int actionIndex, RE::hkbBehaviorGraph* graph, RE::hkbSta
     if (graph->rootGenerator) graph->rootGenerator->areBindablesCached = false;
     result.injected = true;
     Publish(std::move(result));
+    loading.Ready();
+}
+
+// A both-view pair in the player's first-person root (1.0.8, docs/설계-1인칭-페어-1.0.8.md). First person has no shared
+// pair entry, as it has none for full-body actions: the hook's iAI_PairState holds the third-person graph's nested ids.
+// Each role gets its own root state, entered by the role's own enter event through a root wildcard and left for the
+// start state on the role's end events. The synchronized clip takes vanilla's first-person HugA sync settings, inside
+// a copy of the root's MountSynced wrapper: its activity modifier sets bIsSynced while the state plays, which a
+// first-person player's graph variables are read from (11-10 first test without it: the start blend read the sync
+// as ended at 0.25 s and closed at 65%). Notify events and the exit blends that hand movement back stay with the
+// third-person graph, which plays the same pair at the same time. Only a pair whose first-person copy is installed gets these states: the first-person project's
+// request for a missing file never completes, and without them the run switches to third person (runtime/ViewGuard).
+RE::hkbNode* FindNodeByName(RE::hkbNode*, const char*, int, std::size_t&);
+void InjectFirstPersonPair(int actionIndex, RE::hkbBehaviorGraph* graph, RE::hkbStateMachine* sm,
+    TransitionInfoArrayLayout* wild, std::unordered_set<std::int32_t>& ids, RE::hkbCharacter* character,
+    int startStateId) {
+    const auto& spec = Actions::Spec(actionIndex);
+    auto skip = [&](const char* reason) {
+        logger::warn("[PairB] '{}' first-person injection skipped: {}", spec.id, reason);
+    };
+    if (spec.clips.size() != 2 || !wild) return skip("two roles and wildcard transitions required");
+    if (!AnimationPreloader::HasFirstPersonCopy(spec.clips[0].file)) {
+        logger::info(
+            "[PairB] '{}' plays in third person: no first-person copy (Meshes\\Actors\\Character\\_1stPerson\\{})",
+            spec.id, spec.clips[0].file);
+        return;
+    }
+    LoadingProgress::Registration loading(LoadingProgress::Outcome::kFailed);
+    // The sync settings of vanilla's first-person HugA pair: lead (2_ prefix) and support.
+    std::array<RE::BSSynchronizedClipGenerator*, 2> reference{};
+    const std::array<const char*, 2> referenceNames{"HugA", "pa_HugA"};
+    for (int i = 0; i < 2; ++i) {
+        std::size_t seen = 0;
+        auto* node = FindNodeByName(graph->rootGenerator.get(), referenceNames[i], 0, seen);
+        if (!node || !SameVTable(node, RE::VTABLE_BSSynchronizedClipGenerator))
+            return skip("vanilla first-person HugA pair not found");
+        reference[i] = static_cast<RE::BSSynchronizedClipGenerator*>(node);
+        std::uintptr_t prefixBits = 0;
+        std::memcpy(&prefixBits, &reference[i]->syncAnimPrefix, sizeof(prefixBits));
+        if (prefixBits & RE::hkStringPtr::kManaged)
+            return skip("native reference prefix is managed; raw prefix access would be unsafe");
+        if (reference[i]->leadCharacter != (i == 0)) return skip("reference role mismatch");
+    }
+    // The activity wrapper: MountSynced's modifier generator and its BSIsActiveModifier (bIsSynced, foot IK off).
+    auto* mount = NamedState(sm, "MountSynced");
+    auto* mountWrapper = mount ? mount->generator : nullptr;
+    if (!mountWrapper || !SameVTable(mountWrapper, RE::VTABLE_hkbModifierGenerator))
+        return skip("first-person MountSynced wrapper not found");
+    auto** mountModifier = ReflectedPointer<RE::hkbNode*>(mountWrapper, "modifier");
+    if (!mountModifier || !*mountModifier || !SameVTable(*mountModifier, RE::VTABLE_BSIsActiveModifier))
+        return skip("first-person MountSynced activity modifier not found");
+    const auto effects = FindEffects(sm);
+    if (!effects.enter || !effects.exit) return skip("no blend effect templates in the root");
+    constexpr std::size_t kDuration = 0x50;  // hkbBlendingTransitionEffect::duration (see MakeBlendEffect)
+    const auto duration = [](const RE::hkReferencedObject* effect) {
+        return *reinterpret_cast<const float*>(reinterpret_cast<const std::uint8_t*>(effect) + kDuration);
+    };
+    const float nativeExit = duration(effects.exit);
+    const float exitBlend = spec.exitBlend >= 0 ? spec.exitBlend : nativeExit;
+    auto* enterEffect =
+        SharedEffect(effects.enter, spec.enterBlend > 0 ? spec.enterBlend : duration(effects.enter), -1);
+    auto* exitEffect = SharedEffect(effects.exit, exitBlend, -1);
+    auto* lossEffect = spec.paired.lossBlend > 0.0f ? SharedEffect(effects.exit, spec.paired.lossBlend, -1) : nullptr;
+    const float recoveryBlend = spec.recovery.blend >= 0 ? spec.recovery.blend : exitBlend;
+    auto* recoveryEffect = spec.recovery.enabled ? SharedEffect(effects.exit, recoveryBlend, -1) : nullptr;
+    if (!enterEffect || !exitEffect || (spec.paired.lossBlend > 0.0f && !lossEffect) ||
+        (spec.recovery.enabled && !recoveryEffect))
+        return skip("blend effects unavailable");
+    const auto prio = static_cast<std::int16_t>(std::clamp(FrameworkSettings::Get().wildcardPriority, 0, 32767));
+    std::array<StateInfoLayout*, 2> states{};
+    std::array<int, 2> enters{};
+    std::array<RE::BSSynchronizedClipGenerator*, 2> syncs{};
+    const int base = TakeStateIds(sm, ids, 2);
+    if (base < 0) return skip("state IDs exhausted");
+    for (int i = 0; i < 2; ++i) {
+        const auto& variant = spec.clips[i];
+        const int enter = InjectEvent(graph, variant.enterEvent.c_str());
+        const int end = InjectEvent(graph, i == 0 ? "PairEnd" : "pairedStop");
+        const int customEnd = InjectEvent(graph, spec.events.exit.c_str());
+        const int loss = lossEffect ? InjectEvent(graph, spec.paired.lossExitEvent.c_str()) : -1;
+        const int recover = recoveryEffect ? InjectEvent(graph, spec.recovery.recoverEvent.c_str()) : -1;
+        if (enter < 0 || end < 0 || customEnd < 0 || (lossEffect && loss < 0) || (recoveryEffect && recover < 0))
+            return skip("event registration failed");
+        const int binding = EnsureAnimationName(character, variant.file.c_str());
+        if (binding < 0 || binding > AnimationLimit::MaxBindingIndex())
+            return skip("animation index unavailable or out of range");
+        std::vector<TriggerDef> triggers;
+        if (spec.exitTriggerBeforeEnd >= 0) triggers.push_back({spec.exitTriggerBeforeEnd, customEnd, true});
+        auto* clip = MakeClip(
+            variant.clipName.c_str(), variant.file.c_str(), binding, MakeTriggerArray(triggers), nullptr, true);
+        const auto* ref = reference[i];
+        auto* sync = static_cast<RE::BSSynchronizedClipGenerator*>(MakeSyncClip(variant.enterEvent.c_str(), clip,
+            i == 0 ? "2_" : "", i == 0, ref->getToMarkTime, ref->markErrorThreshold, ref->reorientSupportChar,
+            ref->applyMotionFromRoot, nullptr, &ref->syncAnimPrefix));
+        if (!clip || !sync) return skip("clip nodes unavailable");
+        auto* wrapper = CopyPairedWrapper(mountWrapper, (variant.enterEvent + "_Wrapper").c_str());
+        auto** child = wrapper ? ReflectedPointer<RE::hkbGenerator*>(wrapper, "generator") : nullptr;
+        auto** modifier = wrapper ? ReflectedPointer<RE::hkbNode*>(wrapper, "modifier") : nullptr;
+        if (!child || !modifier || *modifier != *mountModifier) return skip("copied wrapper links mismatch");
+        *child = sync;
+        AddRef(sync);
+        AddRef(*modifier);
+        auto* exits = MakeTransitionArray(2 + (lossEffect ? 1 : 0) + (recoveryEffect ? 1 : 0));
+        int at = 0;
+        FillTransition(exits->transitions._data[at++], end, startStateId, exitEffect, 0);
+        FillTransition(exits->transitions._data[at++], customEnd, startStateId, exitEffect, 0);
+        if (lossEffect) FillTransition(exits->transitions._data[at++], loss, startStateId, lossEffect, 0, prio);
+        if (recoveryEffect)
+            FillTransition(exits->transitions._data[at++], recover, startStateId, recoveryEffect, 0, prio);
+        states[i] =
+            MakeState(variant.enterEvent.c_str(), base + i, reinterpret_cast<RE::hkbGenerator*>(wrapper), exits);
+        enters[i] = enter;
+        syncs[i] = sync;
+    }
+    // Both roles together, as the third-person pair commits them.
+    for (int i = 0; i < 2; ++i) {
+        sm->states.push_back(reinterpret_cast<RE::hkbStateMachine::StateInfo*>(states[i]));
+        ids.insert(base + i);
+        TransitionInfo entry{};
+        FillTransition(entry, enters[i], base + i, enterEffect,
+            static_cast<std::int16_t>(TransitionInfo::kIsLocalWildcard | TransitionInfo::kDisableCondition), prio);
+        wild->transitions.push_back(entry);
+        PublishSync({syncs[i], syncs[i]->clipGenerator, spec.clips[i].file, actionIndex, i, true});
+    }
+    sm->areBindablesCached = false;
+    graph->areBindablesCached = false;
+    if (graph->rootGenerator) graph->rootGenerator->areBindablesCached = false;
+    logger::info("[PairB] '{}' first person: lead state {} and support state {} in the root (clip '{}')", spec.id, base,
+        base + 1, spec.clips[0].file);
     loading.Ready();
 }
 
@@ -2198,10 +2328,15 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
             if (!PairedRig::SupportsRole(spec.rig, spec.paired.targetRig, PairedRig::Kind::kCharacter, 0) &&
                 !PairedRig::SupportsRole(spec.rig, spec.paired.targetRig, PairedRig::Kind::kCharacter, 1))
                 continue;
-            // Pairs play in third person; the first-person root gets none (one line below, not one each).
-            if (rootTarget && g_currentFirstPerson)
-                ++firstPersonPairs;
-            else if (rootTarget && fits(a)) {
+            // A third-person pair plays in third person; the first-person root gets a both-view pair only (1.0.8)
+            // and none of the others (one line below, not one each).
+            if (rootTarget && g_currentFirstPerson) {
+                if (InFirst(spec.view.view) && spec.rig == PairedRig::Kind::kCharacter && fits(a)) {
+                    RegisterEvents(a_graph);
+                    InjectFirstPersonPair(a, a_graph, sm, wild, ids, a_character, tgt->startStateId);
+                } else
+                    ++firstPersonPairs;
+            } else if (rootTarget && fits(a)) {
                 RegisterEvents(a_graph);
                 InjectPairedAction(a, a_graph, sm, wild, ids, a_character, tgt->startStateId);
             }
@@ -2216,7 +2351,7 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
         InjectFullBodyAction(a, a_graph, sm, wild, a_character);
     }
     if (firstPersonPairs)
-        logger::info("[PairB] first-person {}: {} paired actions not injected (pairs play in third person)",
+        logger::info("[PairB] first-person {}: {} third-person paired actions not injected (they play in third person)",
             tgt->smName, firstPersonPairs);
     if (!rootTarget) return;
     std::vector<std::string> leftOut;
@@ -2459,6 +2594,11 @@ bool HasFullBodyRoute(int action) {
 bool AnyInjected(int a_actionIdx) {
     std::shared_lock lock(g_publishLock);
     return AnyResultOf(a_actionIdx, [](const Result& r) { return r.injected; });
+}
+bool HasFirstPersonPair(int action) {
+    std::shared_lock lock(g_publishLock);
+    return std::any_of(g_syncNodes.begin(), g_syncNodes.end(),
+        [&](const SyncNode& node) { return node.firstPerson && node.actionIdx == action; });
 }
 bool HasPairedRoutes(int action) {
     if (action < 0 || action >= Actions::Count()) return false;

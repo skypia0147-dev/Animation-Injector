@@ -7,6 +7,7 @@
 #include "runtime/Qte.h"
 #include "runtime/CameraRecovery.h"
 #include "runtime/PairEventRoles.h"
+#include "runtime/ViewGuard.h"
 #include "Settings.h"
 #include "runtime/DrivenFlagOwnership.h"
 #include "runtime/LifecyclePolicy.h"
@@ -420,7 +421,8 @@ void Begin(Ticket value, int action, RE::ActorHandle initiator, RE::ActorHandle 
                 role.initialNotPushable = controller->flags.all(RE::CHARACTER_FLAGS::kNotPushable);
             }
         }
-    if (!features.cameraReset.empty()) {
+    // A pair the player plays in first person (1.0.8) keeps the first-person camera: no shot, no recovery to third.
+    if (!features.cameraReset.empty() && !ViewGuard::FirstPersonPair(action)) {
         auto first = initiator.get(), second = target.get();
         auto* player = first && first->IsPlayerRef()     ? first.get()
                        : second && second->IsPlayerRef() ? second.get()

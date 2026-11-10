@@ -1,6 +1,6 @@
 # Animation Injector
 
-**Version 1.0.7** · [한국어](README.md)
+**Version 1.0.8** · [한국어](README.md)
 
 Adding a new animation usually means patching the behavior graph with a tool such as Nemesis or Pandora. Animation Injector is an SKSE framework that skips that step.
 
@@ -43,7 +43,7 @@ Action mods combine these features into actions.
 | Pairs | Actions two people do together. Both are lined up in position and facing when it starts, and their positions are corrected when it ends |
 | Carrying | Lift someone, carry them and put them down. How a target swinging under physics moves is set per lift action by a ragdoll file beside the XML (vanilla without one) |
 | QTE | Six kinds: timing, rapid presses, hold and release, key sequences and more. Each result can lead to a different action |
-| View | Third- and first-person actions; switching from first to third person to play one |
+| View | Third- and first-person actions and pairs; switching from first to third person to play one |
 
 Pairs and carrying work in third person only.
 

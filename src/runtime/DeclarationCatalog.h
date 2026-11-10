@@ -11,8 +11,8 @@ namespace AnimationInjector {
 struct DeclarationCatalog {
     std::vector<std::string> files, events;
     // The files of the actions that play in third person (view third or both, and every pair: the
-    // character's third-person projects) and in first person (non-paired, view first or both: the
-    // first-person project), in the same order (runtime/ViewSpec.h).
+    // character's third-person projects) and in first person (view first or both, a pair of the character's
+    // when written both: the first-person project), in the same order (runtime/ViewSpec.h).
     std::vector<std::string> thirdPersonFiles, firstPersonFiles;
     // events without repeats, ignoring case (first spelling, first-seen order). Graph event tables
     // and project maps match names ignoring case, so registering this list gives the same ids as
@@ -43,7 +43,8 @@ struct DeclarationCatalog {
                 const bool characterRole =
                     s.rig == PairedRig::Kind::kCharacter || s.paired.targetRig == PairedRig::Kind::kCharacter;
                 if (s.paired.enabled ? characterRole : InThird(s.view.view)) thirdPersonFiles.push_back(c.file);
-                if (!s.paired.enabled && InFirst(s.view.view)) firstPersonFiles.push_back(c.file);
+                if (s.paired.enabled ? characterRole && InFirst(s.view.view) : InFirst(s.view.view))
+                    firstPersonFiles.push_back(c.file);
             }
         for (const auto& name : registered) events.push_back(name);
         for (const auto& s : specs) {

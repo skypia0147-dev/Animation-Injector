@@ -79,7 +79,18 @@ int main() {
             Check(Find(p, "A")->view.view == View::kFirst, "the file's view");
             Check(Find(p, "P")->view.view == View::kThird, "a pair plays in third person whatever the file says");
         }
-        Check(!Parse("<Pair id='P' clip='p.hkx' view='first'/>").ok, "a pair written in first person");
+        {
+            // 1.0.8: a pair may be written first or both (its first-person copy plays in first person).
+            const auto p = Parse("<Pair id='P' clip='p.hkx' view='both'/><Pair id='Q' clip='q.hkx' view='first'/>");
+            Check(p.ok && Find(p, "P")->view.view == View::kBoth, "a pair written both");
+            Check(p.ok && Find(p, "Q")->view.view == View::kFirst, "a pair written first");
+            Check(MayStart(Find(p, "Q")->view, C::kFirst) && !MayStart(Find(p, "Q")->view, C::kThird),
+                "a first-person pair starts in first person only");
+        }
+        Check(!Parse("<Pair id='P' clip='p.hkx' view='both'><Carry target='physics'/></Pair>").ok,
+            "a carry written both");
+        Check(!Parse("<Pair id='P' clip='p.hkx' view='first'><Carry target='physics'/></Pair>").ok,
+            "a carry written first");
         Check(!Parse("<Action id='A' clip='a.hkx' view='first' firstPerson='switch'/>").ok,
             "firstPerson on a first-person action");
         Check(!Parse("<Action id='A' clip='a.hkx' view='side'/>").ok, "an unknown view");

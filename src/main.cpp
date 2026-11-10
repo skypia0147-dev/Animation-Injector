@@ -26,6 +26,7 @@
 #include "core/PlayerHooks.h"
 #include "core/HitDispatch.h"
 #include "core/PairedStartHooks.h"
+#include "core/HeadingWatch.h"
 #include "core/AnimationPreloader.h"
 #include "core/PairedClipBinding.h"
 #include "core/LoadingProgress.h"
@@ -179,6 +180,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
             PairRootRuntime::Install();
             NativePairEnd::Install();
             PairedStartHooks::Install();
+            HeadingWatch::Install();  // Who else turns an attacker during a paired start.
             AnimationFileLifetime::Install();
             AnimationPreloader::Install();
             AnimationPreloader::InstallCellEvents();

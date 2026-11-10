@@ -10,8 +10,11 @@
 //
 // A clip path is read under its project's folder: third person Meshes\Actors\Character\<clip>, first
 // person Meshes\Actors\Character\_1stPerson\<clip>. `both` needs the file in both folders.
-// Pairs and carries (and a carry's putdown Action) play in third person only: they ignore the file
-// default, and another view written on them is a declaration error.
+// Carries (and a carry's putdown Action) play in third person only: they ignore the file default, and another view
+// written on them is a declaration error. A pair defaults to third whatever the file says and may be written first or
+// both (1.0.8): the player plays its first-person copy (Actors\Character\_1stPerson\<file>) in first person, while
+// the partner and the player's third-person graph play the clip itself, so a pair needs it in every view. A
+// first-person pair starts only when the player is in first person and its first-person copy is installed.
 namespace AnimationInjector {
 enum class View : std::uint8_t {
     kThird,  // third-person graphs only: NPCs, and the player in third person

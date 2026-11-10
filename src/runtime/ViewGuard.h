@@ -7,7 +7,8 @@
 //
 // A run: the player's stretch of our playback, from its first action, carry or pair until none of them
 // and no pending link has remained for a moment (the stretch of its EventEffects run scope). Its view is
-// fixed at the start: third for a pair or a carry, else the action's view (for `both`, the camera's).
+// fixed at the start: third for a carry or a pair, else the action's view (for `both`, the camera's). A pair written
+// both whose states are in the first-person graph (1.0.8) is both too: in first person it plays there.
 //   - Start: an action of the player whose view the camera does not show does not start, unless it is a
 //     third-person action with firstPerson="switch". A run that starts in third person while the camera is
 //     in first person (that switch, or a pair another actor starts on the player, as vanilla kill moves
@@ -32,6 +33,9 @@ CameraView Current();
 bool AllowStart(int action);
 // Main thread: this plugin is about to move the player's camera to `to`; not a change of the player's.
 void ExpectCamera(CameraView to);
+// Main thread: the player plays a pair of `action` in first person now (written both, its first-person states
+// injected, the camera in first person). Its pair camera stays off.
+bool FirstPersonPair(int action);
 // Main thread, every player update after the runners, the carry and the pairs.
 void Update(float delta);
 // Load / new game: forgets the run. Nothing is restored: controls are never touched.

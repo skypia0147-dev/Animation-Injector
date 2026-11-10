@@ -55,6 +55,8 @@ bool IsActionState(int action, const char* graph, std::int32_t stateId);
 bool AnyInjected(int a_actionIdx);
 // Both project routes must exist before a cross-species request can start.
 bool HasPairedRoutes(int action);
+// A both-view pair's states are in a first-person graph (1.0.8): the player plays it in first person there.
+bool HasFirstPersonPair(int action);
 bool IsNativeTransitionEvent(const char* event);
 bool HasFullBodyRoute(int action);
 // True only after an airborne master-graph entry was successfully injected.

@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 namespace RE {
 class hkbClipGenerator;
 struct hkbContext;
@@ -35,4 +36,8 @@ void RequestCheck();
 // A clip that failed to start on a file this set holds: prepare that file again.
 void RecoverFailedMark(const RE::hkbContext& context, RE::hkbClipGenerator* clip);
 void InstallCellEvents();
+// Whether a declared clip's first-person copy (Actors\Character\_1stPerson\<file>) is installed, loose or in an
+// archive: the engine's own file lookup, made once per file (any thread). A both-view pair plays in first person only
+// with it (1.0.8): the first-person project's request for a missing file never completes.
+bool HasFirstPersonCopy(const std::string& file);
 }

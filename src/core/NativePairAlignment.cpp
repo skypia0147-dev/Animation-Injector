@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "core/NativePairAlignment.h"
+#include "core/HeadingWatch.h"
 #include "core/SynchronizedSceneView.h"
 #include "core/NativePairRoles.h"
 #include "core/NativePairMarkCapture.h"
@@ -57,6 +58,10 @@ struct Blend {
     std::optional<Carry::NativeStartBridge> carryBridge;
     const char* placement = "shared";
     unsigned headingRestores = 0;
+    // Frames in a row the attacker had to be turned back; past kHeadingTugFrames the hold lets go (headingReleased).
+    unsigned headingStreak = 0;
+    bool headingReleased = false;
+    std::uintptr_t watchScene = 0;  // core/HeadingWatch: who else turns the attacker during this start
     unsigned pivotTurns = 0;
     unsigned pivotHolds = 0;
     float pivotDrift = 0;
@@ -222,7 +227,16 @@ void Restore(Blend& blend) {
             role.layer.owned = false;
     }
 }
+// Something turning the attacker back every frame (elderwraith/RadiantWings 11-08: 217 restores in 3.25 s, the clip
+// stalled at 0.21 s and the attacker slid 131 units, then snapped): holding against it only fights. After this many
+// frames in a row the start lets it be.
+constexpr unsigned kHeadingTugFrames = 10;
 void Close(Blend& blend, bool restore, bool holdCamera = false) {
+    if (blend.watchScene) {
+        if (const auto callers = HeadingWatch::Stop(blend.watchScene); !callers.empty())
+            logger::info("[HeadingWatch] scene={:X} the attacker was also turned by: {}", blend.watchScene, callers);
+        blend.watchScene = 0;
+    }
     if (blend.activation)
         for (auto& slot : activations) {
             auto expected = blend.activation;
@@ -345,6 +359,7 @@ void KeepCameraYaw(float turn) {
     }
 }
 void Place(Role& role, Pose pose) {
+    HeadingWatch::OwnTurn own;
     auto actor = role.actor.get();
     if (!Same(role, actor.get()) || actor->GetCharController() != role.controller.get()) return;
     const float turn = PairAlignmentMath::Wrap(pose.yaw - actor->GetAngleZ());
@@ -366,6 +381,7 @@ void Place(Role& role, Pose pose) {
 // (TDM before its yaw lease is granted, or a mod without such an API) is undone, position untouched. A player's
 // camera stays where it is, as at the placement.
 bool HoldHeading(Role& role) {
+    HeadingWatch::OwnTurn own;
     auto actor = role.actor.get();
     if (!Same(role, actor.get()) || actor->GetCharController() != role.controller.get()) return false;
     const float off = PairAlignmentMath::Wrap(actor->GetAngleZ() - role.goal.yaw);
@@ -381,6 +397,7 @@ bool HoldHeading(Role& role) {
 // askew; a player victim "went halfway" the same way, 0.12.262). It follows the blend's weight and never undoes a
 // turn the engine has already made further. Returns whether it turned the actor.
 bool TurnPivot(Role& role, float weight) {
+    HeadingWatch::OwnTurn own;
     auto actor = role.actor.get();
     if (!Same(role, actor.get()) || actor->GetCharController() != role.controller.get()) return false;
     const auto yaw = PairAlignmentMath::PivotYaw(role.before.yaw, role.goal.yaw, actor->GetAngleZ(), weight);
@@ -528,6 +545,11 @@ bool Prepare(const std::shared_ptr<Blend>& pending, const std::array<Mark, 2>& m
         pending->clock.duration, PairAlignmentMath::Distance(pending->roles[0].before, pending->roles[0].goal),
         PairAlignmentMath::Distance(pending->roles[1].before, pending->roles[1].goal));
     // Keep the visual transition ready before the caller activates the scene.
+    if (pivoted && realign)
+        if (const auto attacker = pending->roles[1 - *pivot].actor.get()) {
+            pending->watchScene = sceneId;
+            HeadingWatch::Watch(sceneId, attacker->GetFormID());
+        }
     blends.push_back(pending);
     return true;
 }
@@ -817,10 +839,10 @@ void Update(float delta) {
         const float weight = blend.clock.Weight(true, blend.roles[0].observation.time, blend.roles[1].observation.time);
         const auto finish = [&](const char* why) {
             logger::debug(
-                "[NativePairAlign] close scene={:X} reason={} age={:.3f} clip={:.3f}/{:.3f} weight={:.3f} activated={} realign={} headingRestores={} pivotTurns={} pivotHolds={} pivotDrift={:.3f}",
+                "[NativePairAlign] close scene={:X} reason={} age={:.3f} clip={:.3f}/{:.3f} weight={:.3f} activated={} realign={} headingRestores={} headingReleased={} pivotTurns={} pivotHolds={} pivotDrift={:.3f}",
                 blend.activation->nativeScene, why, blend.age, blend.roles[0].observation.time,
                 blend.roles[1].observation.time, weight, blend.activation->applied.load(), blend.activation->realign,
-                blend.headingRestores, blend.pivotTurns, blend.pivotHolds, blend.pivotDrift);
+                blend.headingRestores, blend.headingReleased, blend.pivotTurns, blend.pivotHolds, blend.pivotDrift);
             // A start that played on keeps the player's camera until its pair ends.
             Close(blend, true, std::strcmp(why, "blend-complete") == 0);
             it = blends.erase(it);
@@ -868,15 +890,26 @@ void Update(float delta) {
             }
         }
         // The snapped role (the attacker) keeps its goal heading; the pivot (the victim) turned above.
-        if (const auto pivot = PivotRole(blend);
-            pivot && blend.activation && blend.activation->applied.load() && blend.activation->realign) {
+        if (const auto pivot = PivotRole(blend); pivot && !blend.headingReleased && blend.activation &&
+                                                 blend.activation->applied.load() && blend.activation->realign) {
             auto& role = blend.roles[1 - *pivot];
             const auto actor = role.actor.get();
             const float before = actor ? PairAlignmentMath::Wrap(actor->GetAngleZ() - role.goal.yaw) : 0.0f;
-            if (HoldHeading(role) && blend.headingRestores++ == 0)
+            const bool restored = HoldHeading(role);
+            if (restored && blend.headingRestores++ == 0)
                 logger::info(
                     "[NativePairAlign] heading restored scene={:X} role={} actor={:08X} yawError={:.5f} age={:.3f}",
                     blend.activation->nativeScene, 1 - *pivot, actor->GetFormID(), before, blend.age);
+            blend.headingStreak = restored ? blend.headingStreak + 1 : 0;
+            if (blend.headingStreak >= kHeadingTugFrames) {
+                blend.headingReleased = true;
+                logger::warn(
+                    "[NativePairAlign] heading tug-of-war: the attacker was turned back {} frames in a row, its heading "
+                    "is no longer held scene={:X} role={} actor={:08X} goalYaw={:.4f} yawError={:.4f} clip={:.3f}/{:.3f} "
+                    "age={:.3f} (who turned it: [HeadingWatch] lines)",
+                    blend.headingStreak, blend.activation->nativeScene, 1 - *pivot, actor->GetFormID(), role.goal.yaw,
+                    before, blend.roles[0].observation.time, blend.roles[1].observation.time, blend.age);
+            }
         }
         std::array<RE::NiTransform, 2> locals;
         for (unsigned i = 0; i < 2; ++i) {

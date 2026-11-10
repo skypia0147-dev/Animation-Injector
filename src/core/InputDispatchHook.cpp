@@ -6,11 +6,37 @@
 #include "runtime/Carry.h"
 #include "runtime/EventSuppression.h"
 #include "runtime/ActionRegistry.h"
+#include "runtime/GameControlBindings.h"
 
 namespace AnimationInjector::InputDispatchHook {
 namespace {
 using Result = RE::BSEventNotifyControl;
 using Source = RE::BSTEventSource<RE::InputEvent*>;
+
+// Activate on a horse or furniture while a player action plays is kept from the game, press to release
+// (poisoned0cean 11-10, reproduced in a sprint stop): the engine starts the mount or the sit and waits for its
+// animation, but the third-person graph sits in the action's state and never takes HorseEnter (the first-person
+// graph does), so the player is left waiting to mount for good, with movement and most keys gone until a reload.
+// Other activation (items, doors, talking) goes through as before.
+bool activateKept = false;  // input thread: the kept press's release is kept too
+bool KeepActivate(const RE::ButtonEvent& event, bool allow) {
+    if (GameControls::Of(event.QUserEvent()) != GameControl::kActivate) return false;
+    if (activateKept) {
+        if (event.IsUp()) activateKept = false;
+        return true;
+    }
+    if (!allow || !event.IsDown() || !Actions::AnyActive()) return false;
+    auto* pick = RE::CrosshairPickData::GetSingleton();
+    const auto target = pick ? pick->GetActiveTarget().get() : RE::NiPointer<RE::TESObjectREFR>();
+    if (!target) return false;
+    const auto* base = target->GetBaseObject();
+    const bool furniture = base && base->Is(RE::FormType::Furniture);
+    if (!furniture && !target->IsHorse()) return false;
+    activateKept = true;
+    logger::info("[ActivateGate] activate on {} {:08X} ignored: a player action is playing",
+        furniture ? "furniture" : "horse", target->GetFormID());
+    return true;
+}
 struct Dispatch {
     static Result Thunk(RE::BSTEventSink<RE::InputEvent*>* self, RE::InputEvent* const* events, Source* source) {
         // A press handed to the game late (core/GameInputReplay.h) is the game's: nothing here takes it.
@@ -37,7 +63,8 @@ struct Dispatch {
                 Qte::DisconnectInput();
             // An open QTE takes its key first; an active carry keeps its putdown key from the game.
             const bool consume = ev->AsButtonEvent() && (Qte::Input(*ev->AsButtonEvent(), allow) ||
-                                                            Carry::ClaimInput(*ev->AsButtonEvent(), allow));
+                                                            Carry::ClaimInput(*ev->AsButtonEvent(), allow) ||
+                                                            KeepActivate(*ev->AsButtonEvent(), allow));
             if (consume)
                 *tail = next;
             else
@@ -66,7 +93,9 @@ struct Dispatch {
 };
 }
 bool InstallIfNeeded() {
-    if (!EventSuppression::Enabled() && !Qte::Enabled() && !Carry::Enabled() && !Actions::UsesGameControls())
+    // Any action needs it: activation on a horse or furniture is kept from the game while one plays.
+    if (!EventSuppression::Enabled() && !Qte::Enabled() && !Carry::Enabled() && !Actions::UsesGameControls() &&
+        Actions::Count() == 0)
         return false;
     static bool installed = false;
     if (!installed) {
