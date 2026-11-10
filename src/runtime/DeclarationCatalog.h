@@ -37,12 +37,13 @@ struct DeclarationCatalog {
                 // A creature's own action plays in that creature's project only (its clip is relative to that
                 // creature's actor folder): the character's projects never bind it.
                 if (s.CreatureAction()) continue;
-                files.push_back(c.file);
+                files.push_back(ThirdPersonClip(s, c));
                 // A pair binds in the character's projects when the character plays one of its roles (a
                 // creature-started pair's partner, 11-05 phase 2).
                 const bool characterRole =
                     s.rig == PairedRig::Kind::kCharacter || s.paired.targetRig == PairedRig::Kind::kCharacter;
-                if (s.paired.enabled ? characterRole : InThird(s.view.view)) thirdPersonFiles.push_back(c.file);
+                if (s.paired.enabled ? characterRole : InThird(s.view.view))
+                    thirdPersonFiles.push_back(ThirdPersonClip(s, c));
                 if (s.paired.enabled ? characterRole && InFirst(s.view.view) : InFirst(s.view.view))
                     firstPersonFiles.push_back(c.file);
             }
@@ -111,7 +112,7 @@ struct DeclarationCatalog {
                 // Either role: the partner's, or a creature-started pair's initiator (11-05 phase 2).
                 if (s.paired.enabled &&
                     (PairedRig::SharesAssets(s.paired.targetRig, rig.kind) || PairedRig::SharesAssets(s.rig, rig.kind)))
-                    for (const auto& c : s.clips) wanted.insert(c.file);
+                    for (const auto& c : s.clips) wanted.insert(ThirdPersonClip(s, c));
             auto& list = rigFiles[static_cast<std::size_t>(rig.kind)];
             for (const auto& file : files)
                 if (wanted.contains(file)) list.push_back(PairedRig::ClipPath(file, rig.kind));

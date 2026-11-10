@@ -273,4 +273,12 @@ struct ActionSpec {
     bool CreatureAction() const { return !paired.enabled && rig != PairedRig::Kind::kCharacter; }
 };
 
+// The file a clip plays in a third-person project, relative to Actors\Character. A first-person pair (1.0.8) has one
+// file, its first-person copy (Actors\Character\_1stPerson\<file>): the paired HKX holds both roles' tracks, so the
+// partner's and the player's third-person graphs play it too (11-10: without a third-person copy the partner's clip
+// never loaded and the pair did not start). The player's first-person project reads <file> under its own folder.
+inline std::string ThirdPersonClip(const ActionSpec& spec, const ClipVariant& clip) {
+    return spec.paired.enabled && spec.view.view == View::kFirst ? "_1stPerson\\" + clip.file : clip.file;
+}
+
 }  // namespace AnimationInjector

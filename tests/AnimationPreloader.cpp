@@ -507,6 +507,16 @@ int main(int argc, char** argv) {
             {"a", "la", View::kThird}, {"b", "lb", View::kBoth}, {"c", "lc", View::kFirst}, {"d", "ld", View::kFirst}};
         BuildFiles(viewed, 0, size, [](const std::string& file) { return file != "d"; });
         assert(files.size() == 3 && files[0].rigs == third && files[1].rigs == both && files[2].rigs == kFirstPerson);
+        // 1.0.8: a first-person pair has one file, its first-person copy: the third-person projects take it under
+        // _1stPerson, the first-person project as written (its own folder).
+        Actions::specs = {};
+        Actions::specs.push_back({});
+        Actions::specs[0].clips = {{"p.hkx", "cp"}, {"p.hkx", "cp"}};
+        Actions::specs[0].view.view = View::kFirst;
+        BuildFiles({}, 0, size, [](const std::string&) { return true; });
+        assert(files.size() == 2 && files[0].path == "_1stPerson\\p.hkx" && files[0].rigs == third && files[0].paired);
+        assert(files[1].path == "p.hkx" && files[1].rigs == kFirstPerson && files[1].paired);
+        Actions::specs = {};
 
         // The first-person project takes the ordinary files only; the third person takes both.
         files.clear();

@@ -520,7 +520,8 @@ std::size_t BuildFiles(const std::vector<OrdinaryClip>& ordinary, std::uint64_t 
         // Both roles' rigs: the initiator's (the character, or a creature since 11-05 phase 2) and the partner's.
         for (const auto& clip : spec.clips) {
             for (const auto rig : {spec.rig, spec.paired.targetRig})
-                add(PairedRig::ClipPath(clip.file, rig), clip.clipName + "_Preload", PairedRig::Mask(rig), true);
+                add(PairedRig::ClipPath(ThirdPersonClip(spec, clip), rig), clip.clipName + "_Preload",
+                    PairedRig::Mask(rig), true);
             // A both-view pair (1.0.8): its first-person copy, when installed, for the player's first-person project.
             if (InFirst(spec.view.view) && firstPerson(clip.file))
                 add(clip.file, clip.clipName + "_Preload", kFirstPerson, true);

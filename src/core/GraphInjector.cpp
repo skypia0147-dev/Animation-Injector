@@ -418,6 +418,10 @@ void InjectPairedAction(int actionIndex, RE::hkbBehaviorGraph* graph, RE::hkbSta
             g_currentFirstPerson, spec.clips.size());
     };
     if (g_currentFirstPerson) return skip("first-person graph");
+    // A first-person pair plays its first-person copy here too: without it there is nothing to play.
+    if (spec.view.view == View::kFirst &&
+        !AnimationPreloader::HasFirstPersonCopy(spec.clips.empty() ? std::string() : spec.clips[0].file))
+        return skip("first-person pair without its first-person copy");
     LoadingProgress::Registration loading(LoadingProgress::Outcome::kFailed);
     // Pairs live in the containers of an injection pass; once the pass found none (logged once), the
     // graph gets no pair.
@@ -546,7 +550,8 @@ void InjectPairedAction(int actionIndex, RE::hkbBehaviorGraph* graph, RE::hkbSta
         const int prefixedEnd = InjectEvent(graph, i == 0 ? "2_PairEnd" : "NPCpairedStop");
         const int customEnd = InjectEvent(graph, spec.events.exit.c_str());
         if (enter < 0 || end < 0 || prefixedEnd < 0 || customEnd < 0) return skip("event registration failed");
-        const int binding = EnsureAnimationName(character, variant.file.c_str());
+        const auto file = ThirdPersonClip(spec, variant);  // a first-person pair's one file (1.0.8)
+        const int binding = EnsureAnimationName(character, file.c_str());
         if (binding < 0 || binding > AnimationLimit::MaxBindingIndex())
             return skip("animation index unavailable or out of range");
         // Preserve annotation conversion and use clip-relative completion,
@@ -554,8 +559,8 @@ void InjectPairedAction(int actionIndex, RE::hkbBehaviorGraph* graph, RE::hkbSta
         std::vector<TriggerDef> pairTriggers;
         const float exitAt = spec.exitTriggerBeforeEnd;
         if (exitAt >= 0) pairTriggers.push_back({exitAt, customEnd, true});
-        auto* clip = MakeClip(
-            variant.clipName.c_str(), variant.file.c_str(), binding, MakeTriggerArray(pairTriggers), nullptr, true);
+        auto* clip =
+            MakeClip(variant.clipName.c_str(), file.c_str(), binding, MakeTriggerArray(pairTriggers), nullptr, true);
         auto* ref = sourceSync[i];
         auto* sync = static_cast<RE::BSSynchronizedClipGenerator*>(MakeSyncClip(variant.enterEvent.c_str(), clip,
             i == 0 ? "2_" : "", i == 0, ref->getToMarkTime, ref->markErrorThreshold, ref->reorientSupportChar,
@@ -632,7 +637,8 @@ void InjectPairedAction(int actionIndex, RE::hkbBehaviorGraph* graph, RE::hkbSta
         for (const auto& exit : staged[i]) StagePairExit(graph, role, exit.transition, exit.kind);
         PairEntry::Register(spec.clips[i].enterEvent.c_str(),
             i == 0 ? PairEntry::Role::kLead : PairEntry::Role::kSupport, base, blends[i]);
-        PublishSync({newSync[i], newSync[i]->clipGenerator, spec.clips[i].file, actionIndex, i, false});
+        PublishSync(
+            {newSync[i], newSync[i]->clipGenerator, ThirdPersonClip(spec, spec.clips[i]), actionIndex, i, false});
         logger::debug(
             "[PairB] injected role={} container={} state={} event='{}' clip='{}' id={} clone={} referenceId={} "
             "referenceClone={}",

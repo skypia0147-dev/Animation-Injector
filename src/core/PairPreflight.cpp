@@ -76,10 +76,10 @@ std::optional<std::array<PairPlacementMath::Mark, 2>> ReadStartMarks(
     }
     // GraphInjector validates the front-feed template: role 0 is the native
     // leader (target, prefix 2_), role 1 is support (initiator, null -> NPC).
-    const auto targetFile = PairedRig::ClipPath(spec.clips[0].file, spec.paired.targetRig);
+    const auto targetFile = PairedRig::ClipPath(ThirdPersonClip(spec, spec.clips[0]), spec.paired.targetRig);
     const auto leader = ReadMark(other.get(), targetFile.c_str(), "2_", spec.paired.targetRig);
     // The initiator's graph reads the same character-relative HKX (a creature's through its own folder).
-    const auto supportFile = PairedRig::ClipPath(spec.clips[1].file, spec.rig);
+    const auto supportFile = PairedRig::ClipPath(ThirdPersonClip(spec, spec.clips[1]), spec.rig);
     const auto support = ReadMark(self.get(), supportFile.c_str(), "NPC", spec.rig);
     if (!leader || !support) return std::nullopt;
     return std::array<PairPlacementMath::Mark, 2>{*leader, *support};

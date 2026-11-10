@@ -144,6 +144,12 @@ struct SpecType {
     PairedRig::Kind rig = PairedRig::Kind::kCharacter;  // a creature's own action (11-05)
     bool CreatureAction() const { return !paired.enabled && rig != PairedRig::Kind::kCharacter; }
 };
+}
+// The plugin's rule (runtime/ActionSpec.h): a first-person pair plays its first-person copy in every project.
+inline std::string ThirdPersonClip(const Actions::SpecType& spec, const Actions::Clip& clip) {
+    return spec.paired.enabled && spec.view.view == View::kFirst ? "_1stPerson\\" + clip.file : clip.file;
+}
+namespace Actions {
 inline std::vector<SpecType> specs;
 inline int Count() { return static_cast<int>(specs.size()); }
 inline const SpecType& Spec(int index) { return specs.at(index); }
