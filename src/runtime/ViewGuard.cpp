@@ -14,17 +14,17 @@ namespace {
 struct Run {
     bool active = false;
     View view = View::kThird;
-    bool switched = false;   // the plugin moved the camera from first to third person for it
-    bool cancelled = false;  // a view change ended it; nothing is restored
-    float idle = 0.0f;       // seconds with nothing playing: a link's gap is not an end
+    CameraView returnTo = CameraView::kOther;  // the view the plugin moved the camera from for it; kOther: none
+    bool cancelled = false;                    // a view change ended it; nothing is restored
+    float idle = 0.0f;                         // seconds with nothing playing: a link's gap is not an end
 };
 Run run;
 CameraView last = CameraView::kOther;  // the last first- or third-person view seen
 CameraView expected = CameraView::kOther;
 float expectedAge = 0.0f;
-bool restorePending = false;          // back to first person once the pair camera is released
-constexpr float kEndGrace = 0.3f;     // between two linked actions nothing may run for a few frames
-constexpr float kExpectLimit = 3.0f;  // a switch the plugin makes settles well within this
+CameraView restoreTo = CameraView::kOther;  // back to this view once the pair camera is released; kOther: none
+constexpr float kEndGrace = 0.3f;           // between two linked actions nothing may run for a few frames
+constexpr float kExpectLimit = 3.0f;        // a switch the plugin makes settles well within this
 
 // The player's own third-person zoom (0.12.288): the last one seen in third person outside a run the plugin switched,
 // given back when a first-person start switches to third person (the engine's own is its closest). None seen yet:
@@ -38,7 +38,7 @@ RE::ThirdPersonState* ThirdPerson() {
     return state && state->id == RE::CameraStates::kThirdPerson ? static_cast<RE::ThirdPersonState*>(state) : nullptr;
 }
 void RememberZoom() {
-    if (run.switched || restorePending) return;
+    if (run.returnTo != CameraView::kOther || restoreTo != CameraView::kOther) return;
     if (auto* state = ThirdPerson(); state && std::isfinite(state->targetZoomOffset)) {
         rememberedZoom = state->targetZoomOffset;
         zoomRemembered = true;
@@ -65,6 +65,7 @@ void Switch(CameraView to) {
     auto* camera = RE::PlayerCamera::GetSingleton();
     if (!camera) return;
     ExpectCamera(to);
+    logger::info("[ViewGuard] switching the camera to {} person (it is in {})", Name(to), Name(Current()));
     if (to == CameraView::kThird) {
         camera->ForceThirdPerson();
         ApplyZoom();
@@ -105,8 +106,8 @@ bool Playing(RE::PlayerCharacter* player, View& view) {
 void Cancel(RE::PlayerCharacter* player, CameraView camera) {
     logger::info("[ViewGuard] camera {} during a {} run: cancelling it", Name(camera), Name(run.view));
     run.cancelled = true;
-    run.switched = false;
-    restorePending = false;
+    run.returnTo = CameraView::kOther;
+    restoreTo = CameraView::kOther;
     const auto handle = player->GetHandle();
     PairedSession::Ticket ticket;
     if (PairedSession::TryGetTicket(handle, ticket)) PairedSession::Cancel(ticket);
@@ -188,26 +189,27 @@ void Update(float delta) {
             run = {};
             run.active = true;
             run.view = RunView(view, last);
-            // A run right after one we switched plays on in that third-person view: restore after this one.
-            run.switched = restorePending;
-            restorePending = false;
-            if (run.view == View::kThird && camera == CameraView::kFirst) {
-                Switch(CameraView::kThird);
-                run.switched = true;
-            } else if (run.view == View::kThird && before == CameraView::kFirst) {
+            // A run right after one we switched plays on in that view: restore after this one.
+            run.returnTo = restoreTo;
+            restoreTo = CameraView::kOther;
+            if (const auto to = SwitchFor(run.view, camera); to != CameraView::kOther) {
+                Switch(to);
+                // The view the first run of the chain started from is the one to return to.
+                if (run.returnTo == CameraView::kOther) run.returnTo = camera;
+            } else if (run.view == View::kThird && before == CameraView::kFirst && run.returnTo == CameraView::kOther) {
                 // The engine moved the first-person player to third person itself as the pair started, before this
                 // update saw the run (11-10, a pair with no first-person states): it returns to first person at its
                 // end as one this plugin switched.
-                run.switched = true;
+                run.returnTo = CameraView::kFirst;
             }
-            logger::debug(
-                "[ViewGuard] run begins view={} camera={} switched={}", Name(run.view), Name(camera), run.switched);
+            logger::debug("[ViewGuard] run begins view={} camera={} returnTo={}", Name(run.view), Name(camera),
+                run.returnTo == CameraView::kOther ? "none" : Name(run.returnTo));
         }
     } else if (run.active && (run.idle += delta) >= kEndGrace) {
-        if (run.switched && !run.cancelled) restorePending = true;
+        if (!run.cancelled) restoreTo = run.returnTo;
         drivenSync = true;
-        logger::debug(
-            "[ViewGuard] run ends view={} cancelled={} restore={}", Name(run.view), run.cancelled, restorePending);
+        logger::debug("[ViewGuard] run ends view={} cancelled={} restore={}", Name(run.view), run.cancelled,
+            restoreTo == CameraView::kOther ? "none" : Name(restoreTo));
         run = {};
     }
 
@@ -216,13 +218,14 @@ void Update(float delta) {
         last = camera;
     }
 
-    if (restorePending && !run.active) {
-        if (camera == CameraView::kFirst)
-            restorePending = false;  // already there (the player went back themselves)
-        else if (camera == CameraView::kThird && !PairFeatures::CameraBusy()) {
-            restorePending = false;
-            logger::info("[ViewGuard] run ended: back to first person");
-            Switch(CameraView::kFirst);
+    if (restoreTo != CameraView::kOther && !run.active) {
+        if (camera == restoreTo)
+            restoreTo = CameraView::kOther;  // already there (the player went back themselves)
+        else if (camera != CameraView::kOther && !PairFeatures::CameraBusy()) {
+            const auto to = restoreTo;
+            restoreTo = CameraView::kOther;
+            logger::info("[ViewGuard] run ended: back to {} person", Name(to));
+            Switch(to);
         }
     }
     if (drivenSync && !run.active) SyncDriven(player, camera);
@@ -232,7 +235,7 @@ void OnGameLoad() {
     last = CameraView::kOther;
     expected = CameraView::kOther;
     expectedAge = 0.0f;
-    restorePending = false;
+    restoreTo = CameraView::kOther;
     drivenSync = false;  // the graphs are new
 }
 }

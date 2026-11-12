@@ -1,6 +1,7 @@
 #include "PCH.h"
 #include "runtime/PairTargetMath.h"
 #include "runtime/ActionRunner.h"
+#include "runtime/PostCancelTime.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionHistory.h"
 #include "runtime/NpcMoveCancel.h"
@@ -24,7 +25,6 @@
 #include "runtime/ActorImmunity.h"
 #include "runtime/EventEffects.h"
 #include "runtime/LifecyclePolicy.h"
-#include "runtime/NativeCancelPolicy.h"
 #include "runtime/ViewGuard.h"
 
 namespace AnimationInjector {
@@ -221,65 +221,6 @@ void ActionRunner::AbortLinkedRequest() {
     _linkSource = -1;
     _state = State::kIdle;
     BeginAirPhysics(false);
-}
-
-bool ActionRunner::CaptureNativeCancel(const RE::BSFixedString& event) {
-    if (_state != State::kActive || _startedInAir || !event.c_str() || !GraphInjector::HasFullBodyRoute(_idx) ||
-        !GraphInjector::IsNativeTransitionEvent(event.c_str()))
-        return false;
-    const auto& spec = Spec();
-    for (std::size_t i = 0; i < spec.cancels.size(); ++i) {
-        const auto& w = spec.cancels[i];
-        if (w.vanillaMatches.empty()) continue;
-        bool match = false;
-        for (const auto& name : w.vanillaMatches) {
-            const char* text = event.c_str();
-            for (; *text; ++text)
-                if (_strnicmp(text, name.c_str(), name.size()) == 0) {
-                    match = true;
-                    break;
-                }
-            if (match) break;
-        }
-        if (!match || !AcceptNativeCancelInput(w.mode, _openSeen[i], _closeSeen[i])) continue;
-        std::lock_guard lock(_nativeLock);
-        _nativeReplay = event;
-        _nativeWindow = static_cast<int>(i);
-        return true;
-    }
-    return false;
-}
-void ActionRunner::ClearNativeCapture() {
-    std::lock_guard lock(_nativeLock);
-    _nativeWindow = -1;
-    _nativeReplay = RE::BSFixedString();
-}
-void ActionRunner::UpdateNativeCancel() {
-    int window = -1;
-    {
-        std::lock_guard lock(_nativeLock);
-        window = _nativeWindow;
-    }
-    if (window < 0 || _state != State::kActive) return;
-    const auto i = static_cast<std::size_t>(window);
-    const auto& w = Spec().cancels[i];
-    if (w.mode != 0 && _closeSeen[i]) {
-        ClearNativeCapture();
-        return;
-    }
-    if (!ReadyNativeCancel(w.mode, _openSeen[i], _closeSeen[i])) return;
-    auto* actor = Owner();
-    if (!actor || !actor->Is3DLoaded()) return;
-    _nativeExiting = true;
-    PrepareExit(w.blend >= 0 ? w.blend : Spec().exitBlend);
-    const bool ok = actor->NotifyAnimationGraph(Fixed(w.nativeCancelEvent));
-    if (!ok && _state == State::kExiting) {
-        _state = State::kActive;
-        _exitSent = false;
-        _nativeExiting = false;
-        ClearNativeCapture();
-    }
-    logger::debug("[NativeCancel] exit actor={:08X} action='{}' accepted={}", actor->GetFormID(), Spec().id, ok);
 }
 
 void ActionRunner::SetupPlayback() {
@@ -871,10 +812,6 @@ const ActionRunner::EventTags& ActionRunner::Tags() {
         tags->cost = RE::BSFixedString(spec.cost.event.c_str());
         tags->carryRelease = RE::BSFixedString(spec.carryRelease.event.c_str());
         tags->exit = RE::BSFixedString(spec.events.exit.c_str());
-        for (const auto& w : spec.cancels) {
-            tags->open.emplace_back(w.openEvent.c_str());
-            tags->close.emplace_back(w.closeEvent.c_str());
-        }
         for (std::size_t v = 0; v < spec.clips.size(); ++v) tags->recovery.emplace_back(spec.recovery.event.c_str());
         _tags = std::move(tags);
     }
@@ -1072,16 +1009,9 @@ void ActionRunner::OnClipDeactivated(int a_variant) {
     logger::debug("[{}] 클립 비활성 at {:.2f}s — {} 경로", Spec().id, _elapsed,
         _exitSent ? "Exit" : "다른 전이(캔슬 아웃/스태거)");
     if (!_exitSent && _animDrivenSet) {
-        _postCancelTimer = 5.0f;
+        _postCancelTimer = PostCancelTime::kWatch;
         _postCancelTick = 0.0f;
-    }
-    if (_nativeExiting && _exitSent) {
-        RE::BSFixedString replay;
-        {
-            std::lock_guard lock(_nativeLock);
-            replay = _nativeReplay;
-        }
-        if (replay.c_str() && *replay.c_str()) Actions::QueueNativeReplay(_owner, replay);
+        _postCancelKept = false;
     }
     Finish();
 }
@@ -1118,6 +1048,14 @@ void ActionRunner::PostCancelWatch(float a_delta) {
     bool anim = false;
     p->GetGraphVariableBool(VarAnimDriven(), anim);
     const int attackState = p->AsActorState() ? static_cast<int>(p->AsActorState()->GetAttackState()) : -1;
+    // An attack state still held keeps the watch to its end (a drawn bow, a long chain), up to a limit.
+    if (const float left = PostCancelTime::Left(_postCancelTimer, _postCancelTick, attackState > 0);
+        left != _postCancelTimer) {
+        if (!std::exchange(_postCancelKept, true))
+            logger::debug("[{}] cancel watcher kept past its {:.0f}s: attack state {} still held at {:.1f}s", Spec().id,
+                PostCancelTime::kWatch, attackState, _postCancelTick);
+        _postCancelTimer = left;
+    }
     if (attackState == 0 && anim) {
         p->SetGraphVariableBool(VarAnimDriven(), false);
         logger::debug("[{}] 캔슬아웃 후 복구: 공격 종료 시 bAnimationDriven 이 켜져 있어 끔", Spec().id);
@@ -1126,10 +1064,6 @@ void ActionRunner::PostCancelWatch(float a_delta) {
 }
 
 void ActionRunner::ResetPlaybackFlags() {
-    ClearNativeCapture();
-    _nativeExiting = false;
-    _openSeen.assign(Spec().cancels.size(), false);
-    _closeSeen.assign(Spec().cancels.size(), false);
     _exitSeen = false;
     _recoveryOpen = false;
     _npcHandoff = false;
@@ -1192,7 +1126,7 @@ void ActionRunner::Recover(const char* a_why) {
 
 bool ActionRunner::BeginNormalExitMovement(std::uint64_t serial) {
     if (serial != PlaybackSerial() || !_isPlayer || Spec().paired.enabled || _state != State::kExiting ||
-        _nativeExiting || _interrupted || _linkSource >= 0 || _linkTarget >= 0 || _normalExitMovementAccepted)
+        _interrupted || _linkSource >= 0 || _linkTarget >= 0 || _normalExitMovementAccepted)
         return false;
     _normalExitMovementAccepted = true;
     auto* actor = Owner();
@@ -1317,7 +1251,6 @@ void ActionRunner::Update(float a_delta) {
         }
     }
     RecoveryClock();
-    UpdateNativeCancel();
     SlotUpdate();
     if (_isPlayer && _state == State::kActive) {
         // A turning frame would mix two steers: measure only while the turn holds still.
@@ -1400,10 +1333,6 @@ void ActionRunner::OnAnimEvent(const RE::BSFixedString& a_tag) {
         logger::debug("[{}] 이벤트 '{}' at {:.2f}s", spec.id, a_tag.c_str(), _elapsed);
     }
     const auto& tags = Tags();
-    for (std::size_t w = 0; w < spec.cancels.size(); ++w) {
-        if (w < _openSeen.size() && a_tag == tags.open[w]) _openSeen[w] = true;
-        if (w < _closeSeen.size() && a_tag == tags.close[w]) _closeSeen[w] = true;
-    }
     if (spec.recovery.enabled && _variant >= 0 && static_cast<std::size_t>(_variant) < tags.recovery.size() &&
         a_tag == tags.recovery[_variant])
         OpenRecovery("주석 이벤트");
@@ -1439,6 +1368,14 @@ void ActionRunner::SteerMotion(float a_time, RE::NiPoint3& a_translation) {
 
 // The engine's motion heading from what it moved for the clip's last sample.
 void ActionRunner::MeasureSteer() {
+    // While another action of the player still blends out, what the engine moves is a mix of both clips: a back
+    // dodge started as a forward dodge left measured the forward motion against its own backward clip, took the
+    // engine's heading for turned by half a circle and moved forward for two samples (11-11 in-game). Measured
+    // once this clip moves alone.
+    if (auto *owner = Owner(); owner && Actions::FindRunner(owner, [&](int action, ActionRunner& r) {
+            return action != _idx && r.GetState() != State::kIdle;
+        }))
+        return;
     const unsigned samples = _clipSamples.load();
     if (samples == _clipSamplesMeasured) return;
     _clipSamplesMeasured = samples;
@@ -1492,8 +1429,6 @@ void ActionRunner::Finish() {
     _recoveryMovement = false;
     const int requestOrigin = _requestOrigin;
     _requestOrigin = -1;
-    ClearNativeCapture();
-    _nativeExiting = false;
     _recoveryOpen = false;
     _npcHandoff = false;
     _npcHandoffExit = false;
@@ -1561,8 +1496,6 @@ void ActionRunner::ResetOnLoad() {
     _normalExitMovementAccepted = false;
     _recoveryMovement = false;
     _requestOrigin = -1;
-    ClearNativeCapture();
-    _nativeExiting = false;
     _linkSource = _linkTarget = -1;
     _linkRetirement = {};
     _linkAge = 0;

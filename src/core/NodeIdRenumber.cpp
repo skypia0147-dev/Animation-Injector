@@ -37,7 +37,26 @@ bool g_renumber = true;
 bool g_installed = false;
 bool g_loadInstalled = false;
 std::mutex g_countedLock;
-std::unordered_map<RE::hkbBehaviorGraph*, std::vector<RE::hkbNode*>> g_counted;
+// What the injection pass said about a graph right before the engine numbers it. A graph object's address comes back
+// for another graph later, so a note counts only for the root it was made with and for a short while.
+struct Note {
+    RE::hkbNode* root = nullptr;
+    std::chrono::steady_clock::time_point at;
+    std::vector<RE::hkbNode*> nodes;  // past the limit: the set to renumber
+    std::size_t count = 0;            // its size, or the count of a graph that fits
+    bool Current(RE::hkbBehaviorGraph* a_graph) const {
+        return root && a_graph->rootGenerator.get() == root &&
+               std::chrono::steady_clock::now() - at < std::chrono::seconds(60);
+    }
+};
+std::unordered_map<RE::hkbBehaviorGraph*, Note> g_notes;
+// Graphs this renumbered: the engine numbers a graph on both hooked paths, and the second finds it done.
+struct Done {
+    RE::hkbNode* root = nullptr;
+    std::int16_t cloneBase = 0;
+};
+std::unordered_map<RE::hkbBehaviorGraph*, Done> g_done;
+constexpr std::size_t kNotesKept = 512;
 
 PointerMap* MachineTable(RE::hkbBehaviorGraph* a_graph) {
     auto* data = a_graph ? a_graph->globalTransitionData.get() : nullptr;
@@ -70,33 +89,60 @@ std::string Describe(const RE::hkbNode* a_node) {
 void Check(RE::hkbBehaviorGraph* a_graph, const char* a_path) {
     if (!a_graph || !a_graph->rootGenerator) return;
     const auto started = std::chrono::steady_clock::now();
-    const auto walked = GraphInjector::AllNodes(a_graph->rootGenerator.get());
+    const auto engineId = static_cast<std::uint16_t>(a_graph->numStaticNodes);
     std::vector<RE::hkbNode*> counted;
     {
         std::lock_guard lock(g_countedLock);
-        if (const auto it = g_counted.find(a_graph); it != g_counted.end()) counted = it->second;
-    }
-    if (std::max(walked.size(), counted.size()) + kFreeForClones <= kIdLimit) return;  // fits: nothing to say
-    // The counted set belongs to this graph only when the walk finds nearly all of it.
-    std::unordered_set<RE::hkbNode*> walkedSet(walked.begin(), walked.end());
-    std::size_t overlap = 0;
-    for (auto* node : counted) overlap += walkedSet.contains(node) ? 1 : 0;
-    const bool useCounted = !counted.empty() && overlap * 10 >= counted.size() * 9;
-    // The nodes the engine numbered: what the walk finds and the counted set. The engine's 65536th node reads 0xFFFF,
-    // the same as "no id" (2026-11-09), so an id of 0xFFFF does not leave a node out; the count check below decides.
-    std::vector<RE::hkbNode*> nodes, onlyCounted, withoutId;
-    std::unordered_set<RE::hkbNode*> seen;
-    for (auto* node : walked) {
-        seen.insert(node);
-        if (node->id == 0xFFFF) withoutId.push_back(node);
-        nodes.push_back(node);
-    }
-    if (useCounted)
-        for (auto* node : counted)
-            if (seen.insert(node).second) {
-                onlyCounted.push_back(node);
-                nodes.push_back(node);
+        // Renumbered on the other path already.
+        if (const auto it = g_done.find(a_graph); it != g_done.end()) {
+            if (it->second.root == a_graph->rootGenerator.get() && a_graph->numStaticNodes == it->second.cloneBase)
+                return;
+            g_done.erase(it);
+        }
+        if (const auto it = g_notes.find(a_graph); it != g_notes.end()) {
+            auto& note = it->second;
+            if (note.Current(a_graph)) {
+                // Counted as fitting, and the engine's count agrees (it numbers a few more than the walk finds, never
+                // fewer; a count that wrapped would read far below): nothing to walk.
+                if (note.nodes.empty() && note.count + kFreeForClones <= kIdLimit && engineId >= note.count &&
+                    engineId - note.count <= kFreeForClones)
+                    return;
+                counted = std::move(note.nodes);
             }
+            g_notes.erase(it);
+        }
+    }
+    // The counted set is what the engine numbered when their 16-bit counts agree (2026-11-09: 72330 and 72330): no walk.
+    const bool exact = !counted.empty() && static_cast<std::uint16_t>(counted.size()) == engineId;
+    std::vector<RE::hkbNode*> walked;
+    if (!exact) walked = GraphInjector::AllNodes(a_graph->rootGenerator.get());
+    if (std::max(walked.size(), counted.size()) + kFreeForClones <= kIdLimit) return;  // fits: nothing to say
+    // Otherwise the counted set belongs to this graph only when the walk finds nearly all of it.
+    std::size_t overlap = counted.size();
+    std::vector<RE::hkbNode*> nodes, onlyCounted, withoutId;
+    const std::size_t countedCount = counted.size();
+    if (exact)
+        nodes = std::move(counted);
+    else {
+        std::unordered_set<RE::hkbNode*> seen(walked.begin(), walked.end());
+        overlap = 0;
+        for (auto* node : counted) overlap += seen.contains(node) ? 1 : 0;
+        const bool useCounted = !counted.empty() && overlap * 10 >= counted.size() * 9;
+        // The nodes the engine numbered: what the walk finds and the counted set. The engine's 65536th node reads
+        // 0xFFFF, the same as "no id" (2026-11-09), so an id of 0xFFFF does not leave a node out; the count check in
+        // Renumber decides.
+        for (auto* node : walked) {
+            if (node->id == 0xFFFF) withoutId.push_back(node);
+            nodes.push_back(node);
+        }
+        if (useCounted)
+            for (auto* node : counted)
+                if (seen.insert(node).second) {
+                    onlyCounted.push_back(node);
+                    nodes.push_back(node);
+                }
+    }
+    const std::size_t walkedCount = walked.size();
     // What the engine numbered, read before any renumbering.
     const auto engineCount = static_cast<std::uint16_t>(a_graph->numStaticNodes);
     std::size_t machines = 0;
@@ -112,15 +158,19 @@ void Check(RE::hkbBehaviorGraph* a_graph, const char* a_path) {
         result.skipped = "renumbering off (bNodeIdRenumber = false)";
     }
     const auto broken = BrokenMachines(a_graph, nodes);
+    if (result.renumbered) {
+        std::lock_guard lock(g_countedLock);
+        if (g_done.size() >= kNotesKept) g_done.clear();
+        g_done[a_graph] = {a_graph->rootGenerator.get(), a_graph->numStaticNodes};
+    }
     const char* name = NodeFactory::NodeName(a_graph->rootGenerator.get());
-    logger::info(
-        "[NodeIdRenumber] {} graph '{}': nodes={} (16-bit {}) engineCount={} walked={} counted={} overlap={} "
-        "onlyCounted={} withoutId={} machines={} renumbered={}{}{} sharedIds={} cloneBase={} brokenBefore={} brokenMachines={} "
-        "ms={:.1f}",
-        a_path, name ? name : "?", result.nodes, static_cast<std::uint16_t>(result.nodes), engineCount, walked.size(),
-        counted.size(), overlap, onlyCounted.size(), withoutId.size(), result.machines, result.renumbered,
+    logger::info("[NodeIdRenumber] {} graph '{}': nodes={} (16-bit {}) engineCount={} walked={} counted={} overlap={} "
+                 "onlyCounted={} withoutId={} machines={} renumbered={}{}{} sharedIds={} cloneBase={} topMachineId={} "
+                 "brokenBefore={} brokenMachines={} ms={:.1f}",
+        a_path, name ? name : "?", result.nodes, static_cast<std::uint16_t>(result.nodes), engineCount, walkedCount,
+        countedCount, overlap, onlyCounted.size(), withoutId.size(), result.machines, result.renumbered,
         result.skipped ? " skipped=" : "", result.skipped ? result.skipped : "", result.sharedIds, result.cloneBase,
-        brokenBefore, broken,
+        result.topMachineId, brokenBefore, broken,
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count());
     // Which nodes the walk after the numbering misses, and which it finds without an id (first ones).
     std::string list;
@@ -206,10 +256,21 @@ std::size_t Machines(const std::vector<RE::hkbNode*>& a_nodes) {
     return machines;
 }
 
-void NoteCounted(RE::hkbBehaviorGraph* a_graph, std::vector<RE::hkbNode*> a_nodes) {
+namespace {
+void Keep(RE::hkbBehaviorGraph* a_graph, std::vector<RE::hkbNode*> a_nodes, std::size_t a_count) {
+    if (!a_graph) return;
     std::lock_guard lock(g_countedLock);
-    g_counted[a_graph] = std::move(a_nodes);
+    // A graph noted and never numbered would stay; they are few, and the map is emptied rather than grown.
+    if (g_notes.size() >= kNotesKept) g_notes.clear();
+    g_done.erase(a_graph);
+    g_notes[a_graph] = {a_graph->rootGenerator.get(), std::chrono::steady_clock::now(), std::move(a_nodes), a_count};
 }
+}  // namespace
+void NoteCounted(RE::hkbBehaviorGraph* a_graph, std::vector<RE::hkbNode*> a_nodes) {
+    const auto count = a_nodes.size();
+    Keep(a_graph, std::move(a_nodes), count);
+}
+void NoteFits(RE::hkbBehaviorGraph* a_graph, std::size_t a_count) { Keep(a_graph, {}, a_count); }
 
 Result Renumber(RE::hkbBehaviorGraph* a_graph, const std::vector<RE::hkbNode*>& nodes) {
     Result result;
@@ -228,14 +289,14 @@ Result Renumber(RE::hkbBehaviorGraph* a_graph, const std::vector<RE::hkbNode*>& 
     }
     // The engine numbered exactly this set: its 16-bit count is ours. A graph loaded again keeps the ids this gave it
     // (its count reads the machines' count then).
+    const auto layout = LayoutFor(result.machines);
     if (static_cast<std::uint16_t>(a_graph->numStaticNodes) != static_cast<std::uint16_t>(result.nodes)) {
-        result.skipped = static_cast<std::size_t>(a_graph->numStaticNodes) == result.machines
+        result.skipped = static_cast<std::size_t>(a_graph->numStaticNodes) == layout.cloneBase
                              ? "already renumbered"
                              : "the engine numbered another set of nodes";
         return result;
     }
-    // Runtime clone ids must stay positive: the engine returns only ids >= numStaticNodes and >= 0 to its pool.
-    if (result.machines + kCloneIds >= kMachineIdLimit) {
+    if (!MachinesFit(result.machines)) {
         result.skipped = "too many state machines";
         return result;
     }
@@ -247,11 +308,12 @@ Result Renumber(RE::hkbBehaviorGraph* a_graph, const std::vector<RE::hkbNode*>& 
     static REL::Relocation<int (*)(PointerMap*, void*, std::uint64_t, std::uint64_t)> insert{kMapInsert};
     auto* allocator = RE::hkContainerHeapAllocator::GetSingleton();
 
-    // State machines first, each its own id; then the clone range; the other nodes share what is left.
-    const auto cloneBase = static_cast<std::uint16_t>(result.machines);
-    const std::size_t sharedFirst = result.machines + kCloneIds;
-    std::uint16_t next = 0;
-    for (auto* machine : machines) machine->id = next++;
+    // State machines first, each its own id, around the clone range (see LayoutFor); the other nodes share what is
+    // left. Runtime clone ids must stay positive: the engine returns only ids >= numStaticNodes and >= 0 to its pool.
+    const auto cloneBase = static_cast<std::uint16_t>(layout.cloneBase);
+    const std::size_t sharedFirst = layout.sharedFirst;
+    for (std::size_t i = 0; i < machines.size(); ++i) machines[i]->id = static_cast<std::uint16_t>(layout.MachineId(i));
+    result.topMachineId = machines.empty() ? 0 : static_cast<std::uint16_t>(layout.MachineId(machines.size() - 1));
     std::size_t shared = sharedFirst;
     for (auto* node : nodes) {
         if (IsMachine(node)) continue;
@@ -330,10 +392,11 @@ RE::hkbStateMachine* EmptyMachine(const RE::hkbStateMachine* a_template, const c
     return machine;
 }
 constexpr std::int32_t kStressStateId = 0x3FFF0000;
-constexpr std::size_t kMachineEvery = 8;
 }  // namespace
 
-std::size_t Inflate(RE::hkbBehaviorGraph* a_graph, RE::hkbStateMachine* a_machine, std::size_t a_count) {
+std::size_t Inflate(
+    RE::hkbBehaviorGraph* a_graph, RE::hkbStateMachine* a_machine, std::size_t a_count, std::size_t a_machineEvery) {
+    const std::size_t kMachineEvery = std::max<std::size_t>(1, a_machineEvery);
     using namespace NodeFactory;
     if (!a_graph || !a_machine || a_count == 0) return 0;
     const auto started = std::chrono::steady_clock::now();

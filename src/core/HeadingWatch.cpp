@@ -65,14 +65,16 @@ bool SystemModule(HMODULE module) {
 // turning (11-10 test: a mod that hooks the frame update sat above Animation Injector's own call and took the blame
 // when the stack was searched for the first mod). An engine call names the nearest mod in its stack only as a hint.
 __declspec(noinline) void Record(std::uint32_t actor, float yaw, const char* setter) {
-    void* frames[12]{};
-    const auto count = RtlCaptureStackBackTrace(2, 12, frames, nullptr);  // skip this and the setter hook
-    if (!count) return;
     static const HMODULE game = GetModuleHandleA(nullptr);
     static const HMODULE self = ModuleOf(reinterpret_cast<const void*>(&Record));
     std::lock_guard lock(mutex);
+    // The actor first: while one start is watched, every reference the game turns comes through here, and a stack
+    // is walked only for the watched one.
     const auto watch = std::ranges::find(watched, actor, &Watched::actor);
     if (watch == watched.end()) return;
+    void* frames[12]{};
+    const auto count = RtlCaptureStackBackTrace(2, 12, frames, nullptr);  // skip this and the setter hook
+    if (!count) return;
     const std::string via = Describe(frames[0]);
     std::string who;
     if (const HMODULE first = ModuleOf(frames[0]); first && first != game && !SystemModule(first))

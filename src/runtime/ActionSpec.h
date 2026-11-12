@@ -43,19 +43,6 @@ struct ClipVariant {
     std::string airEnterEvent;
 };
 
-// 바닐라 동작으로의 전환 창 (<Cancel to="vanilla:…">): 열림/닫힘 이벤트 동안 시작 상태의 전이를 상속한다(캔슬 아웃).
-// <Window>를 생략하면 클립 전체(mode 0).
-struct CancelSpec {
-    std::string nativeCancelEvent;
-    std::string id;
-    std::string openEvent, closeEvent;        // 이벤트 이름 (Finalize 가 기본값 채움). 시각 지정이면 트리거도 만든다
-    float openAt = 0.0f;                      // <0 = HKX 주석이 공급
-    float closeAt = 0.0f;                     // 클립 끝에서 뺀 초. <0 = HKX 주석이 공급
-    int mode = 2;                             // 0 항상 / 1 창 안에서만 / 2 창 + 선입력
-    std::vector<std::string> vanillaMatches;  // 상속할 시작 상태 전이의 이벤트 이름 부분 문자열
-    float blend = -1.0f;                      // 이 창으로 나갈 때의 블렌드 길이(초). <0 = 기존 효과 재사용
-};
-
 struct SlotEvents {    // 기능 슬롯 ↔ 이벤트 이름 (기본값은 Finalize 에서 채움)
     std::string exit;  // 시작 상태 복귀
 };
@@ -172,7 +159,6 @@ struct ActionSpec {
     // Ordinary actions join the root's FullBodyPlayerIdles machine in both views; pairs the root (0.12.232).
     std::vector<ClipVariant> clips;  // 일반 1개, 페어 2개(Lead·Support)
     SlotEvents events;
-    std::vector<CancelSpec> cancels;
     std::vector<InputDef> inputs;
     RecoverySpec recovery;
     bool HasRecovery() const { return recovery.enabled; }
@@ -250,14 +236,6 @@ struct ActionSpec {
                 trigger.gamepad = in->gamepad;
                 trigger.control = in->control;
             }
-        int k = 0;
-        for (auto& w : cancels) {
-            if (w.id.empty()) w.id = "cancel" + std::to_string(k + 1);
-            w.nativeCancelEvent = "AI_" + id + "_" + w.id + "NativeCancel";
-            if (w.openEvent.empty()) w.openEvent = "AI_" + id + "_" + w.id + "Open";
-            if (w.closeEvent.empty()) w.closeEvent = "AI_" + id + "_" + w.id + "Close";
-            ++k;
-        }
     }
     int VariantByClipName(const char* a_name) const {
         if (!a_name) return -1;

@@ -179,6 +179,12 @@ RE::BSEventNotifyControl InputSink::ProcessEvent(RE::InputEvent* const* a_event,
             if (control != GameControl::kNone) note(heldControl);
         }
         auto& swallow = _swallowRelease[static_cast<int>(control)];
+        // A new press starts clean. If the release of an earlier kept press never came (device unplugged, focus
+        // lost), the flag would otherwise keep the release of this press, which the game may be given, and the
+        // game would see the control held until it is pressed again.
+        if (control != GameControl::kNone && be->IsDown() && std::exchange(swallow, false))
+            logger::debug("[Input] control {}: the release of an earlier kept press never came; cleared",
+                static_cast<int>(control));
         const auto keep = [&] {
             if (!Taken(ev)) _taken.push_back(ev);
             if (be->IsDown()) swallow = true;
@@ -186,10 +192,15 @@ RE::BSEventNotifyControl InputSink::ProcessEvent(RE::InputEvent* const* a_event,
         // The release of a press kept from the game is kept too: the game never saw it go down.
         if (control != GameControl::kNone && be->IsUp() && std::exchange(swallow, false)) _taken.push_back(ev);
         // Snapshot ownership before recovery or graph callbacks can retire a runner.
+        const auto phase = be->IsDown() ? ActionLinks::InputPhase::kDown
+                           : be->IsUp() ? ActionLinks::InputPhase::kUp
+                                        : ActionLinks::InputPhase::kHeld;
         const auto link =
-            allowActions ? ActionLinks::Input(code, gamepad, control, be->IsDown()) : ActionLinks::InputResult{};
+            allowActions ? ActionLinks::Input(code, gamepad, control, phase, _now) : ActionLinks::InputResult{};
         const bool comboInput = link.claimed;
-        if (link.taken && control != GameControl::kNone) keep();
+        if (allowActions) StartForwards();
+        // A press a transition took, or one that waits to tell its kind (1.0.8), is the running action's.
+        if ((link.taken || link.kept) && control != GameControl::kNone) keep();
         // A key transition took the press: its key is now the one an on="release" transition waits for.
         if (link.taken && be->IsDown())
             HeldKeys::Get().SetChain(control != GameControl::kNone ? heldControl : heldKey, _now);
@@ -341,6 +352,26 @@ bool InputSink::OnPress(const RE::ButtonEvent& event, Source source, std::uint32
     return false;
 }
 
+void InputSink::StartForwards() {
+    for (const auto& forward : ActionLinks::TakeForwards()) {
+        // As a first press of that kind: the conditions of this moment, the movement direction of its press.
+        ConditionValues::Request request;
+        if (forward.direction >= 0) request.CaptureMovement(forward.direction);
+        Actions::CaptureMovement(request);
+        const auto& list = ActionsOf(forward.key.source, forward.key.code);
+        bool started = Start(list, forward.press, &request, false);
+        // One press (a tap, a hold) no start of its kind takes: the starts on the key's press, as outside an action.
+        if (!started && (forward.press == PressKinds::Press::kTap || forward.press == PressKinds::Press::kHold))
+            started = Start(list, PressKinds::Press::kDown, &request, false);
+        if (started) HeldKeys::Get().SetChain(forward.key, forward.downAt);
+        // A start took the press the moment it went down: the leaving action tells it apart no further.
+        if (started && forward.press == PressKinds::Press::kDown) ActionLinks::DropPress(forward.key);
+        logger::debug("[Press] {} {}: kind {} from a leaving action started={}",
+            forward.key.source == Source::kControl ? "control" : "key", forward.key.code,
+            static_cast<int>(forward.press), started);
+    }
+}
+
 void InputSink::Settle(Pressed& pressed) { Act(pressed, pressed.classifier.Tick(_now, _timing)); }
 
 void InputSink::Act(Pressed& pressed, PressKinds::Outcome outcome) {
@@ -378,6 +409,7 @@ void InputSink::Tick(float delta) {
     if (!std::isfinite(delta) || delta < 0.0f) return;
     _now += delta;
     for (auto& pressed : _pressed) Settle(pressed);
+    StartForwards();
     // Late presses go out here, outside the input dispatch. A key that came up before its press went out gets a
     // whole one, so the game is never left holding it.
     for (auto& pressed : _pressed)

@@ -123,8 +123,7 @@ int main() {
             "windows have no event fallbacks");
         // An event moment waits for its event only (0.12.278): there is no fallback.
         for (const char* gone : {"<Action id='A' clip='a.hkx'><MoveCancel at='event:Move' fallback='0.5'/></Action>",
-                 "<Action id='A' clip='a.hkx'><Exit at='event:Out' fallback='end-0.1'/></Action>",
-                 "<Action id='A' clip='a.hkx'><Vanilla to='Attack' from='event:Open' fromFallback='0.3'/></Action>"}) {
+                 "<Action id='A' clip='a.hkx'><Exit at='event:Out' fallback='end-0.1'/></Action>"}) {
             const auto p = Parse(gone);
             Check(!p.ok, "no fallback");
         }

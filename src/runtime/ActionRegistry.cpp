@@ -4,6 +4,7 @@
 #include "core/PairRootScale.h"
 #include "PCH.h"
 #include "core/ExitBlendHooks.h"
+#include "core/InputDispatchHook.h"
 #include "runtime/InputSink.h"
 #include "runtime/EventHistory.h"
 #include "runtime/ActionRegistry.h"
@@ -455,29 +456,6 @@ std::mutex g_bindMutex;
 using TriggerRequest = CapturedTrigger;
 std::mutex triggerMutex;
 std::vector<TriggerRequest> triggerQueue;
-struct NativeReplay {
-    RE::ActorHandle actor;
-    RE::BSFixedString event;
-};
-std::vector<NativeReplay> nativeQueue;
-void DrainNativeReplays() {
-    std::vector<NativeReplay> queued;
-    {
-        std::lock_guard lock(triggerMutex);
-        queued.swap(nativeQueue);
-    }
-    for (const auto& item : queued)
-        if (auto actor = item.actor.get();
-            actor && actor->Is3DLoaded() && !actor->IsDead() && !actor->IsInRagdollState()) {
-            PairedSession::Ticket ticket;
-            const bool busy = PairedSession::TryGetTicket(item.actor, ticket) ||
-                              FindRunner(actor.get(),
-                                  [](int, ActionRunner& r) { return r.GetState() != ActionRunner::State::kIdle; });
-            if (!busy)
-                logger::debug("[NativeCancel] replay actor={:08X} event='{}' accepted={}", actor->GetFormID(),
-                    item.event.c_str(), actor->NotifyAnimationGraph(item.event));
-        }
-}
 void DrainTriggers() {
     std::vector<TriggerRequest> queued;
     {
@@ -707,7 +685,6 @@ struct
         // Apply worker-thread clip results first so a finished runner can accept new triggers.
         DrainCallbacks();
         DrainTriggers();
-        DrainNativeReplays();
         ExitBlendHooks::Drain();
         // Drain final annotations and cumulative samples before session cleanup discards them.
         PairFeatures::Update(a_delta);
@@ -920,20 +897,13 @@ bool QueueEventTrigger(RE::Actor* actor, const RE::BSFixedString& event) {
 void ResetEventTriggers() {
     std::lock_guard lock(triggerMutex);
     triggerQueue.clear();
-    nativeQueue.clear();
-}
-void QueueNativeReplay(RE::ActorHandle actor, const RE::BSFixedString& event) {
-    std::lock_guard lock(triggerMutex);
-    if (nativeQueue.size() < 128) nativeQueue.push_back({actor, event});
 }
 // Runs on whatever thread notifies the graph; the runner is held by reference for the call.
-bool CaptureNativeCancel(RE::Actor* actor, const RE::BSFixedString& event) {
-    if (!actor || !actor->Is3DLoaded()) return false;
-    const auto capture = [&](int, ActionRunner& r) { return r.CaptureNativeCancel(event); };
-    if (actor->IsPlayerRef()) return g_playerBound.load(std::memory_order_acquire) && g_player->FindIf(capture);
+void NoteNpcRequest(RE::Actor* actor, const RE::BSFixedString& event) {
+    if (!actor || !actor->Is3DLoaded() || actor->IsPlayerRef()) return;
     // Every graph event of every NPC comes here: one lookup, then only the runners it has used.
     const auto entry = FindNpc(actor->GetFormID());
-    if (!entry) return false;
+    if (!entry) return;
     // An NPC's move cancel (runtime/NpcMoveCancel.h): a request its AI sends after getting movement back ends the
     // action that gave it back.
     entry->runners.FindIf([&](int, ActionRunner& r) {
@@ -941,7 +911,6 @@ bool CaptureNativeCancel(RE::Actor* actor, const RE::BSFixedString& event) {
             logger::debug("[NpcMoveCancel] actor={:08X} '{}' ends the action", actor->GetFormID(), event.c_str());
         return false;
     });
-    return entry->runners.FindIf(capture);
 }
 
 int Count() {
@@ -1070,6 +1039,7 @@ void OnGameLoad() {
     Carry::OnGameLoad();
     ExitBlendHooks::Reset();
     InputSink::Get()->Reset();
+    InputDispatchHook::Reset();
     PairRootRuntime::Reset();
     NativePairEnd::Reset();
     ResetEventTriggers();

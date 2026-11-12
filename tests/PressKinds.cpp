@@ -63,6 +63,17 @@ int main() {
         assert(c.Tick(2.0f, timing) == Outcome::kNone);  // held long: no hold after a double
         assert(c.Up(2.0f, timing).keep && !c.Waiting());
     }
+    // A double whose release never came (the action it started takes the key's events while it plays): the next
+    // double tap still works, from its first press.
+    {
+        Classifier c;
+        c.Down(0, doubleOnly, false, timing);
+        c.Up(0.05f, timing);
+        assert(c.Down(0.15f, doubleOnly, false, timing).outcome == Outcome::kDouble);
+        assert(c.Down(1.0f, doubleOnly, false, timing).outcome == Outcome::kNone && c.Waiting());
+        c.Up(1.05f, timing);
+        assert(c.Down(1.15f, doubleOnly, false, timing).outcome == Outcome::kDouble);
+    }
     // Tap with double declared: the tap waits out the double window.
     {
         Classifier c;

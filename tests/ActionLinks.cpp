@@ -226,6 +226,30 @@ int main() {
     Setup("", false);
     ActionLinks::Begin({1}, 0, false, true);
     assert(!ActionLinks::ClaimsEvent({1}, RE::BSFixedString("blockHitStart")));
+    // <Transition end="true"> (1.0.8): its trigger ends the source through its exit; nothing starts.
+    Setup("", false);
+    specs[0].links[0] = {};
+    specs[0].links[0].end = true;
+    specs[0].links[0].event = "Stop";
+    ActionLinks::Begin({1}, 0, false, true);
+    ActionLinks::ObserveEvent({1}, RE::BSFixedString("Other"));
+    ActionLinks::Update(.01f);
+    assert(runners[1][0].exits == 0);
+    ActionLinks::ObserveEvent({1}, RE::BSFixedString("Stop"));
+    ActionLinks::Update(.01f);
+    assert(runners[1][0].exits == 1);
+    for (int action = 1; action < 4; ++action) assert(runners[1][action].starts == 0);
+    assert(!ActionLinks::HasPendingTransition({1}));
+    // By a key too, beside a transition that goes somewhere on another key.
+    Setup("", false);
+    specs[0].links[0].partnerAction.clear();
+    specs[0].links.push_back({});
+    specs[0].links[1].end = true;
+    specs[0].links[1].key = 7;
+    ActionLinks::Begin({1}, 0, false, true);
+    ActionLinks::Input(7, false);
+    ActionLinks::Update(.01f);
+    assert(runners[1][0].exits == 1 && runners[1][1].starts == 0);
     // The actual dispatcher bypasses ExitForLink for eligible ordinary nodes.
     Setup("", false);
     specs[0].clips = {0};
@@ -270,7 +294,7 @@ int main() {
         const int before = runners[1][next].starts;
         for (int press = 0; press < 20; ++press) {
             assert(ActionLinks::Input(9, false).claimed);
-            assert(ActionLinks::Input(9, false, GameControl::kNone, false).claimed);
+            assert(ActionLinks::Input(9, false, GameControl::kNone, ActionLinks::InputPhase::kUp).claimed);
             ActionLinks::ObserveTime({1}, stage, .01f * press, 2);
             ActionLinks::Update(.01f);
             assert(runners[1][next].starts == before);
@@ -281,7 +305,7 @@ int main() {
         // Model the production activation/retirement callbacks.
         ActionLinks::Begin({1}, next, false, true);
         ActionLinks::End({1}, stage);
-        assert(ActionLinks::Input(9, false, GameControl::kNone, false).claimed);
+        assert(ActionLinks::Input(9, false, GameControl::kNone, ActionLinks::InputPhase::kUp).claimed);
         assert(!ActionLinks::Input(10, false).claimed);  // Unrelated dodge key remains available.
         assert(!ActionLinks::Input(9, true).claimed);    // Device namespaces remain distinct.
     }
@@ -300,7 +324,7 @@ int main() {
     ActionLinks::ObserveTime({1}, 0, .6f, 2);
     ActionLinks::Update(.01f);
     assert(runners[1][1].starts == 0);  // Early press was claimed but not buffered.
-    assert(ActionLinks::Input(9, false, GameControl::kNone, false).claimed);
+    assert(ActionLinks::Input(9, false, GameControl::kNone, ActionLinks::InputPhase::kUp).claimed);
     ActionLinks::Update(.01f);
     assert(runners[1][1].starts == 0);  // Key-up does not trigger the link.
     ActionLinks::ObserveTime({1}, 0, 1.1f, 2);
@@ -317,7 +341,7 @@ int main() {
     Press();
     ActionLinks::End({1}, 0);
     assert(ActionLinks::Input(9, false).claimed);
-    assert(ActionLinks::Input(9, false, GameControl::kNone, false).claimed);
+    assert(ActionLinks::Input(9, false, GameControl::kNone, ActionLinks::InputPhase::kUp).claimed);
     assert(!ActionLinks::Input(10, false).claimed);
     ActionLinks::Update(8.1f);
     assert(!ActionLinks::Input(9, false).claimed);
@@ -327,7 +351,7 @@ int main() {
     Setup("", false);
     specs[0].links[0].gamepad = 8;
     ActionLinks::Begin({1}, 0, false, true);
-    assert(ActionLinks::Input(8, true, GameControl::kNone, false).claimed);
+    assert(ActionLinks::Input(8, true, GameControl::kNone, ActionLinks::InputPhase::kUp).claimed);
     assert(!ActionLinks::Input(8, false).claimed);
     assert(!ActionLinks::Input(0, false).claimed);
     // A game control (0.12.292): any device's press of that control, and only that control, is the transition's.
@@ -627,6 +651,184 @@ int main() {
         ActionLinks::Update(0.01f);
         assert(runners[1][0].restarts == 1);
         HeldKeys::Get().SetMoveDirection(-1);
+    }
+    // press="tap|double|hold" (1.0.8): one key carries a transition of each kind, told apart as a start's key is.
+    {
+        using Phase = ActionLinks::InputPhase;
+        using HeldKeys::Source;
+        const HeldKeys::Key held{Source::kKey, 9};
+        ActionLinks::SetPressTiming({0.2f, 0.25f});
+        const auto kinds = [] {
+            Setup("", false);
+            specs[0].clips = {0};
+            specs[1].clips = {0};
+            specs[2].clips = {0};
+            ActionLinkSpec twice, once, long_;
+            twice.key = once.key = long_.key = 9;
+            twice.press = PressKinds::Press::kDouble;
+            twice.action = "A";
+            once.press = PressKinds::Press::kTap;
+            once.action = "B";
+            long_.press = PressKinds::Press::kHold;
+            long_.action = "B";
+            specs[0].links = {twice, once, long_};
+            HeldKeys::Get().Reset();
+            ActionLinks::Begin({1}, 0, false, true);
+        };
+        float now = 10;
+        const auto down = [&] {
+            HeldKeys::Get().Press(held, now);
+            return ActionLinks::Input(9, false, GameControl::kNone, Phase::kDown, now);
+        };
+        const auto up = [&] {
+            HeldKeys::Get().Release(held, now);
+            return ActionLinks::Input(9, false, GameControl::kNone, Phase::kUp, now);
+        };
+        const auto frames = [&](float seconds) {
+            for (float t = 0; t < seconds - 1e-4f; t += 0.01f) {
+                now += 0.01f;
+                ActionLinks::Update(0.01f);
+            }
+        };
+        // Two quick presses: the double goes at the second press, and the first alone went nowhere.
+        kinds();
+        auto first = down();
+        assert(first.claimed && first.kept && !first.taken);
+        frames(0.05f);
+        up();
+        frames(0.05f);
+        assert(runners[1][1].starts == 0 && runners[1][2].starts == 0);
+        assert(down().kept);
+        frames(0.02f);
+        assert(runners[1][1].starts == 1 && runners[1][2].starts == 0);
+        // One short press: the tap goes once the double window has run out, not before.
+        kinds();
+        down();
+        frames(0.05f);
+        up();
+        frames(0.2f);
+        assert(runners[1][2].starts == 0);
+        frames(0.1f);
+        assert(runners[1][2].starts == 1 && runners[1][1].starts == 0);
+        // A press held: the hold goes at the hold time, without its release.
+        kinds();
+        down();
+        frames(0.15f);
+        assert(runners[1][2].starts == 0);
+        frames(0.1f);
+        assert(runners[1][2].starts == 1 && runners[1][1].starts == 0);
+        // A key already down when the action began is not a press of it: its release goes nowhere.
+        kinds();
+        HeldKeys::Get().Press(held, now);
+        up();
+        frames(0.4f);
+        assert(runners[1][1].starts == 0 && runners[1][2].starts == 0);
+        // A leaving source (its exit sent, its clip still blending): no transition goes; the double is handed to the
+        // input sink, once, for what the key starts when pressed that way.
+        kinds();
+        runners[1][0].leaving = true;
+        down();
+        frames(0.05f);
+        up();
+        frames(0.05f);
+        down();
+        frames(0.02f);
+        assert(runners[1][1].starts == 0 && runners[1][2].starts == 0);
+        // The first press at once, for the starts on a key's press; then the double it turned out to be.
+        const auto forwards = ActionLinks::TakeForwards();
+        assert(forwards.size() == 2 && forwards[0].key == held && forwards[0].press == PressKinds::Press::kDown);
+        assert(forwards[1].key == held && forwards[1].press == PressKinds::Press::kDouble);
+        assert(ActionLinks::TakeForwards().empty());
+        // A start took that first press: it is told apart no further (no tap follows its release).
+        kinds();
+        runners[1][0].leaving = true;
+        down();
+        ActionLinks::DropPress(held);
+        frames(0.05f);
+        up();
+        frames(0.4f);
+        assert(ActionLinks::TakeForwards().size() == 1);
+        // The source ended while a press was told apart (a move cancel without a blend): the press lives on and
+        // goes to the key's starts as the kind it turns out to be. A tap:
+        kinds();
+        down();
+        frames(0.05f);
+        ActionLinks::End({1}, 0);
+        assert(up().claimed);
+        frames(0.2f);
+        assert(ActionLinks::TakeForwards().empty());
+        frames(0.1f);
+        auto orphaned = ActionLinks::TakeForwards();
+        assert(orphaned.size() == 1 && orphaned[0].key == held && orphaned[0].press == PressKinds::Press::kTap);
+        assert(orphaned[0].downAt < now - 0.3f);
+        // A hold, at its hold time counted from the press:
+        kinds();
+        down();
+        frames(0.1f);
+        ActionLinks::End({1}, 0);
+        frames(0.05f);
+        assert(ActionLinks::TakeForwards().empty());
+        frames(0.1f);
+        orphaned = ActionLinks::TakeForwards();
+        assert(orphaned.size() == 1 && orphaned[0].press == PressKinds::Press::kHold);
+        // A double whose second press comes after the end; nothing follows it, and a later press is a new one.
+        kinds();
+        down();
+        frames(0.05f);
+        up();
+        ActionLinks::End({1}, 0);
+        frames(0.05f);
+        assert(down().claimed);
+        orphaned = ActionLinks::TakeForwards();
+        assert(orphaned.size() == 1 && orphaned[0].press == PressKinds::Press::kDouble);
+        frames(0.05f);
+        up();
+        frames(0.4f);
+        assert(ActionLinks::TakeForwards().empty());
+        assert(!down().claimed);
+        up();
+        // A press already settled when the source ended is not carried, and loading drops one that is.
+        kinds();
+        down();
+        frames(0.3f);
+        ActionLinks::End({1}, 0);
+        frames(0.4f);
+        assert(ActionLinks::TakeForwards().empty());
+        up();
+        kinds();
+        down();
+        ActionLinks::End({1}, 0);
+        ActionLinks::ResetOnLoad();
+        frames(0.4f);
+        assert(ActionLinks::TakeForwards().empty());
+        up();
+        // A double alone on a game control: its presses are kept from the game, a single one goes nowhere.
+        Setup("", false);
+        specs[0].clips = {0};
+        specs[1].clips = {0};
+        specs[0].links[0].key = 0;
+        specs[0].links[0].control = GameControl::kJump;
+        specs[0].links[0].press = PressKinds::Press::kDouble;
+        HeldKeys::Get().Reset();
+        ActionLinks::Begin({1}, 0, false, true);
+        const HeldKeys::Key jump{Source::kControl, static_cast<std::uint32_t>(GameControl::kJump)};
+        HeldKeys::Get().Press(jump, now);
+        assert(ActionLinks::Input(57, false, GameControl::kJump, Phase::kDown, now).kept);
+        HeldKeys::Get().Release(jump, now);
+        ActionLinks::Input(57, false, GameControl::kJump, Phase::kUp, now);
+        frames(0.4f);
+        assert(runners[1][1].starts == 0);
+        HeldKeys::Get().Press(jump, now);
+        ActionLinks::Input(57, false, GameControl::kJump, Phase::kDown, now);
+        frames(0.05f);
+        HeldKeys::Get().Release(jump, now);
+        ActionLinks::Input(57, false, GameControl::kJump, Phase::kUp, now);
+        frames(0.05f);
+        HeldKeys::Get().Press(jump, now);
+        assert(ActionLinks::Input(57, false, GameControl::kJump, Phase::kDown, now).kept);
+        frames(0.02f);
+        assert(runners[1][1].starts == 1);
+        HeldKeys::Get().Reset();
     }
     std::cout << "Production ActionLinks scenarios passed\n";
 }

@@ -55,7 +55,6 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
     <Cost stamina="20"/>
     <Transition to="Slash2" key="G" gamepad="RB" from="0.45" until="end-0.1"/>
     <MoveCancel at="0.8" blend="0.25"/>
-    <Vanilla to="Block" from="0.5"/>
     <Exit blend="0.2"/>
   </Action>
   <Action id="Slash2" clip="Animations\MyMod\Slash2.hkx">
@@ -67,12 +66,12 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 
 | 요소 | 뜻 |
 |---|---|
-| `<Transition to key from until>` | `from`~`until` 사이에 키를 누르면 `to` 동작으로 넘어갑니다. 키 대신 `event="이름"`도 됩니다 |
+| `<Transition to key from until>` | `from`~`until` 사이에 키를 누르면 `to` 동작으로 넘어갑니다. 키 대신 `event="이름"`도 됩니다. 키 전환은 `press="tap\|double\|hold"`로 누르는 방식을 가를 수 있습니다(아래 「누름 종류」, 1.0.8 이상) |
 | `<Transition to on="end" blend>` | 이 동작이 끝나는 순간(종료 지점) 끝내는 대신 `to`로 넘어갑니다. 동작마다 하나, 키·`from`·`until` 없음. 시각으로 끝나는 동작에서만(`<Exit at="event:…">`과 함께 쓸 수 없음) |
 | `<Transition to on="release" from until>` | 차지 종료: 구간 안에서 키가 떼져 있으면 넘어갑니다. "뗀 순간"이 아니라 상태라 구간 전에 뗐으면 구간이 열리는 순간 넘어갑니다. 키는 `key`·`gamepad`·`control`로 정하고, 쓰지 않으면 이 동작을 시작한 키(시작 키나 키 전환의 키, 끝나면·키를 떼면으로 이어지는 동안 유지). NPC는 반복 동작의 `maxHold`에서만 뗀 것으로 봅니다 |
 | `<Transition to on="move" from until buffer>` | 이동 전환: **차지 중**(이 동작을 시작한 키를 누르고 있는 동안)에 이동키를 누르면 넘어갑니다. 차지 키를 떼면 이동키는 아무것도 하지 않고 선입력도 버립니다(그때는 `on="release"`). 닷지처럼 키를 짧게 누르는 동작은 이동키+닷지 키를 쓰는 키 전환(`<Transition condition="방향 카드" key=…>`)으로 잇습니다. 키 전환과 같아서 구간 안에서 누르면 바로, 구간이 열리기 전에 누른 것도 선입력으로 받아 열리는 순간 넘어갑니다(`buffer="false"`면 선입력 없음). 구간이 열릴 때 이동키를 누르고 있는 것도 선입력으로 칩니다 — 누르고 있는 동안 한 번씩 이어 재생되고, 떼면 재생 중인 동작은 끝까지 재생하고 끝납니다. 조건 카드는 누르고 있는 방향(이미 뗐으면 누른 방향)으로 고릅니다(이동 방향 조건과 같은 판정, TDM 반영). 키·이벤트 없음, 플레이어만. 같은 동작으로 가면 그 동작을 처음부터 다시 재생하고, 반복 동작이 같은 동작을 고르면 끊지 않고 이어 재생합니다(차지는 그대로 유지). 방향별 대시를 조건 카드(`movementDirection`)로 고르는 데 씁니다 |
+| `<Transition end="true" …>` | 끝내기 전환(1.0.8 이상): 다른 동작으로 가지 않고 이 동작을 바로 끝냅니다(`<Exit blend>`로 빠져나옴). 조건은 다른 전환과 같습니다: 키(`key`·`gamepad`·`control`·`input`, `press`), `event`, `on="release"`, `on="move"`, 구간(`from`·`until`·`buffer`). `to`·조건 카드·`blend`·`partnerTo`·`on="end"`는 쓰지 않습니다. 일반 동작만. 예: 이벤트로 시작한 반복 동작을 종료 이벤트로 끝내기 `<Action id="Loop" clip="…" loop="true" maxHold="600"><Transition end="true" event="StopLoop"/></Action>` |
 | `<MoveCancel at blend>` | `at` 이후 이동 키를 누르면 동작을 끊고 걷기·달리기로 돌아갑니다. 전투 중인 NPC는 `at`부터 AI에게 이동을 돌려주고, AI가 움직이거나 공격하려 하면 끊습니다(가만히 있으면 끝까지 재생) |
-| `<Vanilla to from until>` | 그 사이에 게임의 원래 행동으로 끊을 수 있습니다. `to`: `Attack` `PowerAttack` `Block` `Bash` `Sprint` `Jump` `Sneak`. `until`은 끝 기준(`end`, `end-0.2`)으로 씁니다 |
 | `<IFrame from until>` | 그 사이 무적 |
 | `<HyperArmor from until>` | 그 사이 경직 저항 |
 | `<TimeScale factor from until ease>` | 그 사이 세상 전체의 시간 배율(플레이어가 재생할 때만). `factor` 0.05~5(0.5면 절반 속도), `ease`는 배율까지·구간 끝에서 원래 속도까지 바뀌는 데 걸리는 실제 초(0~2, 쓰지 않으면 한 번에). 동작이 중간에 끊겨도 원래 속도로 돌아옵니다 |
@@ -80,7 +79,7 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `<Cost stamina magicka health measure at>` | 자원 소모: 스태미나·매지카·체력(체력은 마지막 1은 남김). `measure="percent"`면 각 최대치의 %(0~100), 쓰지 않으면 수치 그대로 |
 | `<Exit at blend>` | 언제 끝내고 몇 초 동안 섞을지. `at`을 쓰지 않으면 클립 끝 0.05초 전 |
 
-`<Action>`의 속성: `enter`(들어갈 때 블렌드 초), `air="both"`(땅·공중 모두) / `"only"`(공중에서만, 쓰지 않으면 땅에서만), `view="first"`·`"both"`(1인칭 동작, 1인칭 HKX는 `_1stPerson` 아래 같은 경로), `loop="true" maxHold="3"`(반복 재생: 클립을 끝없이 이어 재생하고, `maxHold`초(기본 3)가 지나면 키를 뗀 것으로 봅니다(차지를 시작한 키를 아직 누르고 있으면 그 키를 누른 순간부터 세어, 방향별 반복 동작을 오가도 시계는 하나). 키를 떼면 전환이 없으면 그때 끝냅니다. 일반 동작만, `<Exit at>`·끝나면 전환은 쓸 수 없습니다. 무적·회전 같은 기능 시각은 동작 시작부터 세고 `end-…`를 쓸 수 없습니다. 전환의 감지 구간(`from`·`until`)은 **바퀴마다** 다시 열리고 닫히며 `until="end"`·`end-…`는 그 바퀴의 끝입니다. HKX 주석 이벤트는 바퀴마다 다시 옵니다).
+`<Action>`의 속성: `enter`(들어갈 때 블렌드 초), `air="both"`(땅·공중 모두) / `"only"`(공중에서만, 쓰지 않으면 땅에서만), `view="first"`·`"both"`(1인칭 동작, 1인칭 HKX는 `_1stPerson` 아래 같은 경로), `otherView="switch"`(시점 전환, 1.0.8 이상: 3인칭 동작을 1인칭에서, 1인칭 동작을 3인칭에서 시작하면 동작의 인칭으로 카메라를 바꿔 재생하고 끝나면 원래 인칭으로 돌아옵니다. 쓰지 않으면 다른 인칭에서는 시작하지 않습니다. `view="both"`와 1인칭 페어에는 쓸 수 없습니다. 1.0.7까지의 `firstPerson`은 읽지 않습니다), `loop="true" maxHold="3"`(반복 재생: 클립을 끝없이 이어 재생하고, `maxHold`초(기본 3)가 지나면 키를 뗀 것으로 봅니다(차지를 시작한 키를 아직 누르고 있으면 그 키를 누른 순간부터 세어, 방향별 반복 동작을 오가도 시계는 하나). 키를 떼면 전환이 없으면 그때 끝냅니다. 일반 동작만, `<Exit at>`·끝나면 전환은 쓸 수 없습니다. 무적·회전 같은 기능 시각은 동작 시작부터 세고 `end-…`를 쓸 수 없습니다. 전환의 감지 구간(`from`·`until`)은 **바퀴마다** 다시 열리고 닫히며 `until="end"`·`end-…`는 그 바퀴의 끝입니다. HKX 주석 이벤트는 바퀴마다 다시 옵니다).
 
 **차지 예시**: `<Start control="rightAttack" press="hold" to="ChargeStart"/>` → ChargeStart의 `<Transition to="ChargeLoop" on="end"/>`와 `<Transition condition="ChargeLevel" on="release" from="0.2"/>` → `<Action id="ChargeLoop" loop="true" maxHold="3">`의 `<Transition condition="ChargeLevel" on="release"/>` → 조건 카드 ChargeLevel에서 `<Check kind="heldTime" compare="ge" value="1.5"/>`로 강·약 발동.
 
@@ -241,8 +240,8 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 - `rig`: `wolf` `bear` `sabrecat` `troll` `draugr` `werewolf` `vampirelord` 등 크리처 이름(페어의 `FindPartner rig`와 같은 목록). 생략하면 사람(`character`)입니다. 같은 폴더·골격을 쓰는 크리처는 함께 재생합니다(`wolf`와 `dog`, `draugr`와 `skeleton`): 한쪽만 원하면 종족 조건으로 거릅니다. 에디터는 HKX를 보고 이 값을 스스로 씁니다.
 - `clip`: 크리처 동작은 **그 크리처 폴더 기준**입니다(늑대는 `meshes\actors\canine\`, 곰은 `meshes\actors\bear\`). 사람 동작은 지금처럼 `meshes\actors\character\` 기준입니다.
 - 시작: 크리처가 보내는 이벤트로 `<Start event="…" actor="npc" to="…">`. 키·게임 조작 시작은 플레이어가 늑대인간·뱀파이어 군주일 때 그 크리처 동작을 재생합니다. 시작이 고른 동작의 `rig`가 그 액터와 다르면 시작하지 않으므로 한 파일에 사람 동작과 크리처 동작을 함께 둘 수 있습니다.
-- 쓸 수 있는 것: `loop`, `enter`, `<Exit>`, 같은 `rig` 동작으로의 `<Transition>`, `<Rotate>` `<IFrame>` `<HyperArmor>` `<MoveCancel>` `<Vanilla>` `<Cost>`, 시각 기능(`<Do at>`)과 이벤트 기능, 액터 공통 조건, `block`.
-- 사람 동작에만 쓰는 것: `view` `firstPerson` `air` `attack`, `<QTE>` `<Camera>` `<CarryRelease>`, `<Do op="hide|show|fireArrow">`. 다른 스켈레톤 계열의 동작으로 가는 `<Transition>`도 쓸 수 없습니다.
+- 쓸 수 있는 것: `loop`, `enter`, `<Exit>`, 같은 `rig` 동작으로의 `<Transition>`, `<Rotate>` `<IFrame>` `<HyperArmor>` `<MoveCancel>` `<Cost>`, 시각 기능(`<Do at>`)과 이벤트 기능, 액터 공통 조건, `block`.
+- 사람 동작에만 쓰는 것: `view` `otherView` `air` `attack`, `<QTE>` `<Camera>` `<CarryRelease>`, `<Do op="hide|show|fireArrow">`. 다른 스켈레톤 계열의 동작으로 가는 `<Transition>`도 쓸 수 없습니다.
 
 ### 크리처가 시작하는 페어
 
@@ -285,7 +284,7 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 - 바닐라 동작을 바꾸려면 그 이벤트로 시작하고 같은 이벤트를 `block`에 씁니다. 예: 막았을 때 `<Start event="blockHitStart" block="blockHitStart" to="…">`. 시작할 수 있을 때만 바닐라 그래프에 그 이벤트가 가지 않고 이 동작이 재생됩니다(`chance` 조건이 있으면 막지 않음). NPC도 `actor`가 NPC를 포함하면 같습니다. `<Action block="…">`은 그 동작이 재생되는 동안 막고, 키·조작 시작의 `block`은 플레이어에게만 적용됩니다.
 - 재생 중인 동작에 같은 이벤트의 `<Transition event>`가 있으면 그 이벤트는 전환이 받고, 같은 이벤트의 `<Start>`는 시작하지 않습니다(키와 같은 규칙). 구간이 열리기 전이면 선입력으로 기억했다가 열릴 때 전환하고, 닫힌 뒤에는 아무것도 하지 않습니다. 예: 막기 피격 동작 안의 `<Transition event="blockHitStart" from="0.1">`로 연속 막기.
 - 조건에 `subject="partner"`를 붙이면 상대를 검사합니다. 누구를 검사해도 같은 조건(`chance` `gameHour` `weather` `global` `movementDirection` `space` `ground` `heldTime`)에는 붙일 수 없습니다.
-- 페어는 기본으로 3인칭에서 재생됩니다(1인칭에서 시작하면 3인칭으로 바뀌었다가 끝나면 돌아옵니다). `<Pair view="both">`이고 1인칭 HKX(`_1stPerson` 아래 같은 경로)가 있으면, 플레이어가 1인칭일 때 1인칭으로 재생합니다. `view="first"`는 1인칭에서만 시작하는 페어로, 1인칭 HKX 하나만 있으면 됩니다(페어 HKX에 두 역할이 다 들어 있어 상대도 그 파일로 재생합니다. 없으면 시작하지 않음). `both`는 3인칭 HKX와 1인칭 HKX가 둘 다 필요합니다. 운반은 3인칭만 됩니다. 페어 안의 무적·경직 저항 등은 `<Do at op="iframeOn">`처럼 시각 기능으로 씁니다.
+- 페어는 기본으로 3인칭에서 재생됩니다(1인칭에서 시작하면 3인칭으로 바뀌었다가 끝나면 돌아옵니다). `<Pair view="both">`이고 1인칭 HKX(`_1stPerson` 아래 같은 경로)가 있으면, 플레이어가 1인칭일 때 1인칭으로 재생합니다. `view="first"`는 1인칭에서만 시작하는 페어로, 1인칭 HKX 하나만 있으면 됩니다(페어 HKX에 두 역할이 다 들어 있어 상대도 그 파일로 재생합니다. 없으면 시작하지 않음). `both`는 3인칭 HKX와 1인칭 HKX가 둘 다 필요합니다. 운반은 3인칭만 됩니다. 재생 중 한쪽이 죽거나 래그돌이 되면 페어는 끝납니다. 단, 페어 HKX의 `2_KillActor` 주석이 상대를 죽인 경우는 바닐라 킬무브처럼 상대만 애니메이션에서 빠지고(죽어서 래그돌), 시작한 쪽은 자기 클립을 끝까지 재생합니다(1.0.8 이상). 그 뒤의 `NPCEndAnimatedCamera`·`NPCPairEnd` 같은 주석도 그대로 옵니다. 페어 안의 무적·경직 저항 등은 `<Do at op="iframeOn">`처럼 시각 기능으로 씁니다.
 
 ### 운반 래그돌
 
@@ -338,7 +337,7 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 
 키 이름은 물리 키 기준이라 한/영 입력 상태와 상관없습니다.
 
-### 누름 종류 (`<Start press>`)
+### 누름 종류 (`<Start press>`, `<Transition press>`)
 
 | `press` | 시작하는 순간 |
 |---|---|
@@ -353,6 +352,28 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 - 게임 동작(`control`)의 누름 가운데 어떤 시작도 가져가지 않은 것은 게임에 돌려줍니다. 기다린 만큼 늦게 일어납니다. 예: `<Start control="jump" press="tap" to="Dodge"/>`는 짧게 누르면 닷지, 길게 누르면 원래 점프.
 - 메뉴를 여는 게임 동작(`wait` `favorites` `tweenMenu`)은 누르는 순간 메뉴가 열려 `down`만 씁니다.
 
+**전환의 누름 종류 (1.0.8 이상)**: 키 전환(`<Transition key|gamepad|control>`)에도 같은 `press`를 씁니다. 재생 중인 동작이 자기 전환 키를 시작 입력과 같은 방식으로 가립니다.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="MyDodge">
+  <Start key="LAlt" press="double" to="Roll"/>
+  <Action id="Roll" clip="Animations\MyDodge\Roll.hkx">
+    <Transition to="Roll2" key="LAlt" press="double" from="0.3"/>
+    <Transition to="Step" key="LAlt" press="tap" from="0.3"/>
+    <Transition to="Step" key="LAlt" press="hold" from="0.3"/>
+  </Action>
+  <Action id="Roll2" clip="Animations\MyDodge\Roll2.hkx"/>
+  <Action id="Step" clip="Animations\MyDodge\Step.hkx"/>
+</AnimationSet>
+```
+
+- 같은 키에 종류마다 전환 하나를 둘 수 있습니다. `down`(기본)은 누르는 순간 먼저 나가므로 같은 키에서 다른 종류와 함께 쓸 수 없습니다(`tap`을 쓰세요).
+- `event`·`on` 전환에는 쓰지 않습니다.
+- 기다리는 시간은 시작과 같습니다: `tap`은 뗄 때(같은 키에 `double`이 있으면 두 번째 누름을 기다린 뒤), `hold`는 기준 시간, `double`은 두 번째로 누르는 순간.
+- 조건 카드의 이동 방향은 처음 누른 순간의 값입니다(판정이 끝날 때 이동키를 뗐어도).
+- 동작이 끝나 가는 중이거나(종료 블렌드) 판정 도중 끝나면, 그 누름은 판정된 종류로 그 키의 `<Start>`에 넘어갑니다. `tap`·`hold`를 받는 시작이 없으면 `down` 시작으로 갑니다.
+
 ## 검사하기
 
 Animation Injector Editor 배포 파일에 든 `AnimationInjectorXmlCheck.exe`로 게임 밖에서 검사할 수 있습니다. 게임과 같은 규칙으로 읽습니다.
@@ -361,6 +382,6 @@ Animation Injector Editor 배포 파일에 든 `AnimationInjectorXmlCheck.exe`�
 AnimationInjectorXmlCheck.exe "경로\MyMod.xml"
 ```
 
-`Valid: …`가 나오면 게임이 읽을 수 있는 파일입니다. 오류가 있으면 어느 요소(예: `/AnimationSet/Action/Vanilla`)의 무엇이 틀렸는지 나옵니다. 게임에서 읽히지 않은 파일은 `AnimationInjector.log`에 같은 이유가 남습니다.
+`Valid: …`가 나오면 게임이 읽을 수 있는 파일입니다. 오류가 있으면 어느 요소(예: `/AnimationSet/Action/MoveCancel`)의 무엇이 틀렸는지 나옵니다. 게임에서 읽히지 않은 파일은 `AnimationInjector.log`에 같은 이유가 남습니다.
 
 동작 `id`는 파일(`AnimationSet id`)마다 따로라서, 여러 파일에 같은 `id`가 있어도 서로 덮어쓰지 않습니다. 두 파일이 같은 `AnimationSet id`를 쓰면 파일 경로 순으로 뒤 파일의 동작을 따로 다루고 로그에 경고합니다.

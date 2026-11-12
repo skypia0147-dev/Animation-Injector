@@ -57,8 +57,10 @@ void FrameworkSettings::Load() {
     debug = ini.Bool(L"Debug", L"bDebug", false);
     spaceProbe = ini.Bool(L"Debug", L"bSpaceProbe", false);
     ragdollTrace = ini.Bool(L"Debug", L"bRagdollTrace", false);
+    headingWatch = ini.Bool(L"Debug", L"bHeadingWatch", true);
     nodeIdRenumber = ini.Bool(L"Compatibility", L"bNodeIdRenumber", true);
     nodeIdStressNodes = std::clamp(ini.Int(L"Debug", L"iNodeIdStressNodes", 0), 0, 200000);
+    nodeIdStressMachineEvery = std::clamp(ini.Int(L"Debug", L"iNodeIdStressMachineEvery", 8), 1, 64);
     logger::info("[RagdollTrace] enabled={}", ragdollTrace);
     if (debug) {
         spdlog::set_level(spdlog::level::debug);
@@ -301,15 +303,9 @@ std::vector<ActionSpec> LoadAllFrom(const std::filesystem::path& root, std::vect
     // The per-action summary is only logged at debug; its strings are not built otherwise.
     for (const auto& s : out) {
         if (!FrameworkSettings::Get().debug) break;
-        std::string wins;
-        for (const auto& w : s.cancels)
-            wins += fmt::format("[{} mode {} {}~{} {}] ", w.id, w.mode,
-                w.openAt >= 0 ? fmt::format("@{:.2f}", w.openAt) : w.openEvent,
-                w.closeAt >= 0 ? fmt::format("@end-{:.2f}", w.closeAt) : w.closeEvent,
-                w.vanillaMatches.size() ? "vanilla" : "");
         logger::debug(
-            "[Decl] 액션 '{}' ← {} : 클립 {}개, 키 {}, 바닐라 전환 {} exit='{}' 블렌드 enter {:.2f} exit {:.2f}, recovery {}",
-            s.id, s.source, s.clips.size(), s.trigger.key, wins, s.events.exit, s.enterBlend, s.exitBlend,
+            "[Decl] 액션 '{}' ← {} : 클립 {}개, 키 {}, exit='{}' 블렌드 enter {:.2f} exit {:.2f}, recovery {}", s.id,
+            s.source, s.clips.size(), s.trigger.key, s.events.exit, s.enterBlend, s.exitBlend,
             s.recovery.enabled
                 ? fmt::format("'{}'{} 입력 {}{}{}", s.recovery.event,
                       s.recovery.at >= 0 ? fmt::format("@{:.2f}", s.recovery.at) : "", s.recovery.move ? "move " : "",

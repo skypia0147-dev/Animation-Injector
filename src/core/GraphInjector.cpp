@@ -1,6 +1,7 @@
 #include "PCH.h"
 #include "core/ExitBlendHooks.h"
 #include "core/AirControl.h"
+#include "core/CallSite.h"
 #include "core/GraphInjector.h"
 #include "core/NodeIdRenumber.h"
 #include "core/LoadingProgress.h"
@@ -235,11 +236,10 @@ struct PassScope {
 // Graph loading runs on loader threads (the injection profile logs their ids) while main and
 // animation threads query these tables. Writers hold the exclusive lock only for the append;
 // no engine call is made while either lock is held.
-std::shared_mutex g_publishLock;  // g_results, g_syncNodes, nativeTransitionEvents
+std::shared_mutex g_publishLock;  // g_results, g_syncNodes
 std::vector<Result> g_results;
 std::unordered_map<int, std::vector<std::size_t>> g_resultsByAction;  // action -> g_results indexes
 std::vector<SyncNode> g_syncNodes;
-std::vector<std::string> nativeTransitionEvents;
 void Publish(Result result) {
     std::unique_lock lock(g_publishLock);
     g_resultsByAction[result.actionIdx].push_back(g_results.size());
@@ -842,12 +842,12 @@ std::size_t CountNodes(RE::hkbNode* root) {
     }
     return seen.size();
 }
-// The most nodes one action can make in a character graph: per clip its clip, a sync clip, a recovery effect and
-// cancel-window effects; the action's enter, exit and air-route effects; one shared effect per incoming link at most.
+// The most nodes one action can make in a character graph: per clip its clip, a sync clip and a recovery effect;
+// the action's enter, exit and air-route effects; one shared effect per incoming link at most.
 std::size_t NodeReserve(int a_action) {
     const auto& spec = Actions::Spec(a_action);
     const std::size_t clips = spec.clips.size();
-    return clips * (4 + 2 * spec.cancels.size()) + Actions::IncomingLinks(a_action).size() + 16;
+    return clips * 4 + Actions::IncomingLinks(a_action).size() + 16;
 }
 using NativeNodeSearch = BoundedNodeSearch<RE::hkbNode, HkChild, ReadNodeName, ReadNodeChildren>;
 RE::hkbNode* FindNodeByName(RE::hkbNode*, const char*, int, std::size_t&);
@@ -1036,19 +1036,6 @@ void InjectCreatureAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
         exits->transitions.push_back(transition);
     };
     addExit(exitEvent, exitEffect);
-    for (const auto& w : spec.cancels) {
-        const int open = InjectEvent(graph, w.openEvent.c_str());
-        const int close = InjectEvent(graph, w.closeEvent.c_str());
-        if (open < 0 || close < 0) return fail("window unavailable");
-        if (w.openAt >= 0) triggers.push_back({w.openAt, open, false});
-        if (w.closeAt >= 0) triggers.push_back({w.closeAt, close, true});
-        if (!w.vanillaMatches.empty()) {
-            const int cancel = InjectEvent(graph, w.nativeCancelEvent.c_str());
-            auto* effect = SharedEffect(effects.exit, w.blend >= 0 ? w.blend : exitBlend, -1);
-            if (cancel < 0 || !effect) return fail("cancel window unavailable");
-            addExit(cancel, effect);
-        }
-    }
     if (spec.HasRecovery()) {
         InjectEvent(graph, spec.recovery.event.c_str());
         auto* effect = SharedEffect(effects.exit, spec.recovery.blend >= 0 ? spec.recovery.blend : exitBlend, -1);
@@ -1687,21 +1674,6 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
     auto* exitEffect = effect(exit.transition, spec.exitBlend, true);
     if (!enterEffect || !exitEffect) return fail("effects unavailable");
     if (spec.exitBlend > 0) ExitBlendHooks::RegisterSharedExit(exitEffect);
-    struct Window {
-        int open, close, cancel;
-        RE::hkReferencedObject* effect;
-        RE::hkReferencedObject* exitEffect;
-    };
-    std::vector<Window> windows;
-    for (const auto& w : spec.cancels) {
-        Window ids{InjectEvent(graph, w.openEvent.c_str()), InjectEvent(graph, w.closeEvent.c_str()),
-            w.vanillaMatches.empty() ? -1 : InjectEvent(graph, w.nativeCancelEvent.c_str()),
-            effect(entry.transition, w.blend), effect(exit.transition, w.blend)};
-        if (ids.open < 0 || ids.close < 0 || !ids.effect || !ids.exitEffect ||
-            (!w.vanillaMatches.empty() && ids.cancel < 0))
-            return fail("window unavailable");
-        windows.push_back(ids);
-    }
     std::vector<TransitionInfo> exits;  // this action's parent exits, staged once all are prepared
     auto addExit = [&](int event, int state, RE::hkReferencedObject* eff) {
         auto t = exit;
@@ -1730,16 +1702,6 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
         std::vector<TriggerDef> triggers;
         if (spec.exitTriggerBeforeEnd >= 0) triggers.push_back({spec.exitTriggerBeforeEnd, exitEvent, true});
         auto* transitions = MakeTransitionArray(0);
-        for (std::size_t w = 0; w < spec.cancels.size(); ++w) {
-            const auto& win = spec.cancels[w];
-            const auto& ids = windows[w];
-            if (win.openAt >= 0) triggers.push_back({win.openAt, ids.open, false});
-            if (win.closeAt >= 0) triggers.push_back({win.closeAt, ids.close, true});
-            if (ids.cancel >= 0) {
-                addExit(ids.cancel, base + i, ids.exitEffect);
-                ++result.cancelOutCount;
-            }
-        }
         auto* clip = MakeClip(c.clipName.c_str(), c.file.c_str(), binding[i], MakeTriggerArray(triggers),
             nativeIdle->generator, FrameworkSettings::Get().convertAnnotations);
         if (spec.loop.enabled) clip->mode = RE::hkbClipGenerator::kModeLooping;  // charge (10-30): plays on
@@ -1825,10 +1787,8 @@ void InjectFullBodyAction(int action, RE::hkbBehaviorGraph* graph, RE::hkbStateM
     result.injected = true;
     Publish(result);
     loading.Ready();
-    logger::info("[FullBodyRoute] action='{}' view={} parent={} machine='{}' states={} first={} entryPriority={} "
-                 "nativeCancelWindows={}",
-        spec.id, g_currentFirstPerson ? "first" : "third", parent->stateId, NodeName(machine), n, base, entry.priority,
-        result.cancelOutCount);
+    logger::info("[FullBodyRoute] action='{}' view={} parent={} machine='{}' states={} first={} entryPriority={}",
+        spec.id, g_currentFirstPerson ? "first" : "third", parent->stateId, NodeName(machine), n, base, entry.priority);
 }
 
 // ── 액션 하나를 그래프 하나에 ───────────────────────────────────────────────
@@ -1891,15 +1851,6 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
     for (int i = 0; i < n; ++i)
         if (res.enterIds[i] < 0) return fail("진입 이벤트 등록 실패");
     if (res.exitId < 0) return fail("Exit 이벤트 등록 실패");
-    struct WinIds {
-        std::int32_t open, close;
-    };
-    std::vector<WinIds> winIds;
-    for (const auto& w : spec.cancels) {
-        WinIds ids{InjectEvent(a_graph, w.openEvent.c_str()), InjectEvent(a_graph, w.closeEvent.c_str())};
-        if (ids.open < 0 || ids.close < 0) return fail("창 이벤트 등록 실패");
-        winIds.push_back(ids);
-    }
 
     // 애니 이름 (이 캐릭터의 문자열 데이터. 다른 캐릭터 파일은 LoadClips 훅이 채운다)
     std::vector<std::uint16_t> bind(spec.clips.size(), 0);
@@ -1909,12 +1860,10 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
         auto* csd = cdata ? cdata->stringData.get() : nullptr;
         if (!csd) return fail("hkbCharacterStringData 없음");
         for (std::size_t i = 0; i < spec.clips.size(); ++i) {
-            int idx = FindName(csd->animationNames, spec.clips[i].file.c_str());
-            if (idx < 0) {
-                if (!AppendName(csd->animationNames, spec.clips[i].file.c_str()))
-                    return fail("animationNames push 실패");
-                idx = csd->animationNames._size - 1;
-            }
+            // As every other route: no name past the table's limit, no index the engine cannot read.
+            const int idx = EnsureAnimationName(a_character, spec.clips[i].file.c_str());
+            if (idx < 0 || idx > AnimationLimit::MaxBindingIndex())
+                return fail("animation index unavailable or out of range");
             bind[i] = static_cast<std::uint16_t>(idx);
         }
     }
@@ -1942,69 +1891,20 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
     if (base < 0) return fail("state IDs exhausted");
     const auto prio = static_cast<std::int16_t>(std::clamp(fw.wildcardPriority, 0, 32767));
 
-    // 창 구간 적용 (이벤트 기반만 동작 — V9)
-    auto applyWindow = [&](TransitionInfo& t, const CancelSpec& w, const WinIds& wi) {
-        switch (w.mode) {
-        case 1:
-            t.flags = static_cast<std::int16_t>(t.flags | TransitionInfo::kUseTriggerInterval);
-            t.triggerInterval = {wi.open, wi.close, 0.0f, 0.0f};
-            break;
-        case 2:
-            t.flags = static_cast<std::int16_t>(
-                t.flags | TransitionInfo::kUseTriggerInterval | TransitionInfo::kUseInitiateInterval);
-            t.triggerInterval = {-1, wi.close, 0.0f, 0.0f};
-            t.initiateInterval = {wi.open, wi.close, 0.0f, 0.0f};
-            break;
-        default: break;
-        }
-    };
-
-    // 캔슬 아웃(vanilla:*) 상속 후보: 시작 상태의 전이 중 이름에 부분 문자열이 든 것 (창마다)
-    std::vector<std::vector<const TransitionInfo*>> inherit(spec.cancels.size());
-    std::string inheritedNames;
-    if (startState->transitions) {
-        auto* sa = reinterpret_cast<TransitionInfoArrayLayout*>(startState->transitions);
-        for (std::size_t w = 0; w < spec.cancels.size(); ++w) {
-            for (int k = 0; k < sa->transitions._size; ++k) {
-                const auto& t = sa->transitions._data[k];
-                const char* en = EventNameOf(a_graph, t.eventId);
-                bool hit = false;
-                for (const auto& m : spec.cancels[w].vanillaMatches)
-                    if (Contains(en, m.c_str())) {
-                        hit = true;
-                        break;
-                    }
-                if (hit) {
-                    inherit[w].push_back(&t);
-                    if (w == 0) {
-                        inheritedNames += en;
-                        inheritedNames += ' ';
-                    }
-                }
-            }
-        }
-    }
-
     const RE::hkbNode* tmpl = sm;
-    int cancelCount = 0;
     // States are added to the machine only after every clip was prepared (see the commit below).
     std::vector<StateInfoLayout*> newStates;
     for (int i = 0; i < n; ++i) {
         const auto& c = spec.clips[i];
         std::vector<TriggerDef> trig;  // 시각이 음수인 슬롯은 HKX 주석이 이벤트를 쏜다 (트리거 생성 안 함)
         if (spec.exitTriggerBeforeEnd >= 0.0f) trig.push_back({spec.exitTriggerBeforeEnd, res.exitId, true});
-        for (std::size_t w = 0; w < spec.cancels.size(); ++w) {
-            if (spec.cancels[w].openAt >= 0.0f) trig.push_back({spec.cancels[w].openAt, winIds[w].open, false});
-            if (spec.cancels[w].closeAt >= 0.0f) trig.push_back({spec.cancels[w].closeAt, winIds[w].close, true});
-        }
         auto* clip =
             MakeClip(c.clipName.c_str(), c.file.c_str(), bind[i], MakeTriggerArray(trig), tmpl, fw.convertAnnotations);
         if (spec.loop.enabled) clip->mode = RE::hkbClipGenerator::kModeLooping;  // charge (10-30): plays on
 
-        // 전이 배열: [Exit] + [Recovery] + [상속 캔슬 아웃]
+        // 전이 배열: [Exit] + [Recovery]
         const auto& recovery = spec.recovery;
-        int total = 1 + (recovery.enabled ? 1 : 0);
-        for (std::size_t w = 0; w < spec.cancels.size(); ++w) total += static_cast<int>(inherit[w].size());
+        const int total = 1 + (recovery.enabled ? 1 : 0);
         auto* arr = MakeTransitionArray(total);
         int at = 0;
         FillTransition(arr->transitions._data[at++], res.exitId, tgt.startStateId, exitEff, 0);
@@ -2014,17 +1914,6 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
             if (!recoverEff) return fail("clip recovery effect unavailable");
             FillTransition(arr->transitions._data[at++], res.recoverId, tgt.startStateId, recoverEff, 0, prio);
         }  // Recovery → 이동
-        for (std::size_t w = 0; w < spec.cancels.size(); ++w) {
-            const auto& win = spec.cancels[w];
-            for (const auto* src : inherit[w]) {
-                auto& t = arr->transitions._data[at++];
-                t = *src;
-                t.priority = static_cast<std::int16_t>(
-                    std::max<int>(t.priority, prio));  // 진입 블렌드 중 선입력 보관에 필요 (V9)
-                applyWindow(t, win, winIds[w]);
-                ++cancelCount;
-            }
-        }
         RE::hkbGenerator* gen = clip;
         if (a_airRoute) {
             auto* wrapper = airWrappers[i];
@@ -2051,7 +1940,6 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
         ids.insert(base + i);
         res.stateIds.push_back(base + i);
     }
-    res.cancelOutCount = n > 0 ? cancelCount / n : 0;
 
     // 진입 와일드카드
     if (!wild) {
@@ -2095,10 +1983,8 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
     if (a_airRoute)
         logger::debug(
             "[AirRoute] '{}' injected in {}: states={} exitState={}", spec.id, tgt.smName, n, tgt.startStateId);
-    logger::debug(
-        "[Inject] {}/{}: 삽입 완료 — 상태 {}개 (stateId {}..{}), 효과 enter='{}' exit='{}', exit 이벤트 {}, 바닐라 전환 {}개, 캔슬아웃 상속 {}개/상태{}",
-        spec.id, res.graph, n, base, base + n - 1, enterName, exitName, res.exitId, spec.cancels.size(),
-        res.cancelOutCount, inheritedNames.empty() ? "" : (" [" + inheritedNames + "]"));
+    logger::debug("[Inject] {}/{}: 삽입 완료 — 상태 {}개 (stateId {}..{}), 효과 enter='{}' exit='{}', exit 이벤트 {}",
+        spec.id, res.graph, n, base, base + n - 1, enterName, exitName, res.exitId);
 }
 
 RE::hkbNode* FindNodeByName(RE::hkbNode* node, const char* name, int depth, std::size_t& seen) {
@@ -2121,6 +2007,7 @@ void ReportNodeIds(RE::hkbBehaviorGraph* a_graph, RE::hkbNode* a_root, const cha
         "[NodeBudget] {} 0_master: native {} + AI {} = {}, counted {} node ids of {} ({} kept free for clones)",
         a_label, a_native, a_made, a_native + a_made, counted, kNodeIdLimit, kNodeIdsKeptFree);
     if (counted + kNodeIdsKeptFree <= kNodeIdLimit) {
+        NodeIdRenumber::NoteFits(a_graph, counted);
         LoadingProgress::ReportNodes(counted, kNodeIdLimit, a_leftOut);
         return;
     }
@@ -2129,7 +2016,7 @@ void ReportNodeIds(RE::hkbBehaviorGraph* a_graph, RE::hkbNode* a_root, const cha
     const std::size_t machines = NodeIdRenumber::Machines(nodes);
     NodeIdRenumber::NoteCounted(a_graph, std::move(nodes));
     const std::size_t machineIds = machines + NodeIdRenumber::kCloneIds;
-    if (a_renumbering && machineIds < NodeIdRenumber::kMachineIdLimit) {
+    if (a_renumbering && NodeIdRenumber::MachinesFit(machines)) {
         logger::info(
             "[NodeBudget] {} 0_master: {} nodes pass the {} node ids; state machines get their own ids when the engine "
             "numbers it ({} machines + {} for clones of {})",
@@ -2165,7 +2052,8 @@ void MeasureCharacterProject(
             std::size_t seen = 0;
             if (auto* machine = FindNodeByName(root, "RootBehaviorGraph", 0, seen);
                 machine && SameVTable(machine, RE::VTABLE_hkbStateMachine))
-                NodeIdStress::Inflate(graph, static_cast<RE::hkbStateMachine*>(machine), stress);
+                NodeIdStress::Inflate(graph, static_cast<RE::hkbStateMachine*>(machine), stress,
+                    static_cast<std::size_t>(FrameworkSettings::Get().nodeIdStressMachineEvery));
         }
         ReportNodeIds(graph, root, a_firstPerson ? "first-person" : "third-person", CountNodes(root), 0,
             NodeIdRenumber::Active(), false);
@@ -2275,27 +2163,6 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
         wild ? wild->transitions._size : -1);
     if (!FrameworkSettings::Get().injectState) return skip("bInjectState=false");
 
-    // Only real native transition events may be intercepted for cancel-out.
-    if (!g_currentFirstPerson) {
-        // Read the graph first, then merge the names under the publish lock.
-        std::vector<std::string> names;
-        auto collect = [&](TransitionInfoArrayLayout* list) {
-            if (!list) return;
-            for (int i = 0; i < list->transitions._size; ++i) {
-                const char* name = EventNameOf(a_graph, list->transitions._data[i].eventId);
-                if (!name || !*name || _strnicmp(name, "AI_", 3) == 0 || _strnicmp(name, "pa_AI_", 6) == 0) continue;
-                names.emplace_back(name);
-            }
-        };
-        collect(wild);
-        collect(reinterpret_cast<TransitionInfoArrayLayout*>(startState->transitions));
-        std::unique_lock lock(g_publishLock);
-        for (auto& name : names)
-            if (std::find(nativeTransitionEvents.begin(), nativeTransitionEvents.end(), name) ==
-                nativeTransitionEvents.end())
-                nativeTransitionEvents.push_back(std::move(name));
-    }
-
     // Events go into this graph right before its first action (a validated target that no action
     // enters gets none).
     const bool rootTarget = std::strcmp(tgt->smName, "RootBehaviorGraph") == 0;
@@ -2305,7 +2172,8 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
     // Test mode: the graph passes the id limit before any action is counted, as a load order with many behavior mods.
     if (const auto stress = static_cast<std::size_t>(FrameworkSettings::Get().nodeIdStressNodes);
         stress && rootTarget && !g_currentFirstPerson)
-        NodeIdStress::Inflate(a_graph, sm, stress);
+        NodeIdStress::Inflate(
+            a_graph, sm, stress, static_cast<std::size_t>(FrameworkSettings::Get().nodeIdStressMachineEvery));
     const std::size_t nativeNodes = rootTarget ? CountNodes(root) : 0;
     const std::size_t createdBefore = CreatedNodes();
     const auto made = [&] { return CreatedNodes() - createdBefore; };
@@ -2314,8 +2182,7 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
     const bool renumbering = rootTarget && NodeIdRenumber::Active();
     const std::size_t nativeMachines = renumbering ? NodeIdRenumber::Machines(AllNodes(root)) : 0;
     const bool machinesFit =
-        renumbering && nativeMachines + NodeIdRenumber::kInjectedMachinesReserve + NodeIdRenumber::kCloneIds <
-                           NodeIdRenumber::kMachineIdLimit;
+        renumbering && NodeIdRenumber::MachinesFit(nativeMachines + NodeIdRenumber::kInjectedMachinesReserve);
     std::vector<const std::string*> overBudget;
     const auto fits = [&](int action) {
         if (nativeNodes + made() + NodeReserve(action) + kNodeIdsKeptFree <= kNodeIdLimit) return true;
@@ -2557,21 +2424,22 @@ void Install() {
     auto& tr = SKSE::GetTrampoline();
     REL::Relocation<std::uintptr_t> sym{REL::RelocationID(62640, 63585)};
     const std::uintptr_t symbolSite = sym.address() + REL::Relocate(0x22A, 0x237);
-    // Without this call site no state can be injected; refuse rather than overwrite other code.
-    if (*reinterpret_cast<const std::uint8_t*>(symbolSite) != 0xE8) {
-        logger::error("[Inject] CreateSymbolIdMap 호출부가 call 이 아님 — 삽입 훅 미설치");
+    REL::Relocation<std::uintptr_t> lc{REL::RelocationID(63028, 63846)};
+    const std::uintptr_t site = lc.address() + REL::Relocate(0x8D, 0x101);
+    // Check both sites before writing either: states injected without their clips are worse than no
+    // injection, and a site that is not a whole call instruction must not be overwritten. Other plugins
+    // hook both sites (OAR, Draw Fix), so a call that leaves the game's code is expected.
+    const auto symbolCheck = CallSite::Verify(sym.address(), symbolSite, "CreateSymbolIdMap");
+    const auto clipsCheck = CallSite::Verify(lc.address(), site, "LoadClips");
+    if (!symbolCheck.ok || !clipsCheck.ok) {
+        logger::error("[Inject] injection hooks not installed");
         return;
     }
     _origSymbol = reinterpret_cast<SymbolHookFn>(tr.write_call<5>(symbolSite, SymbolHook));
-
-    REL::Relocation<std::uintptr_t> lc{REL::RelocationID(63028, 63846)};
-    const std::uintptr_t site = lc.address() + REL::Relocate(0x8D, 0x101);
-    if (*reinterpret_cast<const std::uint8_t*>(site) != 0xE8) {
-        logger::error("[Inject] LoadClips 호출부가 call 이 아님 — 훅 미설치");
-        return;
-    }
     _origLoadClips = reinterpret_cast<LoadClipsFn>(tr.write_call<5>(site, LoadClipsHook));
-    logger::debug("[Inject] hooks installed (CreateSymbolIdMap, LoadClips)");
+    logger::info("[Inject] hooks installed (CreateSymbolIdMap{}, LoadClips{})",
+        symbolCheck.foreign ? ", chained after another plugin" : "",
+        clipsCheck.foreign ? ", chained after another plugin" : "");
 }
 
 std::vector<SyncNode> SyncNodes() {
@@ -2585,13 +2453,6 @@ bool IsActionState(int action, const char* graph, std::int32_t stateId) {
         return r.injected && r.graph == graph &&
                std::find(r.stateIds.begin(), r.stateIds.end(), stateId) != r.stateIds.end();
     });
-}
-bool IsNativeTransitionEvent(const char* event) {
-    if (!event) return false;
-    std::shared_lock lock(g_publishLock);
-    for (const auto& name : nativeTransitionEvents)
-        if (_stricmp(name.c_str(), event) == 0) return true;
-    return false;
 }
 bool HasFullBodyRoute(int action) {
     std::shared_lock lock(g_publishLock);

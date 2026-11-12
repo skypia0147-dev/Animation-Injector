@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/NodeIdLayout.h"
+
 // Behavior graphs past 65535 nodes (the engine's node ids are 16-bit).
 //
 // The engine numbers a graph's nodes 0, 1, 2, ... when it links the graph, and past 65535 the ids wrap. Only two
@@ -14,26 +16,23 @@
 // So when a graph has more nodes than ids, this renumbers it right after the engine does: every state machine gets
 // its own id first, runtime clones get a range no state machine uses, and the other nodes share the rest. The
 // id-to-state-machine table is filled again with the new ids. A graph that fits is left exactly as the engine made it.
+//
+// Another plugin may repair the engine's numbering as it goes, by patching the table insert inside the numbering
+// function. That is another instruction than the two calls hooked here, so both install; the numbering then arrives
+// without two machines on one id (brokenBefore reads 0), and a graph past the limit is still renumbered here.
 namespace AnimationInjector::NodeIdRenumber {
 
-// Ids 0..0xFFFE; 0xFFFF means "no id".
-inline constexpr std::size_t kIdLimit = 0xFFFF;
-// Ids the engine's own numbering leaves for runtime clones before a graph counts as over the limit.
-inline constexpr std::size_t kFreeForClones = 512;
-// Ids kept for runtime clones, right after the state machines' ids.
-inline constexpr std::size_t kCloneIds = 4096;
-// State machine and clone ids must stay positive 16-bit numbers (the engine returns only ids >= 0 to its pool).
-inline constexpr std::size_t kMachineIdLimit = 0x7FFF;
 // State machines Animation Injector may add to a graph on top of its own (pair containers and the like).
 inline constexpr std::size_t kInjectedMachinesReserve = 64;
 
 struct Result {
-    std::size_t nodes = 0;          // nodes the engine numbered
-    std::size_t machines = 0;       // state machines among them
-    std::size_t sharedIds = 0;      // ids handed out a second time (to nodes other than state machines)
-    std::uint16_t cloneBase = 0;    // first id handed to runtime clones (numStaticNodes and nextUniqueID)
-    bool renumbered = false;        // false: the graph fit, renumbering is off, or a check failed (see skipped)
-    const char* skipped = nullptr;  // why it was left as the engine made it
+    std::size_t nodes = 0;           // nodes the engine numbered
+    std::size_t machines = 0;        // state machines among them
+    std::size_t sharedIds = 0;       // ids handed out a second time (to nodes other than state machines)
+    std::uint16_t cloneBase = 0;     // first id handed to runtime clones (numStaticNodes and nextUniqueID)
+    std::uint16_t topMachineId = 0;  // the last state machine's id (past 0x7FFF: machines above the clone range)
+    bool renumbered = false;         // false: the graph fit, renumbering is off, or a check failed (see skipped)
+    const char* skipped = nullptr;   // why it was left as the engine made it
 };
 
 // Installs the two call-site hooks after the engine's numbering functions (hkbBehaviorGraph link and the graph load
@@ -52,6 +51,9 @@ std::size_t Machines(const std::vector<RE::hkbNode*>& a_nodes);
 // engine numbers (2026-11-09: 72330 counted there, the engine's count 72330, while a walk after the numbering found
 // 69 fewer); the hooks use it with what they find.
 void NoteCounted(RE::hkbBehaviorGraph* a_graph, std::vector<RE::hkbNode*> a_nodes);
+// The same count for a graph that fits: the hooks then leave it without walking it again (every graph was walked on
+// every numbering before 2026-11-12).
+void NoteFits(RE::hkbBehaviorGraph* a_graph, std::size_t a_count);
 
 // Renumbers one graph as described above, given the nodes the engine numbered. Called by the hooks.
 Result Renumber(RE::hkbBehaviorGraph* a_graph, const std::vector<RE::hkbNode*>& a_nodes);
@@ -69,6 +71,9 @@ std::size_t BrokenMachines(RE::hkbBehaviorGraph* a_graph, const std::vector<RE::
 // ids make machines share ids. Negative control: with renumbering off BrokenMachines is above 0, with it on 0.
 namespace AnimationInjector::NodeIdStress {
 
-std::size_t Inflate(RE::hkbBehaviorGraph* a_graph, RE::hkbStateMachine* a_machine, std::size_t a_count);
+// a_machineEvery: one node in that many is a state machine ([Debug] iNodeIdStressMachineEvery; 2 takes the machines
+// past the positive ids, the case LayoutFor splits).
+std::size_t Inflate(
+    RE::hkbBehaviorGraph* a_graph, RE::hkbStateMachine* a_machine, std::size_t a_count, std::size_t a_machineEvery);
 
 }  // namespace AnimationInjector::NodeIdStress

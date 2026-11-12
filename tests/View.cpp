@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 // Camera views (runtime/ViewSpec.h, 0.12.225): the engine-free rules ViewGuard applies, and the
-// view / firstPerson grammar.
+// view / otherView grammar.
 using namespace AnimationInjector;
 namespace {
 unsigned checks = 0;
@@ -40,14 +40,22 @@ const ActionSpec* Find(const Parsed& p, const char* id) {
 int main() {
     try {
         using C = CameraView;
-        // Start: an action starts where the camera shows its view; a third-person action with
-        // firstPerson="switch" also in first person. A scene camera never blocks.
+        // Start: an action starts where the camera shows its view; an action of one view with
+        // otherView="switch" in the other view too. A scene camera never blocks.
         const ViewSpec third{}, first{View::kFirst}, both{View::kBoth},
-            thirdSwitch{View::kThird, FirstPersonStart::kSwitch};
+            thirdSwitch{View::kThird, OtherViewStart::kSwitch}, firstSwitch{View::kFirst, OtherViewStart::kSwitch};
         Check(MayStart(third, C::kThird) && !MayStart(third, C::kFirst), "third plays in third person only");
         Check(MayStart(first, C::kFirst) && !MayStart(first, C::kThird), "first plays in first person only");
         Check(MayStart(both, C::kFirst) && MayStart(both, C::kThird), "both plays in either");
         Check(MayStart(thirdSwitch, C::kFirst), "switch starts a third-person action from first person");
+        Check(MayStart(firstSwitch, C::kThird) && MayStart(firstSwitch, C::kFirst),
+            "switch starts a first-person action from third person");
+        // The switch a starting run makes: to its view, from the other one only.
+        Check(SwitchFor(View::kThird, C::kFirst) == C::kThird && SwitchFor(View::kFirst, C::kThird) == C::kFirst,
+            "a run in the other view switches the camera to its own");
+        Check(SwitchFor(View::kThird, C::kThird) == C::kOther && SwitchFor(View::kFirst, C::kFirst) == C::kOther &&
+                  SwitchFor(View::kThird, C::kOther) == C::kOther && SwitchFor(View::kFirst, C::kOther) == C::kOther,
+            "no switch in its own view or under a scene camera");
         Check(MayStart(third, C::kOther) && MayStart(first, C::kOther), "a scene camera does not block");
 
         // The run's view: `both` takes the camera at the start (third when it is a scene camera).
@@ -67,11 +75,15 @@ int main() {
         const std::string action = "<Action id='A' clip='a.hkx'/>";
         {
             const auto p = Parse(action + "<Action id='B' clip='b.hkx' view='both'/>"
-                                          "<Action id='C' clip='c.hkx' view='third' firstPerson='switch'/>");
+                                          "<Action id='C' clip='c.hkx' view='third' otherView='switch'/>"
+                                          "<Action id='D' clip='d.hkx' view='first' otherView='switch'/>"
+                                          "<Pair id='P' clip='p.hkx' otherView='switch'/>");
             Check(p.ok, "views parse");
             Check(Find(p, "A")->view == ViewSpec{}, "no view: third, block");
             Check(Find(p, "B")->view.view == View::kBoth, "both");
             Check(Find(p, "C")->view == thirdSwitch, "switch");
+            Check(Find(p, "D")->view == firstSwitch, "switch on a first-person action");
+            Check(Find(p, "P")->view == thirdSwitch, "switch on a third-person pair");
         }
         {
             const auto p = Parse(action + "<Pair id='P' clip='p.hkx'/>", "first");
@@ -91,11 +103,16 @@ int main() {
             "a carry written both");
         Check(!Parse("<Pair id='P' clip='p.hkx' view='first'><Carry target='physics'/></Pair>").ok,
             "a carry written first");
-        Check(!Parse("<Action id='A' clip='a.hkx' view='first' firstPerson='switch'/>").ok,
-            "firstPerson on a first-person action");
+        Check(!Parse("<Action id='A' clip='a.hkx' view='both' otherView='switch'/>").ok,
+            "otherView on an action of both views");
+        Check(!Parse(action + "<Action id='B' clip='b.hkx' otherView='switch'/>", "both").ok,
+            "otherView under a file default of both");
+        Check(!Parse("<Pair id='P' clip='p.hkx' view='first' otherView='switch'/>").ok,
+            "otherView on a first-person pair");
+        Check(!Parse("<Action id='A' clip='a.hkx' firstPerson='switch'/>").ok, "the name before 1.0.8 is not read");
         Check(!Parse("<Action id='A' clip='a.hkx' view='side'/>").ok, "an unknown view");
         Check(!Parse(action, "side").ok, "an unknown file view");
-        Check(!Parse("<Action id='A' clip='a.hkx' firstPerson='maybe'/>").ok, "an unknown firstPerson");
+        Check(!Parse("<Action id='A' clip='a.hkx' otherView='maybe'/>").ok, "an unknown otherView");
         std::cout << checks << " view checks passed\n";
         return 0;
     } catch (const std::exception& e) {

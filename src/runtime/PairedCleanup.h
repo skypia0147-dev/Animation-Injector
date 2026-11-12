@@ -35,6 +35,25 @@ struct Handoff {
     }
 };
 
+// A participant as the playing pair sees it: gone (no actor or no loaded 3D), dead, or in ragdoll.
+struct Lost {
+    bool gone = false, dead = false, ragdoll = false;
+    constexpr bool Any() const { return gone || dead || ragdoll; }
+};
+// Whether a playing pair stops because a participant was lost. A target its own clip killed (the 2_KillActor
+// annotation, as a vanilla kill move's victim) is no loss while the initiator can play: the target leaves the
+// animation (it dies and ragdolls) and the initiator plays on to its clip's end (1.0.8). A target lost any other way
+// (a hit from outside, a ragdoll, its 3D gone) stops the pair, as does a lost initiator.
+constexpr bool StopsPlaying(const Lost& initiator, const Lost& target, bool targetKilledByClip) {
+    if (initiator.Any() || target.gone) return true;
+    return target.Any() && !targetKilledByClip;
+}
+// Whether a playing pair has played to its end: both clips exited, or the initiator's alone once its clip killed
+// the target (a corpse's clip may never report its exit).
+constexpr bool PlayedOut(bool initiatorExited, bool targetExited, bool targetKilledByClip) {
+    return initiatorExited && (targetExited || targetKilledByClip);
+}
+
 // Missing graphs are not restored graphs. Only a participant-loss stop with an
 // observed clip exit may finish without reading that participant's absent 3D.
 constexpr bool IsParticipantFinished(

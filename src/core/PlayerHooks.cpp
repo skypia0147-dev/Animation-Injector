@@ -69,7 +69,7 @@ struct Notify {
             EventRegistry::ObserveSent(actor, a_event);
             return true;
         }
-        if (Actions::CaptureNativeCancel(actor, a_event)) return true;
+        Actions::NoteNpcRequest(actor, a_event);
         // A full-body or paired entry event first sends its shared root entry (core/FullBodyEntry,
         // core/PairEntry); an event is at most one of them.
         const auto fullBody = FullBodyEntry::BeforeNotify(actor, a_event);

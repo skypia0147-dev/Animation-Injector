@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include "runtime/PairFeatureSpec.h"
+#include "runtime/HeldKeys.h"
 
 namespace logger {
 template<class... Args>
@@ -60,9 +61,19 @@ void End(RE::ActorHandle, int);
 void ObserveTime(RE::ActorHandle, int, float, float = 0);
 void ObserveEvent(RE::ActorHandle, const RE::BSFixedString&);
 struct InputResult {
-    bool claimed = false, taken = false;
+    bool claimed = false, taken = false, kept = false;
 };
-InputResult Input(std::uint32_t, bool, GameControl = GameControl::kNone, bool = true);
+enum class InputPhase : std::uint8_t { kDown, kHeld, kUp };
+InputResult Input(std::uint32_t, bool, GameControl = GameControl::kNone, InputPhase = InputPhase::kDown, float = -1.0f);
+void SetPressTiming(PressKinds::Timing);
+struct Forward {
+    HeldKeys::Key key;
+    PressKinds::Press press = PressKinds::Press::kDown;
+    float downAt = 0;
+    int direction = -1;
+};
+std::vector<Forward> TakeForwards();
+void DropPress(HeldKeys::Key);
 bool ClaimsEvent(RE::ActorHandle, const RE::BSFixedString&);
 void Update(float);
 void ResetOnLoad();
@@ -90,6 +101,8 @@ public:
     bool CanRequest() const { return condition; }
     const HarnessSpec& Spec() const { return specs[index]; }
     State GetState() const { return state; }
+    bool leaving = false;
+    bool Leaving() const { return leaving; }
     bool Request(int = -1) {
         ++starts;
         if (accept) state = State::kActive;

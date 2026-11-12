@@ -265,6 +265,14 @@ int main() {
     Check(HeadingDrifted(-.45659f) && HeadingDrifted(.021f) && HeadingDrifted(-.021f), "a turned heading is restored");
     Check(!HeadingDrifted(.0f) && !HeadingDrifted(.02f) && !HeadingDrifted(-.019f), "a heading within slack stays");
     Check(!HeadingDrifted(std::numeric_limits<float>::quiet_NaN()), "an unreadable heading is left alone");
+    // 1.0.8: a held heading's error the pair's own motion made (its HKX's rotation) is not another mod's turn.
+    Check(ForeignTurn(-.45659f, .0f) && ForeignTurn(.3f, -.2f), "a turn the pair did not make is another's");
+    Check(!ForeignTurn(.3f, .3f) && !ForeignTurn(-.3f, -.29f) && !ForeignTurn(.0f, .0f),
+        "the pair's own turn is not a tug");
+    Check(ForeignTurn(.3f, .1f), "what is left past the pair's own turn is another's");
+    Check(ForeignTurn(.3f, std::numeric_limits<float>::quiet_NaN()), "an unreadable own turn excuses nothing");
+    Check(!ForeignTurn(3.14159f, -3.14159f), "the error wraps");
+    Check(kHeadingTugSeconds > .1f && kHeadingTugSeconds < .5f, "the tug-of-war release counts seconds");
     for (unsigned i = 0; i < 2; ++i)
         std::cout << "reported role=" << i << " goal=" << p->goals[i].x << ',' << p->goals[i].y << ',' << p->goals[i].z
                   << " yaw=" << p->goals[i].yaw << '\n';

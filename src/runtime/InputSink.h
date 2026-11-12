@@ -67,6 +67,8 @@ private:
     // A button of this input went down or up. True: keep this press from the game.
     bool OnPress(const RE::ButtonEvent& event, Source source, std::uint32_t code);
     void Settle(Pressed& pressed);
+    // Presses a leaving action told apart (ActionLinks::TakeForwards): what their key starts when pressed that way.
+    void StartForwards();
     void Act(Pressed& pressed, PressKinds::Outcome outcome);
     void ToGame(Pressed& pressed, bool tap);
     void DropWaits();

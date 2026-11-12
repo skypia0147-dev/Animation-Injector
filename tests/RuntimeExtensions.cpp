@@ -69,6 +69,28 @@ int wmain(int argc, wchar_t** argv) {
                  "control='favorites' press='hold'", "control='tweenMenu' press='double'", "key='G' onKeyUp='true'"})
             Check(!Valid(Start(bad)), "press kind rejected");
         Check(!Valid(Wrap("<Suppress events='A'/>")), "no Suppress element (a block is an attribute)");
+        // An ending transition (1.0.8): end="true" goes nowhere, by a key, an event, a release or a movement key.
+        {
+            const auto ends = [](const std::string& transition, const std::string& attrs = "") {
+                return "<AnimationSet version='6' id='Test'><Action id='A' clip='a.hkx' " + attrs + ">" + transition +
+                       "</Action><Action id='B' clip='b.hkx'/></AnimationSet>";
+            };
+            for (const auto& ok :
+                {"<Transition end='true' event='Stop'/>", "<Transition end='true' key='G'/>",
+                    "<Transition end='true' key='G' press='hold' from='0.2'/>", "<Transition end='true' on='release'/>",
+                    "<Transition end='true' on='move'/>", "<Transition end='false' to='B' key='G'/>",
+                    "<Transition end='true' event='Stop'/><Transition to='B' event='Next'/>"})
+                Check(Valid(ends(ok)), "ending transition accepted");
+            Check(Valid(ends("<Transition end='true' event='Stop'/>", "loop='true' maxHold='600'")),
+                "a loop ended by an event");
+            for (const auto& bad : {"<Transition end='true' to='B' event='Stop'/>", "<Transition end='true'/>",
+                     "<Transition end='true' event='Stop' blend='0.2'/>", "<Transition end='true' on='end'/>",
+                     "<Transition end='yes' event='Stop'/>", "<Transition event='Stop'/>"})
+                Check(!Valid(ends(bad)), "ending transition rejected");
+            Check(!Valid("<AnimationSet version='6' id='Test'><Pair id='P' clip='p.hkx'><FindPartner/>"
+                         "<Transition end='true' event='Stop'/></Pair></AnimationSet>"),
+                "an ending transition on a pair");
+        }
         // Charge (10-30): a loop, on="end" and on="release" transitions, the held time condition.
         const auto two = [](const std::string& first, const std::string& content, const std::string& attrs = "") {
             return "<AnimationSet version='6' id='Test'><Action id='A' clip='a.hkx' " + attrs + ">" + content +

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="PressKinds">
+  <Start to="Roll" control="jump" press="double"/>
+  <Start to="Step" control="jump" press="hold"/>
+  <Action id="Roll" clip="Animations\Test\Roll.hkx">
+    <Transition to="Step" event="GoStep" press="tap"/>
+  </Action>
+  <Action id="Step" clip="Animations\Test\Step.hkx">
+    <Transition to="Roll" key="LAlt" press="double"/>
+  </Action>
+</AnimationSet>

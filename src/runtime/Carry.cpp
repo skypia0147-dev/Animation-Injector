@@ -1031,8 +1031,14 @@ bool ClaimInput(const RE::ButtonEvent& event, bool allow) {
     // A press the carry took is the carry's to its release, even once the carry has ended: the game never saw it go
     // down, and a lone release of E would activate what the carrier faces.
     if (pressOwner >= 0 && pressOwner < static_cast<int>(entries.size()) && PutdownKey(entries[pressOwner], event)) {
-        if (event.IsUp()) pressOwner = -1;
-        return true;
+        if (!event.IsDown()) {
+            if (event.IsUp()) pressOwner = -1;
+            return true;
+        }
+        // A new press: the release of the one the carry took never came (focus lost, device unplugged). It is judged
+        // as any press below, or the game would lose it too.
+        logger::debug("[Carry] putdown key pressed again before its release came; ownership cleared");
+        pressOwner = -1;
     }
     const int active = activeEntry.load();
     if (!allow || active < 0 || active >= static_cast<int>(entries.size()) || !PutdownKey(entries[active], event))
@@ -1351,6 +1357,9 @@ void BeforeGameLoad() {
 void OnGameLoad() {
     dropWatch = {};
     promptHidden = 0;
+    pressOwner = -1;
+    // Stop releases it; a load that reached here without the pre-load callback has not stopped the carry.
+    headtracking.Release();
     PrecisionLink::ReleaseAll();
     // Also release retained old 3D if no pre-load callback reached this session.
     CarryWeaponCover::Reset("load");

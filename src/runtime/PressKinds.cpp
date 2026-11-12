@@ -7,6 +7,11 @@ Step Classifier::Down(float now, Kinds kinds, bool game, const Timing&) {
         _state = State::kConsumed;
         return {Outcome::kDouble, _game};
     }
+    // A new press while the last one still counts as down: its release never reached this input. The action a
+    // double starts takes its key's events while it plays when one of its transitions uses that key (InputSink
+    // comboInput), so the release of the double's second press is never seen here; the next press then did nothing
+    // but end the old one, and every other double tap failed (DirectDodge, 2026-11-10). It starts over.
+    if (_state == State::kConsumed || _state == State::kPassed) _state = State::kIdle;
     if (_state != State::kIdle || !kinds.Any()) return {};
     _state = State::kDown1;
     _kinds = kinds;

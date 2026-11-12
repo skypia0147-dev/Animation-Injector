@@ -31,7 +31,11 @@ struct FrameworkSettings {
     bool debug = false;
     bool spaceProbe = false;
     bool ragdollTrace = false;  // Carry physics trace for HKX_Edit calibration (core/RagdollTrace).
-    int nodeIdStressNodes = 0;  // test mode: empty state machines added to the third-person 0_master
+    // core/HeadingWatch: a diagnostic for reports of a paired start turned by another mod. On by default while such
+    // reports are open; turn the default off (or remove the watch) once they are settled.
+    bool headingWatch = true;
+    int nodeIdStressNodes = 0;         // test mode: empty state machines added to the third-person 0_master
+    int nodeIdStressMachineEvery = 8;  // test mode: one added node in this many is a state machine
 
     static FrameworkSettings& Get();
     void Load();

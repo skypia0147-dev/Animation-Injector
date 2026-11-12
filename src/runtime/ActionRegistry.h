@@ -89,8 +89,8 @@ std::vector<CapturedTrigger> CaptureEventTrigger(RE::Actor* actor, const RE::BSF
 bool CommitEventTrigger(const std::vector<CapturedTrigger>& captured);
 bool QueueEventTrigger(RE::Actor* actor, const RE::BSFixedString& event);
 void ResetEventTriggers();
-bool CaptureNativeCancel(RE::Actor* actor, const RE::BSFixedString& event);
-void QueueNativeReplay(RE::ActorHandle actor, const RE::BSFixedString& event);
+// An NPC's graph is asked for an event: its move cancel may end the action on it (runtime/NpcMoveCancel.h).
+void NoteNpcRequest(RE::Actor* actor, const RE::BSFixedString& event);
 // 클립 이름 → (액션, 변형). 우리 클립이 아니면 false
 bool FindClip(const char* a_clipName, int& a_actionIdx, int& a_variant);
 // 모든 액션의 클립 파일 경로 (LoadClips 훅용)

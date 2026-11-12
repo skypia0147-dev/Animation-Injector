@@ -6,7 +6,7 @@
 // Which camera view an action plays in (XML `view`, 0.12.225). Engine-free: parser, checker and tests.
 //
 //   <AnimationSet version="4" id="MyMod" view="first">        file default (absent: third)
-//     <Action id="Dodge" view="third" firstPerson="switch">   per action (Action, Combo)
+//     <Action id="Dodge" view="third" otherView="switch">     per action (Action, Combo)
 //
 // A clip path is read under its project's folder: third person Meshes\Actors\Character\<clip>, first
 // person Meshes\Actors\Character\_1stPerson\<clip>. `both` needs the file in both folders.
@@ -21,14 +21,15 @@ enum class View : std::uint8_t {
     kFirst,  // the player's first-person graph only
     kBoth,   // both; the camera at the start picks the graph
 };
-// A third-person action the player starts in first person (XML firstPerson; only with view="third").
-enum class FirstPersonStart : std::uint8_t {
-    kBlock,   // does not start (as before 0.12.225)
-    kSwitch,  // switches to third person, plays, and returns to first person when the player's run ends
+// An action of one view (third or first) the player starts in the other view (XML otherView, 1.0.8; not with
+// view="both", nor on a first-person pair). Until 1.0.8 it was firstPerson, on third-person actions only.
+enum class OtherViewStart : std::uint8_t {
+    kBlock,   // does not start
+    kSwitch,  // the camera switches to the action's view, plays, and returns when the player's run ends
 };
 struct ViewSpec {
     View view = View::kThird;
-    FirstPersonStart firstPerson = FirstPersonStart::kBlock;
+    OtherViewStart otherView = OtherViewStart::kBlock;
     bool operator==(const ViewSpec&) const = default;
 };
 constexpr bool InThird(View view) { return view != View::kFirst; }
@@ -39,9 +40,9 @@ inline std::optional<View> ParseView(std::string_view text) {
     if (text == "both") return View::kBoth;
     return std::nullopt;
 }
-inline std::optional<FirstPersonStart> ParseFirstPersonStart(std::string_view text) {
-    if (text == "block") return FirstPersonStart::kBlock;
-    if (text == "switch") return FirstPersonStart::kSwitch;
+inline std::optional<OtherViewStart> ParseOtherViewStart(std::string_view text) {
+    if (text == "block") return OtherViewStart::kBlock;
+    if (text == "switch") return OtherViewStart::kSwitch;
     return std::nullopt;
 }
 
@@ -51,10 +52,17 @@ enum class CameraView : std::uint8_t { kFirst, kThird, kOther };
 constexpr bool Shows(View view, CameraView camera) {
     return camera == CameraView::kOther || (camera == CameraView::kFirst ? InFirst(view) : InThird(view));
 }
-// Whether the player may start an action of `spec` while the camera is in `camera`. A third-person action
-// with firstPerson="switch" may start in first person (the camera then switches to third person).
+// Whether the player may start an action of `spec` while the camera is in `camera`. An action of one view with
+// otherView="switch" may start in the other view too (the camera then switches to its view).
 constexpr bool MayStart(const ViewSpec& spec, CameraView camera) {
-    return Shows(spec.view, camera) || (spec.view == View::kThird && spec.firstPerson == FirstPersonStart::kSwitch);
+    return Shows(spec.view, camera) || (spec.view != View::kBoth && spec.otherView == OtherViewStart::kSwitch);
+}
+// The view the camera is moved to when a run of `run` (RunView: third or first) starts while the camera is in
+// `camera`: the run's view when the camera is in the other one; kOther when there is nothing to switch.
+constexpr CameraView SwitchFor(View run, CameraView camera) {
+    if (run == View::kThird && camera == CameraView::kFirst) return CameraView::kThird;
+    if (run == View::kFirst && camera == CameraView::kThird) return CameraView::kFirst;
+    return CameraView::kOther;
 }
 // The fixed view of a run that starts with an action of `view` while the camera is in `camera`: `both`
 // takes the camera's (third when the camera is neither).

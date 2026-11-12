@@ -31,7 +31,6 @@ struct Result {
     std::int32_t exitId = -1;
     std::int32_t recoverId = -1;         // Recovery: 이동으로 나가는 전이 이벤트 (없으면 -1)
     std::vector<std::int32_t> stateIds;  // 삽입한 상태 id
-    int cancelOutCount = 0;
 };
 
 // Paired template metadata for diagnostics. Binding creation is engine-owned.
@@ -57,7 +56,6 @@ bool AnyInjected(int a_actionIdx);
 bool HasPairedRoutes(int action);
 // A both-view pair's states are in a first-person graph (1.0.8): the player plays it in first person there.
 bool HasFirstPersonPair(int action);
-bool IsNativeTransitionEvent(const char* event);
 bool HasFullBodyRoute(int action);
 // True only after an airborne master-graph entry was successfully injected.
 bool HasAirRoute(int a_actionIdx);

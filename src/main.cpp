@@ -150,7 +150,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
     ClipHooks::Install();  // hkbClipGenerator Activate/Deactivate
     if (FrameworkSettings::Get().loadingProgress) AnimationLoadObserver::Install();
     Actions::InstallHooks();     // PlayerCharacter::Update
-    PlayerHooks::Install();      // NotifyAnimationGraph: HyperArmor, native cancels, event triggers
+    PlayerHooks::Install();      // NotifyAnimationGraph: HyperArmor, event triggers
     AirControl::Install();       // Install before the optional diagnostic wrapper.
     GraphEventHooks::Install();  // hkbStateMachine::handleEvent: handoff guard, exit-blend capture, diagnostics
     StartupRecord::Mark("plugin-loaded");
@@ -180,7 +180,11 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
             PairRootRuntime::Install();
             NativePairEnd::Install();
             PairedStartHooks::Install();
-            HeadingWatch::Install();  // Who else turns an attacker during a paired start.
+            // Who else turns an attacker during a paired start ([Debug] bHeadingWatch).
+            if (FrameworkSettings::Get().headingWatch)
+                HeadingWatch::Install();
+            else
+                logger::info("[HeadingWatch] off (bHeadingWatch=false): the engine's setters are left untouched");
             AnimationFileLifetime::Install();
             AnimationPreloader::Install();
             AnimationPreloader::InstallCellEvents();
@@ -194,6 +198,9 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
             // Observe release input before the ordinary sink can start a carry.
             Carry::Register();
             InputSink::Get()->SetPressTiming(
+                {FrameworkSettings::Get().pressHoldTime, FrameworkSettings::Get().pressDoubleWindow});
+            // A running action's key transitions tell their presses apart with the same times.
+            ActionLinks::SetPressTiming(
                 {FrameworkSettings::Get().pressHoldTime, FrameworkSettings::Get().pressDoubleWindow});
             InputSink::Register();
             HitDispatch::Register();  // Gameplay hit dispatch and optional diagnostics

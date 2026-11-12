@@ -39,6 +39,9 @@ void Reset(bool restore);
 // The heading a start being aligned gives this actor (its goal), while its start blend runs: what its pair motion is
 // turned by, not a heading it is still turning through (2026-10-28).
 std::optional<float> GoalYaw(RE::Actor* actor);
+// The pair's own motion turned this actor by `angle` radians (its HKX's rotation). A start that holds the actor's
+// heading puts it back as any turn, but does not count it as another mod's (the tug-of-war release).
+void NoteOwnTurn(RE::Actor* actor, float angle);
 // The native activation barrier consumes cached start transforms again.
 void InstallActivationHook();
 }

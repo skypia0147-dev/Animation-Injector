@@ -49,11 +49,6 @@ std::vector<std::string> OldEvents(const std::vector<ActionSpec>& g_specs) {
                 out.push_back(w->offEvent);
             }
         if (s.cost.enabled) out.push_back(s.cost.event);
-        for (const auto& w : s.cancels) {
-            out.push_back(w.openEvent);
-            out.push_back(w.closeEvent);
-            if (!w.vanillaMatches.empty()) out.push_back(w.nativeCancelEvent);
-        }
     }
     return out;
 }

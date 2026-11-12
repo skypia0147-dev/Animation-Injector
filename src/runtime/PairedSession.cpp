@@ -58,6 +58,9 @@ std::array<bool, 2> actorTraceSeen{};
 RE::BSFixedString lossExitEvent;
 float lossBlend = -1.0f;
 bool lossBlendRequested = false;
+// The target's own clip killed it (2_KillActor): no participant loss, the initiator plays on (PairedCleanup).
+bool targetKilledByClip = false;
+bool killPlayOnLogged = false;
 float nextPlacementTrace = 0;
 PairedCleanup::Handoff handoff;
 bool featuresReleased = false;
@@ -122,6 +125,11 @@ const RE::BSFixedString& NpcEnd() {
 }
 const RE::BSFixedString& TargetEnd() {
     static const RE::BSFixedString v("2_PairEnd");
+    return v;
+}
+// What the target receives from its clip's 2_KillActor annotation.
+const RE::BSFixedString& KillActor() {
+    static const RE::BSFixedString v("KillActor");
     return v;
 }
 
@@ -349,12 +357,14 @@ bool Submit(const Request& a_request, Ticket& a_ticket) {
     NpcStop();
     NpcEnd();
     TargetEnd();
+    KillActor();
     {
         std::lock_guard lock(mutex);
         if (status.phase != Phase::kIdle) return false;
         request = a_request;
         handoff = {};
         featuresReleased = false;
+        targetKilledByClip = killPlayOnLogged = false;
         lossBlend = Actions::Spec(a_request.actionIndex).paired.lossBlend;
         lossExitEvent = lossBlend > 0.0f
                             ? RE::BSFixedString(Actions::Spec(a_request.actionIndex).paired.lossExitEvent.c_str())
@@ -526,6 +536,7 @@ void ObserveEvent(Ticket a_ticket, RE::ActorHandle a_actor, const RE::BSFixedStr
     if (!(a_ticket == status.ticket) || status.phase == Phase::kIdle) return;
     if (Participant(a_actor) == 0 && !recoveryEvent.empty() && a_event == recoveryEvent)
         movementRecovery.ObserveEvent();
+    if (Participant(a_actor) == 1 && a_event == KillActor()) targetKilledByClip = true;
     const bool ending = (!recoveryExitEvent.empty() && a_event == recoveryExitEvent) ||
                         (!customEndEvent.empty() && a_event == customEndEvent) || a_event == Stop() ||
                         a_event == End() || a_event == NpcStop() || a_event == NpcEnd() || a_event == TargetEnd();
@@ -648,6 +659,7 @@ void ResetOnLoad() {
     nextPlacementTrace = 0;
     handoff = {};
     featuresReleased = false;
+    targetKilledByClip = killPlayOnLogged = false;
     lossBlend = -1.0f;
     lossBlendRequested = false;
     lossExitEvent = RE::BSFixedString();
@@ -664,13 +676,31 @@ void Update(float a_gameDelta) {
     auto self = copy.initiator.actor.get(), target = copy.target.actor.get();
     TraceActor(0, self.get());
     TraceActor(1, target.get());
-    if (copy.phase == Phase::kPlaying && self && target && self->Is3DLoaded() && target->Is3DLoaded() &&
-        (self->IsDead() || target->IsDead() || self->IsInRagdollState() || target->IsInRagdollState())) {
+    const auto lostNow = [](RE::Actor* actor) {
+        PairedCleanup::Lost lost;
+        lost.gone = !actor || !actor->Is3DLoaded();
+        lost.dead = !lost.gone && actor->IsDead();
+        lost.ragdoll = !lost.gone && actor->IsInRagdollState();
+        return lost;
+    };
+    const auto selfLost = lostNow(self.get()), targetLost = lostNow(target.get());
+    bool killed = false;
+    {
+        std::lock_guard lock(mutex);
+        killed = targetKilledByClip;
+    }
+    if (copy.phase == Phase::kPlaying) {
+        if (PairedCleanup::StopsPlaying(selfLost, targetLost, killed))
+            BeginStop(EndReason::kParticipantUnavailable);
+        else if (targetLost.Any() && !killPlayOnLogged) {
+            // The target's own clip killed it, as a vanilla kill move's: the initiator plays its clip to the end.
+            killPlayOnLogged = true;
+            logger::info(
+                "[PairKill] #{} the target's clip killed it (2_KillActor) at {:.3f}s: the initiator plays on (target dead={} ragdoll={})",
+                copy.ticket.request, copy.phaseElapsed, targetLost.dead, targetLost.ragdoll);
+        }
+    } else if (copy.phase != Phase::kStopping && (selfLost.gone || selfLost.dead || targetLost.gone || targetLost.dead))
         BeginStop(EndReason::kParticipantUnavailable);
-    }
-    if (!self || !target || !self->Is3DLoaded() || !target->Is3DLoaded() || self->IsDead() || target->IsDead()) {
-        if (copy.phase != Phase::kStopping) BeginStop(EndReason::kParticipantUnavailable);
-    }
     if (copy.phase == Phase::kPendingStart && ReadStatus().phase == Phase::kPendingStart) {
         const auto steering = Carry::PrepareStart(copy.ticket);
         if (steering == Carry::StartGate::kWaiting) {
@@ -834,9 +864,12 @@ void Update(float a_gameDelta) {
     if (copy.phase == Phase::kAwaitingBoth && copy.phaseElapsed >= request.startTimeout)
         BeginStop(EndReason::kStartTimeout);
     else if (copy.phase == Phase::kPlaying) {
-        if (copy.initiator.exited && copy.target.exited)
+        if (PairedCleanup::PlayedOut(copy.initiator.exited, copy.target.exited, killed)) {
+            if (killPlayOnLogged)
+                logger::info("[PairKill] #{} the initiator played out at {:.3f}s (target clip exited={})",
+                    copy.ticket.request, copy.phaseElapsed, copy.target.exited);
             BeginStop(EndReason::kCompleted);
-        else if (copy.phaseElapsed >= request.playbackTimeout)
+        } else if (copy.phaseElapsed >= request.playbackTimeout)
             BeginStop(EndReason::kPlaybackTimeout);
     }
     copy = ReadStatus();

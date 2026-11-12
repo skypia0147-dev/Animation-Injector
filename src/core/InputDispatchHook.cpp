@@ -7,6 +7,7 @@
 #include "runtime/EventSuppression.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/GameControlBindings.h"
+#include <atomic>
 
 namespace AnimationInjector::InputDispatchHook {
 namespace {
@@ -18,12 +19,19 @@ using Source = RE::BSTEventSource<RE::InputEvent*>;
 // animation, but the third-person graph sits in the action's state and never takes HorseEnter (the first-person
 // graph does), so the player is left waiting to mount for good, with movement and most keys gone until a reload.
 // Other activation (items, doors, talking) goes through as before.
-bool activateKept = false;  // input thread: the kept press's release is kept too
+// The kept press's release is kept too. Written by the input dispatch and by a load (Reset).
+std::atomic_bool activateKept{false};
 bool KeepActivate(const RE::ButtonEvent& event, bool allow) {
     if (GameControls::Of(event.QUserEvent()) != GameControl::kActivate) return false;
     if (activateKept) {
-        if (event.IsUp()) activateKept = false;
-        return true;
+        if (event.IsUp()) {
+            activateKept = false;
+            return true;
+        }
+        if (!event.IsDown()) return true;  // the kept press, still held
+        // A new press: the kept one's release never came (a device unplugged, a load while it was held). Held on to,
+        // the flag would keep this press and its release whatever it activates. It is judged as any press.
+        activateKept = false;
     }
     if (!allow || !event.IsDown() || !Actions::AnyActive()) return false;
     auto* pick = RE::CrosshairPickData::GetSingleton();
@@ -108,4 +116,5 @@ bool InstallIfNeeded() {
     }
     return true;
 }
+void Reset() { activateKept = false; }
 }

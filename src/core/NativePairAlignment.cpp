@@ -35,6 +35,8 @@ struct Role {
     NativePairObservation::Clip observation;
     RE::BSFixedString generatorName;
     bool lead = false;  // The scene's lead character: the engine reorients it smoothly at activation.
+    // What the pair's own motion has turned the actor since its heading was last put back (NoteOwnTurn).
+    float ownTurn = 0;
 };
 struct ActivationPlan {
     struct Participant {
@@ -58,8 +60,9 @@ struct Blend {
     std::optional<Carry::NativeStartBridge> carryBridge;
     const char* placement = "shared";
     unsigned headingRestores = 0;
-    // Frames in a row the attacker had to be turned back; past kHeadingTugFrames the hold lets go (headingReleased).
-    unsigned headingStreak = 0;
+    // Seconds in a row something else turned the attacker back; past kHeadingTugSeconds the hold lets go
+    // (headingReleased).
+    float headingTug = 0;
     bool headingReleased = false;
     std::uintptr_t watchScene = 0;  // core/HeadingWatch: who else turns the attacker during this start
     unsigned pivotTurns = 0;
@@ -228,9 +231,9 @@ void Restore(Blend& blend) {
     }
 }
 // Something turning the attacker back every frame (elderwraith/RadiantWings 11-08: 217 restores in 3.25 s, the clip
-// stalled at 0.21 s and the attacker slid 131 units, then snapped): holding against it only fights. After this many
-// frames in a row the start lets it be.
-constexpr unsigned kHeadingTugFrames = 10;
+// stalled at 0.21 s and the attacker slid 131 units, then snapped): holding against it only fights. After that goes
+// on for PairAlignmentMath::kHeadingTugSeconds in a row the start lets it be. The pair's own motion is not such a
+// turn: its HKX's rotation moves the attacker off the held heading too (NoteOwnTurn).
 void Close(Blend& blend, bool restore, bool holdCamera = false) {
     if (blend.watchScene) {
         if (const auto callers = HeadingWatch::Stop(blend.watchScene); !callers.empty())
@@ -895,20 +898,25 @@ void Update(float delta) {
             auto& role = blend.roles[1 - *pivot];
             const auto actor = role.actor.get();
             const float before = actor ? PairAlignmentMath::Wrap(actor->GetAngleZ() - role.goal.yaw) : 0.0f;
+            // What the pair's own motion turned it since the heading was last put back: not a tug.
+            const float own = role.ownTurn;
             const bool restored = HoldHeading(role);
+            if (restored) role.ownTurn = 0.0f;
             if (restored && blend.headingRestores++ == 0)
                 logger::info(
-                    "[NativePairAlign] heading restored scene={:X} role={} actor={:08X} yawError={:.5f} age={:.3f}",
-                    blend.activation->nativeScene, 1 - *pivot, actor->GetFormID(), before, blend.age);
-            blend.headingStreak = restored ? blend.headingStreak + 1 : 0;
-            if (blend.headingStreak >= kHeadingTugFrames) {
+                    "[NativePairAlign] heading restored scene={:X} role={} actor={:08X} yawError={:.5f} ownTurn={:.5f} "
+                    "age={:.3f}",
+                    blend.activation->nativeScene, 1 - *pivot, actor->GetFormID(), before, own, blend.age);
+            const bool foreign = restored && PairAlignmentMath::ForeignTurn(before, own);
+            blend.headingTug = foreign ? blend.headingTug + delta : 0.0f;
+            if (blend.headingTug >= PairAlignmentMath::kHeadingTugSeconds) {
                 blend.headingReleased = true;
                 logger::warn(
-                    "[NativePairAlign] heading tug-of-war: the attacker was turned back {} frames in a row, its heading "
-                    "is no longer held scene={:X} role={} actor={:08X} goalYaw={:.4f} yawError={:.4f} clip={:.3f}/{:.3f} "
-                    "age={:.3f} (who turned it: [HeadingWatch] lines)",
-                    blend.headingStreak, blend.activation->nativeScene, 1 - *pivot, actor->GetFormID(), role.goal.yaw,
-                    before, blend.roles[0].observation.time, blend.roles[1].observation.time, blend.age);
+                    "[NativePairAlign] heading tug-of-war: the attacker was turned back for {:.2f} s in a row, its "
+                    "heading is no longer held scene={:X} role={} actor={:08X} goalYaw={:.4f} yawError={:.4f} "
+                    "ownTurn={:.4f} clip={:.3f}/{:.3f} age={:.3f} (who turned it: [HeadingWatch] lines)",
+                    blend.headingTug, blend.activation->nativeScene, 1 - *pivot, actor->GetFormID(), role.goal.yaw,
+                    before, own, blend.roles[0].observation.time, blend.roles[1].observation.time, blend.age);
             }
         }
         std::array<RE::NiTransform, 2> locals;
@@ -943,6 +951,15 @@ std::optional<float> GoalYaw(RE::Actor* actor) {
             if (role.actor.get().get() == actor) return role.goal.yaw;
     }
     return std::nullopt;
+}
+void NoteOwnTurn(RE::Actor* actor, float angle) {
+    if (!actor || !std::isfinite(angle)) return;
+    std::lock_guard lock(mutex);
+    for (auto& blend : blends) {
+        if (!blend->activation || !blend->activation->realign) continue;
+        for (auto& role : blend->roles)
+            if (role.actor.get().get() == actor) role.ownTurn = PairAlignmentMath::Wrap(role.ownTurn + angle);
+    }
 }
 void Reset(bool restore) {
     std::lock_guard lock(mutex);

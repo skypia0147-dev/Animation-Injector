@@ -80,11 +80,6 @@ struct DeclarationCatalog {
             }
             if (s.cost.enabled) events.push_back(s.cost.event);
             if (s.carryRelease.enabled && !s.carryRelease.event.empty()) events.push_back(s.carryRelease.event);
-            for (const auto& w : s.cancels) {
-                events.push_back(w.openEvent);
-                events.push_back(w.closeEvent);
-                if (!w.vanillaMatches.empty()) events.push_back(w.nativeCancelEvent);
-            }
         }
 
         std::unordered_set<std::string_view, NameHash, NameEqual> seen;

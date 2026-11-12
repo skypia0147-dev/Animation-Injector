@@ -112,10 +112,6 @@ std::string snapshot(const ActionSpec& a) {
         d.add(p.option, p.compare, p.measure, p.value, p.upper);
     }
     for (auto& c : a.clips) d.add(c.tag, c.file, c.syncRole, c.clipName, c.enterEvent, c.airEnterEvent);
-    for (auto& w : a.cancels) {
-        d.add(w.id, w.openEvent, w.closeEvent, w.openAt, w.closeAt, w.mode, w.blend);
-        d.strings(w.vanillaMatches);
-    }
     auto& t = a.trigger;
     d.add(t.key, t.gamepad, static_cast<int>(t.press), t.onEvent, t.onEventPlayer, t.onEventNpc, t.combatTarget,
         t.frontTarget, t.targetRange, t.targetAngle);
@@ -151,8 +147,10 @@ std::string snapshot(const ActionSpec& a) {
     for (auto& l : a.links)
         d.add(l.action, l.partnerAction, l.event, l.openEvent, l.closeEvent, l.key, l.gamepad, l.openAt, l.closeAt,
             l.buffered, l.closeRelativeToEnd, l.blend);
-    if (a.view != ViewSpec{})  // absent before 0.12.225: older dumps stay equal
-        d.add("view", static_cast<int>(a.view.view), static_cast<int>(a.view.firstPerson));
+    for (auto& l : a.links)
+        if (l.end) d.add("end", l.event, l.key, l.gamepad);  // absent before 1.0.8: older dumps stay equal
+    if (a.view != ViewSpec{})                                // absent before 0.12.225: older dumps stay equal
+        d.add("view", static_cast<int>(a.view.view), static_cast<int>(a.view.otherView));
     return d.out.str();
 }
 // Everything the snapshot leaves out (names Finalize derives, input references, diagnostic labels):
@@ -164,7 +162,6 @@ std::string fullSnapshot(const ActionSpec& a) {
     d.add("inputs", a.inputs.size());
     for (const auto& i : a.inputs) d.add(i.id, i.key, i.gamepad);
     d.add("triggerInput", a.trigger.inputId);
-    for (const auto& w : a.cancels) d.add("cancel", w.nativeCancelEvent);
     for (const auto& q : a.qtes) d.add("qte", q.alternateKey);
     d.strings(a.flow.nodeIds);
     // The raw branches snapshot folds Stop nodes out of; only flows that have one, so other dumps stay equal.

@@ -24,7 +24,6 @@ public:
         auto p = _owner.get();
         return p ? p.get() : nullptr;
     }  // 규칙 4-3 원칙 2: 핸들로 보관, 쓸 때마다 검증
-    bool CaptureNativeCancel(const RE::BSFixedString& event);
     bool Busy() const noexcept {
         return _state != State::kIdle || _cooldown > 0.0f || _postCancelTimer > 0.0f;
     }  // NPC 실행기 보관 여부
@@ -79,6 +78,8 @@ public:
     bool HyperArmorActive() const noexcept { return _hyperOn; }
     State GetState() const noexcept { return _state; }
     bool IsActive() const noexcept { return _state == State::kActive; }
+    // Its exit or recovery was sent and its clip still blends out: nothing can leave it by a transition.
+    bool Leaving() const noexcept { return _state == State::kExiting; }
     // Its Rotate window has bAllowRotation true right now.
     bool RotationWindowOn() const noexcept { return _state != State::kIdle && _rotateOn; }
     // A rotation true an ended pair hands on to the action its link plays (PairFeatures::End): this runner clears it at
@@ -102,14 +103,6 @@ private:
     void SetupPlayback();
     std::atomic_uint64_t _playbackSerial{0};
     bool _normalExitMovementAccepted = false;
-    void UpdateNativeCancel();
-    void ClearNativeCapture();
-    // CaptureNativeCancel runs on the thread that notifies the graph; this slot is shared with
-    // the main thread and guarded by _nativeLock (never held across an engine call).
-    std::mutex _nativeLock;
-    RE::BSFixedString _nativeReplay;
-    int _nativeWindow = -1;
-    bool _nativeExiting = false;
     void AbortLinkedRequest();
     int _linkSource = -1, _linkTarget = -1;
     DirectLinkRetirement _linkRetirement;
@@ -170,9 +163,9 @@ private:
     float _airPhysicsNextSample = 0.0f;
     int _airPhysicsSamples = 0;
     float _postCancelTimer = 0.0f;
-    float _postCancelTick = 0.0f;
+    float _postCancelTick = 0.0f;  // seconds since the cancel-out (runtime/PostCancelTime.h)
+    bool _postCancelKept = false;  // the watch was kept past its time once (logged once)
     // 대체값 추적 (재생마다 초기화): 주석 이벤트를 받았는지. 못 받았는데 대체 시각이 지나면 플러그인이 보낸다
-    std::vector<bool> _openSeen, _closeSeen;
     bool _exitSeen = false;
     bool _recoveryOpen = false;  // Recovery 이벤트(또는 대체 시각) 이후
     bool _recoveryMovement = false;
@@ -215,8 +208,7 @@ private:
     struct EventTags {
         std::array<RE::BSFixedString, 4> slotOn, slotOff;  // rotate, iframe, hyperArmor, timeScale
         RE::BSFixedString cost, carryRelease, exit;
-        std::vector<RE::BSFixedString> open, close;  // by window
-        std::vector<RE::BSFixedString> recovery;     // by variant
+        std::vector<RE::BSFixedString> recovery;  // by variant
     };
     std::unique_ptr<EventTags> _tags;
     const EventTags& Tags();

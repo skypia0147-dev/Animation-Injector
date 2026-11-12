@@ -21,6 +21,18 @@ struct Window {
     bool opened = false, closed = false, pressed = false;
     // on="move" (10-31): a movement press kept for the window (buffered), and the direction it goes with.
     int moveBuffered = -1, moveDirection = -1;
+    int pressDirection = -1;  // a tap, double or hold took it: the direction of its first press
+};
+// One key of a source that has tap, double or hold transitions: its presses are told apart as a start's are.
+struct KeyPress {
+    HeldKeys::Key key;
+    PressKinds::Classifier classifier;
+    float downAt = 0;  // when the press being told apart went down (the first of a double)
+    // The movement direction then: its transition's card reads that one, as a start's press does. A tap is told
+    // apart a quarter second after its release, when the movement key may be up (11-11 in-game: a tap with a side
+    // key went to the back dodge).
+    int direction = -1;
+    bool down = false;
 };
 struct Entry {
     RE::ActorHandle actor;
@@ -32,6 +44,7 @@ struct Entry {
     bool ended = false, released = false;
     int moveSeen = -1;  // the player's movement direction last frame (a new press is a change to a direction)
     std::vector<Window> windows;
+    std::vector<KeyPress> presses;
     RE::ActorHandle partner;
 };
 struct Pending {
@@ -53,12 +66,123 @@ struct Pending {
     // exit would (it has no other end).
     bool exitOnFail = false;
     bool onMove = false;
+    bool end = false;  // <Transition end="true">: ends its source, no destination (target -1)
     ConditionValues::Request conditionRequest;
     std::vector<RouteEvent> routes;
 };
 std::vector<Entry> entries;
 std::vector<Pending> pending;
 std::vector<Pending> requested;  // RequestHandoff: started on the next Update like a pressed window
+PressKinds::Timing timing;
+std::vector<Forward> forwards;  // presses of a leaving source, for the input sink (TakeForwards)
+// A press still being told apart when its source ended (a move cancel without a blend ends it at once, 11-11
+// in-game: the tap that was to chain a dodge went nowhere). It is told apart to its end, then goes to the starts
+// on its key as a leaving source's does.
+struct Orphan {
+    RE::ActorHandle actor;
+    KeyPress press;
+    PressKinds::Kinds kinds;
+};
+std::vector<Orphan> orphans;
+float clock = 0;  // game seconds, the input sink's clock (Input brings it, Update adds the frames between)
+// A key transition told apart by how its key is pressed (press="tap|double|hold").
+bool Presses(const Window& w) {
+    return w.spec.press != PressKinds::Press::kDown && !w.spec.onEnd && !w.spec.onRelease && !w.spec.onMove &&
+           (w.spec.key || w.spec.gamepad || w.spec.control != GameControl::kNone);
+}
+// The key such a window answers to: its game control, else the key or pad button.
+bool OnKey(const Window& w, HeldKeys::Key key) {
+    using HeldKeys::Source;
+    if (key.source == Source::kControl)
+        return w.spec.control != GameControl::kNone && static_cast<std::uint32_t>(w.spec.control) == key.code;
+    if (w.spec.control != GameControl::kNone || !key.code) return false;
+    return (key.source == Source::kPad ? w.spec.gamepad : w.spec.key) == key.code;
+}
+// The kinds a press of this key could still become: a closed window takes none, unless `closed` counts them too.
+PressKinds::Kinds KindsOf(const Entry& e, HeldKeys::Key key, bool closed = false) {
+    PressKinds::Kinds kinds;
+    for (const auto& w : e.windows)
+        if (Presses(w) && OnKey(w, key) && (closed || !w.closed)) {
+            kinds.tap |= w.spec.press == PressKinds::Press::kTap;
+            kinds.dbl |= w.spec.press == PressKinds::Press::kDouble;
+            kinds.hold |= w.spec.press == PressKinds::Press::kHold;
+        }
+    return kinds;
+}
+// The source is on its way out (its exit or recovery sent, its clip still blending): no transition can leave it,
+// but it holds its keys until its clip is gone.
+bool Leaving(const Entry& e) {
+    auto actor = e.actor.get();
+    auto* runner = actor ? Actions::RunnerFor(actor.get(), e.action, false) : nullptr;
+    return runner && runner->Leaving();
+}
+// The press goes to the starts on its key, as that kind (the input sink takes it: TakeForwards).
+void Send(const KeyPress& press, PressKinds::Press kind) {
+    forwards.push_back({press.key, kind, press.downAt, press.direction});
+}
+// The press turned out to be of this kind: its transitions take it as a key transition takes a press (an open
+// window, or a buffered one before it opens).
+void Went(Entry& e, const KeyPress& press, PressKinds::Press kind) {
+    // A leaving source's goes to the starts instead: a double tap that ends just after a dodge handed movement back
+    // starts the next dodge (11-11 in-game: 6 of 11 such doubles went nowhere).
+    if (Leaving(e)) {
+        Send(press, kind);
+        logger::debug("[Connect] '{}' is leaving: key {}:{} pressed as kind {} goes to its starts",
+            Actions::Spec(e.action).id, static_cast<int>(press.key.source), press.key.code, static_cast<int>(kind));
+        return;
+    }
+    bool taken = false;
+    for (auto& w : e.windows)
+        if (Presses(w) && w.spec.press == kind && OnKey(w, press.key) && !w.closed && (w.opened || w.spec.buffered)) {
+            w.pressed = true;
+            w.pressDirection = press.direction;
+            taken = true;
+        }
+    // Its key is now the one an on="release" transition waits for, from its first press.
+    if (taken) HeldKeys::Get().SetChain(press.key, press.downAt);
+    logger::debug("[Connect] '{}' key {}:{} pressed as kind {} taken={}", Actions::Spec(e.action).id,
+        static_cast<int>(press.key.source), press.key.code, static_cast<int>(kind), taken);
+}
+// One input event of a press being told apart; `went` gets the kind it turned out to be. `first`: a new press (its
+// time and movement direction are the ones its transition or start reads); `kept`: ours, kept from the game.
+struct Stepped {
+    bool kept = false, first = false;
+};
+template<class F>
+Stepped Step(KeyPress& press, InputPhase phase, PressKinds::Kinds kinds, F&& went) {
+    Stepped out;
+    if (phase == InputPhase::kDown) {
+        out.first = !press.classifier.Waiting();
+        const auto step = press.classifier.Down(clock, kinds, press.key.source == HeldKeys::Source::kControl, timing);
+        press.down = true;
+        if (out.first) {
+            press.downAt = clock;
+            press.direction = HeldKeys::Get().MoveDirection();
+        }
+        if (step.outcome == PressKinds::Outcome::kDouble) went(PressKinds::Press::kDouble);
+        // Ours while it waits or went as a double; a press no kind could take is left alone.
+        out.kept = step.outcome == PressKinds::Outcome::kDouble || press.classifier.Waiting();
+    } else if (phase == InputPhase::kUp) {
+        press.down = false;
+        if (press.classifier.Up(clock, timing).outcome == PressKinds::Outcome::kTap) went(PressKinds::Press::kTap);
+    } else
+        out.kept = press.classifier.Keeps();
+    return out;
+}
+// Time passed: a hold reached, or a tap whose double window ran out.
+template<class F>
+void Settle(KeyPress& press, F&& went) {
+    // Its release came while no input reached here (a menu): the key is up, as HeldKeys saw.
+    if (press.down && !HeldKeys::Get().Held(press.key)) {
+        press.down = false;
+        if (press.classifier.Up(clock, timing).outcome == PressKinds::Outcome::kTap) went(PressKinds::Press::kTap);
+    }
+    const auto outcome = press.classifier.Tick(clock, timing);
+    if (outcome == PressKinds::Outcome::kHold)
+        went(PressKinds::Press::kHold);
+    else if (outcome == PressKinds::Outcome::kTap)
+        went(PressKinds::Press::kTap);
+}
 const RE::BSFixedString& Synced() {
     static RE::BSFixedString name("bIsSynced");
     return name;
@@ -97,6 +221,16 @@ void Begin(RE::ActorHandle actor, int action, bool paired, bool player, RE::Acto
         w.spec = spec;
         w.enter = RE::BSFixedString(spec.enterEvent.c_str());
         w.airEnter = RE::BSFixedString(spec.airEnterEvent.c_str());
+        // An ending transition goes nowhere: only its trigger and window are kept.
+        if (spec.end) {
+            if (paired) continue;
+            w.event = RE::BSFixedString(spec.event.c_str());
+            w.open = RE::BSFixedString(spec.openEvent.c_str());
+            w.close = RE::BSFixedString(spec.closeEvent.c_str());
+            w.opened = spec.openEvent.empty() && spec.openAt <= 0;
+            entry.windows.push_back(std::move(w));
+            continue;
+        }
         w.target = Actions::IndexOf(spec.action);
         if (w.target < 0) {
             logger::warn("[Connect] '{}' missing target '{}'", Actions::Spec(action).id, spec.action);
@@ -162,6 +296,16 @@ bool RequestHandoff(RE::ActorHandle actor, int target, int partnerTarget) {
 }
 void End(RE::ActorHandle actor, int action) {
     std::lock_guard lock(mutex);
+    for (const auto& e : entries)
+        if (e.actor == actor && e.action == action && e.player)
+            for (const auto& press : e.presses)
+                if (press.classifier.Waiting()) {
+                    std::erase_if(orphans, [&](const Orphan& o) { return o.press.key == press.key; });
+                    // A closed window's kind too: the press now goes to the key's starts.
+                    orphans.push_back({actor, press, KindsOf(e, press.key, true)});
+                    logger::debug("[Connect] '{}' ended while key {}:{} was being told apart: the press lives on",
+                        Actions::Spec(action).id, static_cast<int>(press.key.source), press.key.code);
+                }
     std::erase_if(entries, [&](const Entry& e) { return e.actor == actor && e.action == action; });
 }
 void ObserveTime(RE::ActorHandle actor, int action, float time, float duration) {
@@ -204,10 +348,33 @@ bool ClaimsEvent(RE::ActorHandle actor, const RE::BSFixedString& event) {
     return std::any_of(pending.begin(), pending.end(),
         [&](const Pending& p) { return p.actor == actor && !p.event.empty() && event == p.event; });
 }
-InputResult Input(std::uint32_t code, bool gamepad, GameControl control, bool down) {
+void SetPressTiming(PressKinds::Timing value) {
+    std::lock_guard lock(mutex);
+    timing = value;
+}
+void DropPress(HeldKeys::Key key) {
+    std::lock_guard lock(mutex);
+    for (auto& e : entries)
+        for (auto& press : e.presses)
+            if (press.key == key) {
+                press.classifier.Reset();
+                press.down = false;
+            }
+    std::erase_if(orphans, [&](const Orphan& o) { return o.press.key == key; });
+}
+std::vector<Forward> TakeForwards() {
+    std::lock_guard lock(mutex);
+    return std::exchange(forwards, {});
+}
+InputResult Input(std::uint32_t code, bool gamepad, GameControl control, InputPhase phase, float now) {
     std::lock_guard lock(mutex);
     InputResult result;
     if (!code && control == GameControl::kNone) return result;
+    if (now >= 0) clock = now;
+    const bool down = phase == InputPhase::kDown;
+    using HeldKeys::Source;
+    const HeldKeys::Key keys[]{
+        {Source::kControl, static_cast<std::uint32_t>(control)}, {gamepad ? Source::kPad : Source::kKey, code}};
     const auto matches = [&](std::uint32_t key, std::uint32_t pad, GameControl own) {
         return own != GameControl::kNone ? own == control : code && (gamepad ? pad : key) == code;
     };
@@ -220,10 +387,37 @@ InputResult Input(std::uint32_t code, bool gamepad, GameControl control, bool do
                     continue;
                 // A closed window rejects the press; it must not turn into a new start.
                 result.claimed = true;
+                if (Presses(w)) continue;  // told apart below, by its key
                 if (down && !w.closed && (w.opened || w.spec.buffered)) {
                     w.pressed = true;
                     result.taken = true;
                 }
+            }
+    // Keys with tap, double or hold transitions (1.0.8): one classifier each, as a start's key has.
+    for (auto& e : entries) {
+        if (!e.player) continue;
+        for (const auto key : keys) {
+            if (!key.code) continue;
+            if (!std::any_of(
+                    e.windows.begin(), e.windows.end(), [&](const Window& w) { return Presses(w) && OnKey(w, key); }))
+                continue;
+            auto press =
+                std::find_if(e.presses.begin(), e.presses.end(), [&](const KeyPress& p) { return p.key == key; });
+            if (press == e.presses.end()) press = e.presses.insert(e.presses.end(), KeyPress{key});
+            const auto step =
+                Step(*press, phase, KindsOf(e, key), [&](PressKinds::Press kind) { Went(e, *press, kind); });
+            // A leaving source: the starts that go the moment their key goes down see the press now.
+            if (step.first && Leaving(e)) Send(*press, PressKinds::Press::kDown);
+            result.kept |= step.kept;
+        }
+    }
+    // A press whose source ended while it was told apart: its second press and its release still come here.
+    std::erase_if(orphans, [](const Orphan& o) { return !o.press.classifier.Waiting(); });
+    for (auto& o : orphans)
+        for (const auto key : keys)
+            if (key.code && o.press.key == key) {
+                result.claimed = true;
+                result.kept |= Step(o.press, phase, o.kinds, [&](PressKinds::Press kind) { Send(o.press, kind); }).kept;
             }
     // Source cleanup can finish before a queued destination becomes ready.
     for (const auto& p : pending)
@@ -236,6 +430,13 @@ void Update(float delta) {
     std::vector<Pending> waiting;
     {
         std::lock_guard lock(mutex);
+        clock += delta;
+        // Presses being told apart: a hold reached, or a tap whose double window ran out. A press that went no way
+        // is dropped (a game control's is not handed to the game late: the running action has the key).
+        for (auto& e : entries)
+            for (auto& press : e.presses) Settle(press, [&](PressKinds::Press kind) { Went(e, press, kind); });
+        for (auto& o : orphans) Settle(o.press, [&](PressKinds::Press kind) { Send(o.press, kind); });
+        std::erase_if(orphans, [](const Orphan& o) { return !o.press.classifier.Waiting(); });
         for (auto& e : entries) {
             if (std::any_of(pending.begin(), pending.end(), [&](const Pending& p) { return p.actor == e.actor; }))
                 continue;
@@ -275,7 +476,10 @@ void Update(float delta) {
                     Pending item{e.actor, e.action, w.target, e.paired};
                     item.exitOnFail = w.spec.onEnd || (w.spec.onRelease && e.released);
                     item.onMove = w.spec.onMove;
+                    item.end = w.spec.end;
                     if (w.spec.onMove) item.conditionRequest.CaptureMovement(w.moveDirection);
+                    if (w.pressDirection >= 0) item.conditionRequest.CaptureMovement(w.pressDirection);
+                    w.pressDirection = -1;
                     item.partnerTarget = w.partnerTarget;
                     item.player = e.player;
                     item.key = w.spec.key;
@@ -312,6 +516,14 @@ void Update(float delta) {
                         Actions::Spec(item.source).id);
                 }
             } exitOnFail{item, actor.get(), handled};
+            // <Transition end="true">: the source leaves through its own exit, with its exit blend.
+            if (item.end) {
+                auto* runner = Actions::RunnerFor(actor.get(), item.source, false);
+                handled = runner && runner->ExitForLink();
+                logger::debug("[Connect] actor={:08X} '{}' ending transition: exit requested={}", actor->GetFormID(),
+                    Actions::Spec(item.source).id, handled);
+                continue;
+            }
             if (item.paired) {
                 if (!PairedSession::TryGetTicket(item.actor, item.ticket)) continue;
                 const auto participants = PairedSession::ReadStatus();
@@ -520,6 +732,8 @@ void ResetOnLoad() {
     entries.clear();
     pending.clear();
     requested.clear();
+    forwards.clear();
+    orphans.clear();
 }
 void Cancel(RE::ActorHandle actor) {
     if (!actor) return;
@@ -527,6 +741,7 @@ void Cancel(RE::ActorHandle actor) {
     std::erase_if(entries, [&](const Entry& e) { return e.actor == actor || (e.paired && e.partner == actor); });
     std::erase_if(pending, [&](const Pending& p) { return p.actor == actor || p.partner == actor; });
     std::erase_if(requested, [&](const Pending& p) { return p.actor == actor || p.partner == actor; });
+    std::erase_if(orphans, [&](const Orphan& o) { return o.actor == actor; });
 }
 bool HasPendingTransition(RE::ActorHandle actor) {
     std::lock_guard lock(mutex);

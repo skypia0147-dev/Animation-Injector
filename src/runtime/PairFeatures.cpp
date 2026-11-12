@@ -17,6 +17,7 @@
 #include "runtime/WeaponCull.h"
 #include "runtime/ViewGuard.h"
 #include "core/NativePairAlignment.h"
+#include "core/HeadingWatch.h"
 #include <mutex>
 #include <numbers>
 
@@ -364,6 +365,9 @@ void ApplyMotion(Role& role, RE::Actor* actor) {
             motion.moved = true;
         }
     if (std::fabs(angle) > 0.00001f) {
+        // The pair's own turn: not another mod's in the heading watch, nor a tug on a heading its start holds.
+        HeadingWatch::OwnTurn own;
+        NativePairAlignment::NoteOwnTurn(actor, angle);
         auto angles = actor->GetAngle();
         angles.z = std::remainder(angles.z + angle, 2 * std::numbers::pi_v<float>);
         actor->SetAngle(angles);

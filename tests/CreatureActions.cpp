@@ -139,7 +139,7 @@ int main() {
         }
         // What only a character action has.
         {
-            for (const char* attribute : {"view='first'", "firstPerson='switch'", "air='both'", "attack='x'"})
+            for (const char* attribute : {"view='first'", "otherView='switch'", "air='both'", "attack='x'"})
                 Check(Refused(Parse(std::string("<Action id='A' rig='bear' clip='a.hkx' ") + attribute + "/>"),
                           "사람(character) 동작에만"),
                     "a character-only attribute on a creature action");

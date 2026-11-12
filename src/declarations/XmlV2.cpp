@@ -173,21 +173,6 @@ std::vector<std::string> Split(const std::string& text) {
 }
 // vanilla:Attack → the native event name substrings its cancel window inherits. The character graph's jumps are
 // JumpStandingStart and JumpDirectionalStart (0_master, 11-01): "jumpStart" matched neither.
-std::vector<std::string> VanillaMatch(const std::string& alias) {
-    static const std::pair<const char*, std::vector<std::string>> table[] = {
-        {"vanilla:Attack", {"attack"}},
-        {"vanilla:PowerAttack", {"attackPowerStart"}},
-        {"vanilla:Block", {"blockStart"}},
-        {"vanilla:Bash", {"bashStart"}},
-        {"vanilla:Sprint", {"sprintStart"}},
-        {"vanilla:Jump", {"JumpStandingStart", "JumpDirectionalStart"}},
-        {"vanilla:Sneak", {"sneakStart"}},
-    };
-    for (const auto& [a, m] : table)
-        if (_stricmp(alias.c_str(), a) == 0) return m;
-    if (_strnicmp(alias.c_str(), "event:", 6) == 0) return {alias.substr(6)};
-    return {};
-}
 // A seconds time read as a clock time or an event: Recovery, QTE, Cost, CarryRelease.
 void ReadMoment(const std::string& text, std::string& event, float& at) {
     float t;
@@ -538,6 +523,8 @@ struct LinkDeclaration {
     std::string mode, open, close;
     bool timed = false;
     bool onEnd = false, onRelease = false, onMove = false;  // charge (10-30): on="end" / "release" / "move"
+    PressKinds::Press press = PressKinds::Press::kDown;     // how its key is pressed (1.0.8)
+    bool end = false;                                       // end="true": ends the action, no destination (1.0.8)
 };
 // The window of a vanilla transition or a Transition: buffered/window/always and its open and close times. No
 // from, until or buffer = always (the whole clip).
@@ -950,17 +937,17 @@ struct Compiler {
         }
         return out;
     }
-    // from, until and buffer on a <Transition> or <Vanilla> (its shape is checked by the caller).
-    WindowTimes window(Node n, bool link) {
+    // from, until and buffer on a <Transition> (its shape is checked by the caller).
+    WindowTimes window(Node n) {
         boolean(n, "buffer");
         // from: the clip start unless written; until: the clip end unless written.
         WindowTimes out;
         out.mode = get(n, "buffer", "true") == "true" ? "buffered" : "window";
         out.open = time(n, "from", Basis::Seconds, "0");
-        out.close = time(n, "until", link ? Basis::Either : Basis::End, "end");
+        out.close = time(n, "until", Basis::Either, "end");
         out.timed = true;
         auto a = get(n, "from", "0"), b = get(n, "until", "end");
-        if (link && !a.starts_with("event:") && !b.starts_with("event:") && !b.starts_with("end") &&
+        if (!a.starts_with("event:") && !b.starts_with("event:") && !b.starts_with("end") &&
             numeric(n, a) >= numeric(n, b))
             fail(n, "열림은 닫힘보다 빨라야 합니다");
         return out;
@@ -1011,10 +998,10 @@ struct Compiler {
     ActionSpec action(Node n, const std::string& sourceName) {
         const bool pair = std::string_view(n.name()) == "Pair";
         shape(n,
-            {"id", "clip", "view", "firstPerson", "air", "attack", "enter", "block", "safety", "lostBlend", "reorient",
+            {"id", "clip", "view", "otherView", "air", "attack", "enter", "block", "safety", "lostBlend", "reorient",
                 "interruptOnHit", "loop", "maxHold", "rig"},
-            {"Exit", "Rotate", "IFrame", "HyperArmor", "TimeScale", "Cost", "MoveCancel", "Vanilla", "Transition",
-                "FindPartner", "Carry", "QTE", "CarryRelease", "EventValues", "Do", "Camera"});
+            {"Exit", "Rotate", "IFrame", "HyperArmor", "TimeScale", "Cost", "MoveCancel", "Transition", "FindPartner",
+                "Carry", "QTE", "CarryRelease", "EventValues", "Do", "Camera"});
         if (!pair) {
             for (const char* only : {"lostBlend", "reorient", "interruptOnHit"})
                 if (n.attribute(only)) fail(n, std::string(only) + "는 페어 전용 속성입니다");
@@ -1023,8 +1010,8 @@ struct Compiler {
         // Only the putdown Action a Carry names; the Carry checks that it has this slot.
         if (auto r = one(n, "CarryRelease"); r && !putdownActions.contains(get(n, "id")))
             fail(r, "CarryRelease는 운반(Carry)의 putdown이 가리키는 Action에만 씁니다");
-        if (pair && (n.child("Vanilla") || n.child("Rotate") || n.child("IFrame") || n.child("HyperArmor") ||
-                        n.child("TimeScale") || n.child("Cost")))
+        if (pair && (n.child("Rotate") || n.child("IFrame") || n.child("HyperArmor") || n.child("TimeScale") ||
+                        n.child("Cost")))
             fail(n, "페어 역할 기능은 <Do at>으로 선언해야 합니다");
         ActionSpec s;
         s.id = get(n, "id");
@@ -1047,7 +1034,7 @@ struct Compiler {
         }
         if (creature) {
             if (putdownActions.contains(s.id)) fail(n, "운반의 내려놓기 동작은 사람(character) 동작이어야 합니다");
-            for (const char* human : {"view", "firstPerson", "air", "attack"})
+            for (const char* human : {"view", "otherView", "air", "attack"})
                 if (n.attribute(human)) fail(n, std::string(human) + "는 사람(character) 동작에만 씁니다");
             for (const char* human : {"QTE", "Camera", "CarryRelease"})
                 if (n.child(human)) fail(n.child(human), std::string(human) + "는 사람(character) 동작에만 씁니다");
@@ -1067,11 +1054,15 @@ struct Compiler {
                 fail(n, "운반(내려놓기 포함)은 3인칭(view=\"third\")으로만 재생됩니다");
             s.view.view = *view;
         }
-        if (n.attribute("firstPerson")) {
-            const auto start = ParseFirstPersonStart(get(n, "firstPerson"));
-            if (!start) fail(n, "firstPerson은 block 또는 switch입니다");
-            if (s.view.view != View::kThird) fail(n, "firstPerson은 3인칭 액션(view=\"third\")에만 씁니다");
-            s.view.firstPerson = *start;
+        // The player's start in the view the action does not play in (1.0.8; firstPerson until then).
+        if (n.attribute("otherView")) {
+            const auto start = ParseOtherViewStart(get(n, "otherView"));
+            if (!start) fail(n, "otherView는 block 또는 switch입니다");
+            if (s.view.view == View::kBoth)
+                fail(n, "otherView는 한 인칭 액션(view=\"third\" 또는 \"first\")에만 씁니다");
+            // A first-person pair starts in first person only: its partner's side has no switch.
+            if (pair && s.view.view == View::kFirst) fail(n, "otherView는 1인칭 페어에 쓰지 않습니다");
+            s.view.otherView = *start;
         }
         {
             auto f = required(n, "clip");
@@ -1218,23 +1209,28 @@ struct Compiler {
             s.paired.reorientSupport = n.attribute("reorient").as_bool(true);
             if (auto c = one(n, "Carry")) carry(c, n, s);
         }
-        std::set<std::string> windows, bindings;
-        unsigned index = 0;
-        for (auto t : n.children()) {
-            const std::string kind = t.name();
-            if (kind != "Vanilla" && kind != "Transition") continue;
-            const bool link = kind == "Transition";
+        std::set<std::string> bindings;
+        std::set<std::string> immediateKeys, pressedKeys;  // keys with a press="down" transition, with another kind
+        for (auto t : n.children("Transition")) {
             shape(t,
-                link ? Names{"to", "condition", "partnerTo", "input", "key", "gamepad", "control", "event", "blend",
-                           "from", "until", "buffer", "on"}
-                     : Names{"id", "to", "blend", "from", "until", "buffer"},
-                link ? kCardParts : Names{});
+                Names{"to", "condition", "partnerTo", "input", "key", "gamepad", "control", "event", "blend", "from",
+                    "until", "buffer", "on", "press", "end"},
+                kCardParts);
             LinkDeclaration connect;
-            CancelSpec ws;
-            std::string targets;
             KeyRef key;
-            if (link) {
-                if (Cards::HasCard(t)) {
+            {
+                boolean(t, "end");
+                if (t.attribute("end").as_bool(false)) {
+                    // It goes nowhere (1.0.8): its trigger ends the action through its own exit.
+                    if (t.attribute("to") || Cards::HasCard(t))
+                        fail(t, "끝내기 전환(end=\"true\")에는 to와 조건 카드를 쓰지 않습니다");
+                    if (t.attribute("blend") || t.attribute("partnerTo"))
+                        fail(t,
+                            "끝내기 전환(end=\"true\")에는 blend와 partnerTo를 쓰지 않습니다(끝 블렌드는 <Exit blend>)");
+                    if (pair) fail(t, "끝내기 전환(end=\"true\")은 일반 동작에만 씁니다");
+                    if (get(t, "on") == "end") fail(t, "끝내기 전환(end=\"true\")에는 on=\"end\"를 쓰지 않습니다");
+                    connect.end = true;
+                } else if (Cards::HasCard(t)) {
                     // Through a condition card (T5): to the selecting action that holds it.
                     if (t.attribute("blend"))
                         fail(t, "조건 카드를 거치는 전환에는 blend를 쓸 수 없습니다(런타임 미지원)");
@@ -1295,29 +1291,19 @@ struct Compiler {
                     eventName(t, required(t, "event"));
                     connect.event = get(t, "event");
                 }
-            } else {
-                // A vanilla transition's id names its window events; cancel1, cancel2, … unless written.
-                auto id = get(t, "id", ("cancel" + std::to_string(++index)).c_str());
-                identifier(t, id);
-                if (!windows.insert(lower(id)).second) fail(t, "바닐라 전환 ID 중복");
-                ws.id = id;
-                num(t, "blend", 5);
-                ws.blend = t.attribute("blend").as_float(-1.0f);
-                for (auto& name : list(required(t, "to"))) {
-                    if (!has({"Attack", "PowerAttack", "Block", "Bash", "Sprint", "Jump", "Sneak"}, name) &&
-                        !name.starts_with("event:"))
-                        fail(t, "지원하지 않는 바닐라 동작: " + name +
-                                    " (Attack PowerAttack Block Bash Sprint Jump Sneak 또는 event:검색어)");
-                    if (!targets.empty()) targets += ",";
-                    targets += name.starts_with("event:") ? name : "vanilla:" + name;
-                }
+                // How the key is pressed (1.0.8), as a start's: told apart by the running action's own classifier.
+                choice(t, "press", {"down", "tap", "double", "hold"});
+                const auto press = get(t, "press", "down");
+                connect.press = press == "tap"      ? PressKinds::Press::kTap
+                                : press == "double" ? PressKinds::Press::kDouble
+                                : press == "hold"   ? PressKinds::Press::kHold
+                                                    : PressKinds::Press::kDown;
+                if (t.attribute("press") && (!key.given || !on.empty()))
+                    fail(t, "press는 키·패드 버튼·게임 동작을 누르는 전환에만 씁니다(event·on 전환에는 쓰지 않습니다)");
             }
-            // No from, until or buffer: the whole clip (a key transition or a vanilla transition).
+            // No from, until or buffer: the whole clip.
             WindowTimes times;
-            if (t.attribute("from") || t.attribute("until") || t.attribute("buffer"))
-                times = window(t, link);
-            else if (!link)
-                times.mode = "always";
+            if (t.attribute("from") || t.attribute("until") || t.attribute("buffer")) times = window(t);
             if (t.attribute("event")) {
                 auto signature = "event:" + get(t, "event");
                 if (!bindings.insert(signature).second) fail(t, "같은 이벤트에 여러 연결이 있어 모호합니다");
@@ -1328,41 +1314,29 @@ struct Compiler {
                 if (key.gamepad) channels.push_back("pad:" + std::to_string(key.gamepad));
                 if (key.control != GameControl::kNone)
                     channels.push_back("control:" + std::string(GameControlName(key.control)));
-                for (auto& channel : channels)
-                    if (!bindings.insert(channel).second) fail(t, "같은 키의 연결이 중복되어 모호합니다");
+                // One transition of each kind per key (1.0.8). A press="down" one goes the moment the key goes down,
+                // before any other kind could be told apart: it stands alone on its key.
+                const bool immediate = connect.press == PressKinds::Press::kDown;
+                for (auto& channel : channels) {
+                    if (!bindings.insert(channel + "|" + get(t, "press", "down")).second)
+                        fail(t, "같은 키의 연결이 중복되어 모호합니다");
+                    const bool mixed = immediate ? pressedKeys.contains(channel) : immediateKeys.contains(channel);
+                    if (mixed)
+                        fail(t,
+                            "같은 키에 누를 때(press=\"down\") 전환과 다른 누르는 방식을 함께 쓸 수 없습니다: 누르는 "
+                            "순간 먼저 나가므로 tap(짧게)을 쓰세요");
+                    (immediate ? immediateKeys : pressedKeys).insert(channel);
+                }
             }
-            if (link) {
-                connect.key = key.key;
-                connect.gamepad = key.gamepad;
-                connect.control = key.control;
-                connect.mode = times.mode;
-                connect.open = times.open;
-                connect.close = times.close;
-                connect.timed = times.timed;
-                links.push_back(std::move(connect));
-                continue;
-            }
-            // A vanilla transition's window.
-            for (const auto& to : Split(targets))
-                for (auto& match : VanillaMatch(to)) ws.vanillaMatches.push_back(std::move(match));
-            const std::string mode = times.mode.empty() ? "buffered" : times.mode;
-            ws.mode = (_stricmp(mode.c_str(), "always") == 0) ? 0 : (_stricmp(mode.c_str(), "window") == 0) ? 1 : 2;
-            float at;
-            bool relative;
-            const std::string open = times.timed ? times.open : "@0", close = times.timed ? times.close : "@end";
-            if (ParseAt(open.c_str(), at, relative))
-                ws.openAt = relative ? -1.0f : at;
-            else {
-                ws.openEvent = open;
-                ws.openAt = -1.0f;
-            }
-            if (ParseAt(close.c_str(), at, relative))
-                ws.closeAt = relative ? at : -1.0f;
-            else {
-                ws.closeEvent = close;
-                ws.closeAt = -1.0f;
-            }
-            s.cancels.push_back(std::move(ws));
+            connect.key = key.key;
+            connect.gamepad = key.gamepad;
+            connect.control = key.control;
+            if (!key.given) connect.press = PressKinds::Press::kDown;
+            connect.mode = times.mode;
+            connect.open = times.open;
+            connect.close = times.close;
+            connect.timed = times.timed;
+            links.push_back(std::move(connect));
         }
         for (const auto& l : links) {
             ActionLinkSpec next;
@@ -1377,6 +1351,8 @@ struct Compiler {
             next.onEnd = l.onEnd;
             next.onRelease = l.onRelease;
             next.onMove = l.onMove;
+            next.press = l.press;
+            next.end = l.end;
             next.buffered = (l.mode.empty() ? std::string("buffered") : l.mode) == "buffered";
             auto timing = [&](const std::string& text, bool close, std::string& event, float& at) {
                 float value;
@@ -1394,7 +1370,7 @@ struct Compiler {
                 timing(l.open, false, next.openEvent, next.openAt);
                 timing(l.close, true, next.closeEvent, next.closeAt);
             }
-            if (next.action.empty() ||
+            if ((next.action.empty() && !next.end) ||
                 (next.event.empty() && !next.key && !next.gamepad && next.control == GameControl::kNone &&
                     !next.onEnd && !next.onRelease && !next.onMove))
                 continue;

@@ -127,6 +127,14 @@ inline std::optional<float> PivotYaw(float before, float goal, float current, fl
     return Wrap(before + want * sign);
 }
 inline bool HeadingDrifted(float yawError) { return std::isfinite(yawError) && std::abs(yawError) > kHeadingSlack; }
+// A held heading turned back by something else for this long in a row is a tug-of-war, and the hold lets go. Seconds,
+// not frames: ten frames are a third of a second at 30 fps and 0.07 s at 144.
+constexpr float kHeadingTugSeconds = 0.15f;
+// Whether a held heading's error is another's doing. `ownTurn` is what the pair's own motion turned the actor since
+// the heading was last put back (its HKX's rotation, PairFeatures::ApplyMotion): that much of the error is the pair's.
+inline bool ForeignTurn(float yawError, float ownTurn) {
+    return HeadingDrifted(Wrap(yawError - (std::isfinite(ownTurn) ? ownTurn : 0.0f)));
+}
 // Wait for independent native frames, including orientation, before handoff.
 struct Gate {
     float elapsed = 0;

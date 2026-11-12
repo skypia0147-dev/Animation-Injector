@@ -313,8 +313,7 @@ int main() {
         {
             const auto p = Parse("<Action id='A' clip='a.hkx' air='both' attack='AttackPower' enter='0.2' "
                                  "block='jumpStart' safety='2'><Exit blend='0.3'/><IFrame until='0.8'/>"
-                                 "<MoveCancel at='1.2' blend='0.35'/><Vanilla to='Attack,event:Bash' from='0.3'/>"
-                                 "<Vanilla id='late' to='Block' until='end-0.2' buffer='false'/>"
+                                 "<MoveCancel at='1.2' blend='0.35'/>"
                                  "<Do at='0.1' op='hide'/><Camera/></Action>"
                                  "<Action id='B' clip='b.hkx' air='only'/>");
             Check(p.ok, p.error.c_str());
@@ -325,15 +324,9 @@ int main() {
             Check(a.suppress.when == SuppressSpec::When::kActive && a.suppress.events.size() == 1,
                 "an HKX's block is while it plays");
             Check(a.recovery.enabled && Near(a.recovery.at, 1.2f) && Near(a.exitBlend, 0.3f), "MoveCancel and Exit");
-            Check(a.cancels.size() == 2 && a.cancels[0].id == "cancel1" && a.cancels[0].vanillaMatches.size() == 2 &&
-                      Near(a.cancels[0].openAt, 0.3f) && a.cancels[1].id == "late" && a.cancels[1].mode == 1,
-                "vanilla transitions and their windows");
-            // The character graph's jumps (11-01): a Jump transition inherits both, "jumpStart" matched neither.
-            const auto jump = Parse("<Action id='A' clip='a.hkx'><Vanilla to='Jump,Sneak'/></Action>");
-            Check(jump.ok && jump["A"].cancels.size() == 1 &&
-                      jump["A"].cancels[0].vanillaMatches ==
-                          std::vector<std::string>{"JumpStandingStart", "JumpDirectionalStart", "sneakStart"},
-                "a jump transition matches the standing and the directional jump");
+            // Cutting to the game's own action (<Vanilla>) is gone (2026-11-12): the element is not read.
+            Check(!Parse("<Action id='A' clip='a.hkx'><Vanilla to='Attack' from='0.35' until='0.6'/></Action>").ok,
+                "a vanilla transition is refused");
             Check(a.pairFeatures.enabled && a.pairFeatures.timed.size() == 1, "Do and Camera sit in the action");
             // The time scale window (11-01): factor and ease, a range like IFrame; not a clip-time pair of functions.
             const auto time =

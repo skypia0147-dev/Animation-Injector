@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "core/MotionHook.h"
+#include "core/CallSite.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/PairFeatures.h"
@@ -71,14 +72,26 @@ void Install() {
     const std::uintptr_t r1 = processMotionData.address() + (isAE ? 0x35C : 0x355);
     const std::uintptr_t r2 = processMotionData.address() + (isAE ? 0x36D : 0x368);
 
-    // Each site must still be a rel32 call; otherwise a different game build or another
-    // mod's patch occupies it, and writing our call would corrupt the function.
+    // Each site must be a whole rel32 call instruction; otherwise a different game build or another
+    // mod's patch occupies it, and writing our call would corrupt the function. Other motion mods hook
+    // these sites too, so the targets cannot be compared against the engine's own functions.
+    std::array<CallSite::Site, 4> checked{};
+    std::size_t index = 0;
     for (const auto site : {t1, t2, r1, r2}) {
-        if (*reinterpret_cast<const std::uint8_t*>(site) != 0xE8) {
-            logger::error("[Motion] ProcessMotionData +0x{:X} is not a call; motion hook not installed",
-                site - processMotionData.address());
+        checked[index] = CallSite::Verify(processMotionData.address(), site, "ProcessMotionData");
+        if (!checked[index++].ok) {
+            logger::error("[Motion] motion hook not installed");
             return;
         }
+    }
+    // Unhooked, both sites of a kind call one engine function, and the two kinds call different ones.
+    const auto engine = [&](std::size_t a, std::size_t b) { return !checked[a].foreign && !checked[b].foreign; };
+    if ((engine(0, 1) && checked[0].target != checked[1].target) ||
+        (engine(2, 3) && checked[2].target != checked[3].target) ||
+        (engine(0, 2) && checked[0].target == checked[2].target)) {
+        logger::error("[Motion] ProcessMotionData call sites do not have the expected layout (different game "
+                      "build?); motion hook not installed");
+        return;
     }
 
     // 호출부 레지스터: r13 = Character*, rbx = BSFixedString*(AE 는 rbx-0x14) — AMR/FH_Grapple 과 동일
@@ -181,8 +194,10 @@ void Install() {
     tr.write_call<5>(r1, rThunk0);
     tr.write_call<5>(r2, rThunk1);
     _installed = true;
-    logger::info("[Motion] ProcessMotionData chain installed (AE={}, prevTrans={:p}/{:p})", isAE,
-        reinterpret_cast<void*>(prevT[0]), reinterpret_cast<void*>(prevT[1]));
+    logger::info("[Motion] ProcessMotionData chain installed (AE={}, prevTrans={:p}/{:p}, other plugin at "
+                 "sites={}{}{}{})",
+        isAE, reinterpret_cast<void*>(prevT[0]), reinterpret_cast<void*>(prevT[1]), checked[0].foreign ? 1 : 0,
+        checked[1].foreign ? 1 : 0, checked[2].foreign ? 1 : 0, checked[3].foreign ? 1 : 0);
 }
 
 }  // namespace AnimationInjector::MotionHook

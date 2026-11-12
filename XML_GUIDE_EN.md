@@ -55,7 +55,6 @@ With a weapon drawn, G does slash 1; pressing G again during it leads on to slas
     <Cost stamina="20"/>
     <Transition to="Slash2" key="G" gamepad="RB" from="0.45" until="end-0.1"/>
     <MoveCancel at="0.8" blend="0.25"/>
-    <Vanilla to="Block" from="0.5"/>
     <Exit blend="0.2"/>
   </Action>
   <Action id="Slash2" clip="Animations\MyMod\Slash2.hkx">
@@ -67,12 +66,12 @@ With a weapon drawn, G does slash 1; pressing G again during it leads on to slas
 
 | Element | Meaning |
 |---|---|
-| `<Transition to key from until>` | A key press between `from` and `until` moves on to the `to` action. `event="Name"` works in place of a key |
+| `<Transition to key from until>` | A key press between `from` and `until` moves on to the `to` action. `event="Name"` works in place of a key. A key transition can tell how its key is pressed with `press="tap\|double\|hold"` (Press kinds below, 1.0.8 or later) |
 | `<Transition to on="end" blend>` | When this action ends (its Exit point) it moves on to `to` instead of ending. One per action, no key, `from` or `until`. Only in an action that ends at a time (not with `<Exit at="event:…">`) |
 | `<Transition to on="release" from until>` | Charge end: moves on while the key is up inside the window. A state, not a moment: let go before the window opens, it moves on as it opens. `key`, `gamepad` or `control` name the key; without them, the key that started this action (a start's or a key transition's, kept through on="end" and on="release"). An NPC counts as releasing only at a loop's `maxHold` |
 | `<Transition to on="move" from until buffer>` | Move transition: moves on when a movement key is pressed **in a charge** (while the key that started this action is down). With the charge key up a movement key does nothing and a buffered one is dropped (`on="release"` goes then). An action on a tapped key, such as a dodge, chains by a key transition on its key with a direction card (`<Transition condition="…" key=…>`). As a key transition: a press inside the window goes at once, one made before it opens is buffered and goes as it opens (`buffer="false"`: no buffer). A movement key held as the window opens counts as buffered too — held, the action plays once after another; let go, the one playing plays to its end. The card picks by the direction held (or the one pressed if it is already up), read as a movement condition reads it, TDM included. No key or event, the player only. Into the same action it plays that action again from the start; a loop choosing itself plays on (a charge keeps going). For directional dashes picked by a `movementDirection` card |
+| `<Transition end="true" …>` | Ending transition (1.0.8 or later): instead of going to another action it ends this one at once (leaving with `<Exit blend>`). Its trigger is any other transition's: a key (`key`, `gamepad`, `control`, `input`, `press`), an `event`, `on="release"`, `on="move"`, with a window (`from`, `until`, `buffer`). No `to`, condition card, `blend`, `partnerTo` or `on="end"`. Ordinary actions only. Example, a loop started by an event and ended by another: `<Action id="Loop" clip="…" loop="true" maxHold="600"><Transition end="true" event="StopLoop"/></Action>` |
 | `<MoveCancel at blend>` | After `at`, a movement key cancels the action back to walking or running. An NPC in combat gets movement back from `at` and leaves as soon as its AI moves or attacks (or plays on if it stays) |
-| `<Vanilla to from until>` | In that window, the game's own action can cancel it. `to`: `Attack` `PowerAttack` `Block` `Bash` `Sprint` `Jump` `Sneak`. `until` is counted from the end (`end`, `end-0.2`) |
 | `<IFrame from until>` | Invulnerable in that window |
 | `<HyperArmor from until>` | Stagger resistance in that window |
 | `<TimeScale factor from until ease>` | The whole world's time scale in that window (only when the player plays it). `factor` 0.05~5 (0.5 is half speed); `ease` is the real seconds it takes to reach the factor, and back to normal speed at the window's end (0~2; left out, at once). Normal speed also comes back when the action is cut short |
@@ -80,7 +79,7 @@ With a weapon drawn, G does slash 1; pressing G again during it leads on to slas
 | `<Cost stamina magicka health measure at>` | Resource cost: stamina, magicka, health (health never its last point). `measure="percent"`: percent of each maximum (0~100); without it, the values as written |
 | `<Exit at blend>` | When it ends and how many seconds it blends. Without `at`, 0.05 seconds before the clip's end |
 
-`<Action>` attributes: `enter` (blend seconds going in), `air="both"` (ground and air) / `"only"` (air only; without it, ground only), `view="first"` or `"both"` (a first-person action; first-person HKX files go at the same path under `_1stPerson`), `loop="true" maxHold="3"` (a loop: the clip plays over and over, and after `maxHold` seconds (default 3) the key counts as released, counted from the press of the key that started the charge while it is still down, so directional loops share one clock; without an on="release" transition it ends then. Ordinary actions only; no `<Exit at>` or on="end" transition. Feature times (i-frames, rotation…) count from the action's start and take no `end-…`; transition windows (`from`, `until`) open and close again **every cycle**, `until="end"` and `end-…` meaning that cycle's end; HKX annotation events come again every cycle).
+`<Action>` attributes: `enter` (blend seconds going in), `air="both"` (ground and air) / `"only"` (air only; without it, ground only), `view="first"` or `"both"` (a first-person action; first-person HKX files go at the same path under `_1stPerson`), `otherView="switch"` (the view switch, 1.0.8 or later: a third-person action started in first person, or a first-person action started in third person, switches the camera to the action's view, plays, and returns to the view it started from when it ends. Without it the action does not start in the other view. Not with `view="both"`, nor on a first-person pair. The `firstPerson` of 1.0.7 and earlier is not read), `loop="true" maxHold="3"` (a loop: the clip plays over and over, and after `maxHold` seconds (default 3) the key counts as released, counted from the press of the key that started the charge while it is still down, so directional loops share one clock; without an on="release" transition it ends then. Ordinary actions only; no `<Exit at>` or on="end" transition. Feature times (i-frames, rotation…) count from the action's start and take no `end-…`; transition windows (`from`, `until`) open and close again **every cycle**, `until="end"` and `end-…` meaning that cycle's end; HKX annotation events come again every cycle).
 
 **Charge example**: `<Start control="rightAttack" press="hold" to="ChargeStart"/>` → ChargeStart's `<Transition to="ChargeLoop" on="end"/>` and `<Transition condition="ChargeLevel" on="release" from="0.2"/>` → `<Action id="ChargeLoop" loop="true" maxHold="3">` with `<Transition condition="ChargeLevel" on="release"/>` → the ChargeLevel card picks the strong or weak release by `<Check kind="heldTime" compare="ge" value="1.5"/>`.
 
@@ -241,8 +240,8 @@ An `<Action>` with `rig` is played by that creature on its own. Example: `<Actio
 - `rig`: a creature name such as `wolf` `bear` `sabrecat` `troll` `draugr` `werewolf` `vampirelord` (the same list as a pair's `FindPartner rig`). Without it the action is the character's. Creatures sharing a folder and skeleton play it together (`wolf` and `dog`, `draugr` and `skeleton`): filter with a race condition for one of them. The editor writes this value itself from the HKX.
 - `clip`: a creature action's clip is relative to **that creature's folder** (`meshes\actors\canine\` for wolves, `meshes\actors\bear\` for bears). A character action's stays relative to `meshes\actors\character\`.
 - Starting: on an event the creature sends, `<Start event="…" actor="npc" to="…">`. Key and game-control starts play a creature action when the player is a werewolf or vampire lord. A start never plays an action whose `rig` is not the actor's, so one file can hold character and creature actions together.
-- Available: `loop`, `enter`, `<Exit>`, `<Transition>` to an action of the same `rig`, `<Rotate>` `<IFrame>` `<HyperArmor>` `<MoveCancel>` `<Vanilla>` `<Cost>`, clip-time features (`<Do at>`) and event features, the conditions every actor has, `block`.
-- Character actions only: `view` `firstPerson` `air` `attack`, `<QTE>` `<Camera>` `<CarryRelease>`, `<Do op="hide|show|fireArrow">`. A `<Transition>` to an action of another skeleton family is refused too.
+- Available: `loop`, `enter`, `<Exit>`, `<Transition>` to an action of the same `rig`, `<Rotate>` `<IFrame>` `<HyperArmor>` `<MoveCancel>` `<Cost>`, clip-time features (`<Do at>`) and event features, the conditions every actor has, `block`.
+- Character actions only: `view` `otherView` `air` `attack`, `<QTE>` `<Camera>` `<CarryRelease>`, `<Do op="hide|show|fireArrow">`. A `<Transition>` to an action of another skeleton family is refused too.
 
 ### Pairs a creature starts
 
@@ -285,7 +284,7 @@ An action two people do together is a `<Pair>`. Its HKX is one paired HKX holdin
 - To replace a vanilla action, start on its event and name the same event in `block`, e.g. on a blocked hit `<Start event="blockHitStart" block="blockHitStart" to="…">`. While the action can start, the vanilla graph does not get the event and this action plays (not with a `chance` condition). An NPC is the same when `actor` includes NPCs. `<Action block="…">` blocks while that action plays; a key or control start's `block` is the player's only.
 - While an action plays that has a `<Transition event>` on an event, that event is the transition's and a `<Start>` on the same event does not start (the rule keys follow). Before its window opens a buffered transition keeps it and goes when the window opens; after it closes nothing happens. For example a `<Transition event="blockHitStart" from="0.1">` inside a block hit action for a block hit after block hit.
 - `subject="partner"` on a condition checks the partner. Conditions that are the same whoever is asked (`chance` `gameHour` `weather` `global` `movementDirection` `space` `ground` `heldTime`) do not take it.
-- Pairs play in third person by default (started in first person, the view switches to third person and back when the pair ends). With `<Pair view="both">` and a first-person HKX at the same path under `_1stPerson`, the pair plays in first person while the player is in first person. `view="first"` is a pair that starts in first person only and needs the first-person HKX alone (a paired HKX holds both roles, so the partner plays that file too; without it the pair does not start). `both` needs both the third-person and the first-person HKX. Carries are third person only. Invulnerability, stagger resistance and such in a pair are clip-time features, like `<Do at op="iframeOn">`.
+- Pairs play in third person by default (started in first person, the view switches to third person and back when the pair ends). With `<Pair view="both">` and a first-person HKX at the same path under `_1stPerson`, the pair plays in first person while the player is in first person. `view="first"` is a pair that starts in first person only and needs the first-person HKX alone (a paired HKX holds both roles, so the partner plays that file too; without it the pair does not start). `both` needs both the third-person and the first-person HKX. Carries are third person only. A pair ends when either actor dies or ragdolls while it plays. The exception is a partner killed by the paired HKX's own `2_KillActor` annotation: as in a vanilla kill move, only the partner leaves the animation (it dies and ragdolls) and the starting actor plays its clip to the end (1.0.8 or later), so later annotations such as `NPCEndAnimatedCamera` and `NPCPairEnd` still arrive. Invulnerability, stagger resistance and such in a pair are clip-time features, like `<Do at op="iframeOn">`.
 
 ### Carry ragdoll
 
@@ -338,7 +337,7 @@ A QTE shows on screen during an action, and the result leads to a different acti
 
 Key names are physical keys, whatever the keyboard input language.
 
-### Press kinds (`<Start press>`)
+### Press kinds (`<Start press>`, `<Transition press>`)
 
 | `press` | Starts |
 |---|---|
@@ -353,6 +352,28 @@ Key names are physical keys, whatever the keyboard input language.
 - A game control's press that no start takes goes back to the game, late by the wait. Example: `<Start control="jump" press="tap" to="Dodge"/>` dodges on a short press and still jumps on a long one.
 - Game controls that open a menu (`wait` `favorites` `tweenMenu`) open it the moment they go down, so they take `down` only.
 
+**Press kinds on a transition (1.0.8 or later)**: a key transition (`<Transition key|gamepad|control>`) takes the same `press`. The playing action tells its transition keys apart the way a start's key is.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="MyDodge">
+  <Start key="LAlt" press="double" to="Roll"/>
+  <Action id="Roll" clip="Animations\MyDodge\Roll.hkx">
+    <Transition to="Roll2" key="LAlt" press="double" from="0.3"/>
+    <Transition to="Step" key="LAlt" press="tap" from="0.3"/>
+    <Transition to="Step" key="LAlt" press="hold" from="0.3"/>
+  </Action>
+  <Action id="Roll2" clip="Animations\MyDodge\Roll2.hkx"/>
+  <Action id="Step" clip="Animations\MyDodge\Step.hkx"/>
+</AnimationSet>
+```
+
+- One key can have one transition of each kind. `down` (the default) goes the moment the key goes down, so it cannot share its key with another kind (use `tap`).
+- Not for `event` or `on` transitions.
+- The waits are a start's: a `tap` on release (after the wait for a second press when the key also has a `double`), a `hold` at the hold time, a `double` at its second press.
+- A condition card's movement direction is the one of the first press (even if the movement key is up when the kind is known).
+- While the action is on its way out (its exit blend), or when it ends before the kind is known, the press goes to the key's `<Start>` as the kind it turned out to be. A `tap` or `hold` no start takes goes to the `down` starts.
+
 ## Checking a file
 
 `AnimationInjectorXmlCheck.exe`, in the Animation Injector Editor download, checks a file outside the game with the same rules the game reads by.
@@ -361,6 +382,6 @@ Key names are physical keys, whatever the keyboard input language.
 AnimationInjectorXmlCheck.exe "path\MyMod.xml"
 ```
 
-`Valid: …` means the game can read the file. With an error, it says which element (for example `/AnimationSet/Action/Vanilla`) is wrong and how. A file the game did not read leaves the same reason in `AnimationInjector.log`.
+`Valid: …` means the game can read the file. With an error, it says which element (for example `/AnimationSet/Action/MoveCancel`) is wrong and how. A file the game did not read leaves the same reason in `AnimationInjector.log`.
 
 Action ids belong to their file (its `AnimationSet id`), so several files may use the same `id` without one replacing another. When two files use the same `AnimationSet id`, the actions of the one whose path sorts later are kept apart and the log warns.

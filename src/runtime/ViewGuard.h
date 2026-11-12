@@ -9,10 +9,11 @@
 // and no pending link has remained for a moment (the stretch of its EventEffects run scope). Its view is
 // fixed at the start: third for a carry or a pair, else the action's view (for `both`, the camera's). A pair written
 // both whose states are in the first-person graph (1.0.8) is both too: in first person it plays there.
-//   - Start: an action of the player whose view the camera does not show does not start, unless it is a
-//     third-person action with firstPerson="switch". A run that starts in third person while the camera is
+//   - Start: an action of the player whose view the camera does not show does not start, unless it is an
+//     action of one view with otherView="switch". A run that starts in third person while the camera is
 //     in first person (that switch, or a pair another actor starts on the player, as vanilla kill moves
-//     do) switches the camera to third person.
+//     do) switches the camera to third person; a first-person run that starts while the camera is in third
+//     person (that switch, 1.0.8) switches it to first person.
 //   - During: when the camera enters first or third person and the run does not show that view, the whole
 //     run is cancelled through its own end paths: the player's actions and pending links (their exit
 //     blend), its carry (the target is dropped, as when the carrier is hit) and its pair (both actors).
@@ -20,7 +21,7 @@
 //     pending delayed event functions that the run's actors sent are dropped. A scene camera (CameraView
 //     kOther) is no change, nor is a switch this plugin makes itself (ExpectCamera: a pair's camera
 //     recovery, the switches above).
-//   - End: a run the plugin switched from first to third person returns to first person when it ends
+//   - End: a run the plugin switched the camera for returns to the view it started from when it ends
 //     without a cancel, once the pair camera is released. A cancelled run leaves the camera where the
 //     player put it.
 // Controls are never disabled: the view key and the zoom stay the player's.
