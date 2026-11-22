@@ -146,6 +146,7 @@ Common conditions:
 | `weather` | `option="pleasant\|cloudy\|rainy\|snow"` | that weather |
 | `hitReceived` | `option="normal\|power\|bash\|sneak\|blocked"` `within="seconds"` | the last weapon hit it took was normal (no power attack, no bash), a power attack, a bash, a sneak attack or blocked. Spells do not count. On a block, use it in `<Start event="blockHitStart">` with `within="0.5"` |
 | `recentEvent` | `events="event,event"` `within="seconds"` | one of those animation events reached it within that time (events sent to the graph and events the graph sends). To skip the `sprintStop` right after a sprint attack: `<Check kind="recentEvent" events="attackStop" within="0.5" not="true"/>` |
+| `foot` | `option="left\|right"` | the foot that last touched the ground is the left or the right one (of the locomotion's `FootLeft` and `FootRight`, the one that came last, at any speed). A stop for each foot: `<Start event="moveStop" actor="player"><Row to="StopLeft"><Check kind="foot" option="left"/></Row><False to="StopRight"/></Start>` |
 | `gameHour` | `compare` `value` | the game hour compares so |
 | `heldTime` | `compare` `value` | how long the key that started this action was held, in seconds; when an on="release" transition chooses, from the press to the release. The player only (unknown for an NPC) |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | there is that much open space that way |

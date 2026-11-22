@@ -146,6 +146,7 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `weather` | `option="pleasant\|cloudy\|rainy\|snow"` | 그 날씨 |
 | `hitReceived` | `option="normal\|power\|bash\|sneak\|blocked"` `within="초"` | 마지막으로 맞은 무기 공격이 일반(파워어택·방패 밀치기 아님)·파워어택·방패 밀치기·기습·막음일 때. 마법은 세지 않음. 막았을 때 `<Start event="blockHitStart">`에 `within="0.5"`로 씁니다 |
 | `recentEvent` | `events="이벤트,이벤트"` `within="초"` | 그 애니메이션 이벤트 중 하나를 그 시간 안에 받았을 때(그래프로 보낸 이벤트와 그래프가 보낸 이벤트 모두). 질주 공격 직후의 `sprintStop`을 거르려면 `<Check kind="recentEvent" events="attackStop" within="0.5" not="true"/>` |
+| `foot` | `option="left\|right"` | 마지막으로 땅에 닿은 발이 왼발·오른발일 때(이동 애니메이션의 `FootLeft`·`FootRight` 중 나중에 온 것, 속도와 상관없음). 멈출 때 발에 맞는 정지 동작: `<Start event="moveStop" actor="player"><Row to="StopLeft"><Check kind="foot" option="left"/></Row><False to="StopRight"/></Start>` |
 | `gameHour` | `compare` `value` | 게임 시각 비교 |
 | `heldTime` | `compare` `value` | 이 동작을 시작한 키를 누르고 있던 시간(초). 차지 종료 전환이 고를 때는 누른 순간부터 뗀 순간까지. 플레이어만(NPC는 판정 불가) |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | 그 방향에 그만큼 빈 공간이 있을 때 |

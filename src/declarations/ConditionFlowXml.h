@@ -71,7 +71,10 @@ enum class Test {
     kHeldTime,
     // 11-07. One of these animation events (events, sent to the graph or sent by it) reached the subject within the
     // last `within` seconds (runtime/EventHistory.h): a sprint stop right after a sprint attack's attackStop.
-    kRecentEvent
+    kRecentEvent,
+    // 11-22. The foot that last touched the ground (option left|right): of the two foot events, FootLeft and FootRight,
+    // the one that reached the subject last (runtime/EventHistory.h). A stop clip for each foot on moveStop.
+    kFoot
 };
 enum class EquippedType {
     kBow,
@@ -133,7 +136,8 @@ struct Predicate {
     // (runtime/ActionRegistry.cpp), the seconds since it ended (< 0 = any) and how it ended. kHitReceived: within.
     std::vector<std::string> actionNames;
     std::vector<int> actions;
-    // kRecentEvent: the event names as written, their history ids once every declaration is loaded.
+    // kRecentEvent: the event names as written, their history ids once every declaration is loaded. kFoot: FootLeft
+    // and FootRight, in that order.
     std::vector<std::string> eventNames;
     std::vector<int> events;
     float within = -1.0f;

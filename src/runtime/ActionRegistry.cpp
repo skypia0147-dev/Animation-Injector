@@ -332,17 +332,19 @@ Declared BuildDeclarations() {
         for (const auto& link : spec.links) d.usesControls |= link.control != GameControl::kNone;
     }
     // A previousAction check names actions by id, in any declaration file: their indices, now that all are in.
-    // A recentEvent check names events: every name any check asks about, then each check's ids.
+    // A recentEvent check names events (a foot check its two): every name any check asks about, then each check's ids.
+    const auto namesEvents = [](const ConditionFlowXml::Predicate& p) {
+        return p.test == ConditionFlowXml::Test::kRecentEvent || p.test == ConditionFlowXml::Test::kFoot;
+    };
     std::vector<std::string> askedEvents;
     for (const auto& spec : d.specs)
         for (const auto& p : spec.flow.predicates)
-            if (p.test == ConditionFlowXml::Test::kRecentEvent)
-                askedEvents.insert(askedEvents.end(), p.eventNames.begin(), p.eventNames.end());
+            if (namesEvents(p)) askedEvents.insert(askedEvents.end(), p.eventNames.begin(), p.eventNames.end());
     const auto eventIds = EventHistory::SetNames(askedEvents);
     std::size_t nextEventId = 0;
     for (auto& spec : d.specs)
         for (auto& p : spec.flow.predicates) {
-            if (p.test == ConditionFlowXml::Test::kRecentEvent) {
+            if (namesEvents(p)) {
                 p.events.assign(eventIds.begin() + static_cast<std::ptrdiff_t>(nextEventId),
                     eventIds.begin() + static_cast<std::ptrdiff_t>(nextEventId + p.eventNames.size()));
                 nextEventId += p.eventNames.size();

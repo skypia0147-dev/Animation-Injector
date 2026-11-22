@@ -193,6 +193,22 @@ int main() {
     Check(!Read("kind='hitReceived' option='power' events='attackStop'"));
     Check(Read("kind='actorStatus' option='attacking'"));
     Check(TestOf("kind='actorStatus' option='attacking'") == ConditionFlowXml::Test::kActorStatus);
+    // 11-22: the foot that last touched the ground, from the two foot events.
+    {
+        pugi::xml_document doc;
+        doc.load_string("<Check kind='foot' option='right' not='true'/>");
+        ConditionFlowXml::Predicate pr;
+        std::string error;
+        Check(ConditionFlowXml::ReadCheck(doc.document_element(), pr, error));
+        Check(pr.test == ConditionFlowXml::Test::kFoot && pr.option == "right" && pr.eventNames.size() == 2 &&
+              pr.eventNames[0] == "FootLeft" && pr.eventNames[1] == "FootRight");
+    }
+    Check(Read("kind='foot' option='left'"));
+    Check(!Read("kind='foot'"));  // which foot is required
+    Check(!Read("kind='foot' option='both'"));
+    Check(!Read("kind='foot' option='left' within='0.5'"));
+    Check(!Read("kind='foot' option='left' events='FootLeft'"));
+    Check(!Read("kind='foot' option='left' value='1'"));
     // 10-29: the last weapon hit received, of a kind, optionally within some seconds; the subject or its partner.
     for (const char* option : {"normal", "power", "bash", "sneak", "blocked"})
         Check(Read(std::string("kind='hitReceived' option='") + option + "'"));

@@ -37,7 +37,7 @@ Action mods combine these features into actions.
 |---|---|
 | Starting | Keyboard and gamepad keys, game controls (Jump, Sprint, ...; they follow your key bindings), animation events. For the player and NPCs. A key can tell the moment it goes down, a tap, a double press and a hold; a game control press no start takes goes back to the game (e.g. tap Jump to dodge, hold it to jump). Transitions on an action's end, on a key's release and on a movement change, looping clips and a held-time condition make charge attacks (moving ones too, by directional dash loops) |
 | Chaining | Move on to the next action on a key press or an event; cancel by moving or by another action |
-| Conditions | Play a different action by weapon, movement direction, being in the air, stamina, equipment, race, the previous action, the hit just taken (normal, power attack, blocked and more), weather and more |
+| Conditions | Play a different action by weapon, movement direction, being in the air, stamina, equipment, race, the previous action, the foot last set down (a stop for each foot), the hit just taken (normal, power attack, blocked and more), weather and more |
 | During an action | Invulnerability, stagger resistance, turning, time scale, stamina, magicka and health costs, strikes, firing arrows, spells, ragdoll, sounds, camera shake and more |
 | HKX events | Register features on the animation events any HKX sends (other mods' and vanilla ones too). An HKX annotation `AI.Command\|values` runs at its time with no registration |
 | Pairs | Actions two people do together. Both are lined up in position and facing when it starts, and their positions are corrected when it ends |

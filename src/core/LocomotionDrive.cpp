@@ -76,10 +76,10 @@ bool Notify(RE::Actor* actor, const RE::BSFixedString& event) {
 // not sneaking) at kPivotSpeed or more (kPivotBackSpeed running back) and its Direction was within 45 degrees of the way: right 0.25, left 0.75, back
 // 0.5 (a body TDM had turned to face the way it went reads forward), forward 0 only where back is a backward run (not
 // TDM's directional setting, in which back turns the body around and reads forward too).
-constexpr float kPivotSpeed = 250.0f;   // units/s: running (a test setup runs at 339, walks under about 130)
+constexpr float kPivotSpeed = 250.0f;      // units/s: running (a test setup runs at 339, walks under about 130)
 constexpr float kPivotBackSpeed = 160.0f;  // units/s: running back (measured 200 running back, 80 walking back)
-constexpr float kPivotGap = 0.15f;      // seconds between letting go of one side and pressing the other
-constexpr float kPivotCooldown = 0.4f;  // seconds
+constexpr float kPivotGap = 0.15f;         // seconds between letting go of one side and pressing the other
+constexpr float kPivotCooldown = 0.4f;     // seconds
 enum Way : int { kNoWay, kRight, kLeft, kForward, kBack };
 constexpr Way OppositeWay(Way w) {
     return w == kRight ? kLeft : w == kLeft ? kRight : w == kForward ? kBack : w == kBack ? kForward : kNoWay;
@@ -94,16 +94,20 @@ Pivot g_pivot;  // the player's, on its update
 void PivotStep(RE::Actor* player, float delta) {
     static const RE::BSFixedString speedName{"Speed"}, directionName{"Direction"};
     // The event for leaving each way (index: Way), as the name it is logged by.
-    static const char* const names[] = {nullptr, kTurnRightToLeftEvent, kTurnLeftToRightEvent, kTurnForwardToBackEvent,
-        kTurnBackToForwardEvent};
+    static const char* const names[] = {
+        nullptr, kTurnRightToLeftEvent, kTurnLeftToRightEvent, kTurnForwardToBackEvent, kTurnBackToForwardEvent};
     static const RE::BSFixedString events[] = {RE::BSFixedString{}, RE::BSFixedString{names[1]},
         RE::BSFixedString{names[2]}, RE::BSFixedString{names[3]}, RE::BSFixedString{names[4]}};
     static constexpr float facing[] = {0.0f, 0.25f, 0.75f, 0.0f, 0.5f};  // the Direction of a run that way
     auto* controls = RE::PlayerControls::GetSingleton();
     if (!controls) return;
     const float x = controls->data.moveInputVec.x, y = controls->data.moveInputVec.y;
-    const Way way = std::fabs(y) < 0.4f ? (x > 0.7f ? kRight : x < -0.7f ? kLeft : kNoWay)
-                    : std::fabs(x) < 0.4f ? (y > 0.7f ? kForward : y < -0.7f ? kBack : kNoWay)
+    const Way way = std::fabs(y) < 0.4f   ? (x > 0.7f       ? kRight
+                                                : x < -0.7f ? kLeft
+                                                            : kNoWay)
+                    : std::fabs(x) < 0.4f ? (y > 0.7f       ? kForward
+                                                : y < -0.7f ? kBack
+                                                            : kNoWay)
                                           : kNoWay;
     auto& p = g_pivot;
     p.cooldown = std::max(0.0f, p.cooldown - delta);

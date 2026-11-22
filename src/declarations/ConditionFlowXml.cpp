@@ -120,6 +120,8 @@ Predicate ReadPredicate(XML n) {
         predicate.test = Test::kHeldTime;
     else if (test == "recentEvent")
         predicate.test = Test::kRecentEvent;
+    else if (test == "foot")
+        predicate.test = Test::kFoot;
     else
         Fail(n, "unsupported condition " + test);
     const auto oneOf = [&](const std::string& s, std::initializer_list<std::string_view> choices) {
@@ -127,7 +129,7 @@ Predicate ReadPredicate(XML n) {
     };
     const bool option = oneOf(
         test, {"air", "protection", "rig", "actorType", "resource", "actorStatus", "relationship", "equippedKeyword",
-                  "movementDirection", "lying", "slope", "actorValue", "weather", "hitReceived"});
+                  "movementDirection", "lying", "slope", "actorValue", "weather", "hitReceived", "foot"});
     if (option) {
         predicate.option = Required(n, "option");
         bool valid = false;
@@ -156,6 +158,7 @@ Predicate ReadPredicate(XML n) {
                     "Destruction", "Illusion", "Restoration", "Enchanting"});
         if (test == "weather") valid = oneOf(predicate.option, {"pleasant", "cloudy", "rainy", "snow"});
         if (test == "hitReceived") valid = oneOf(predicate.option, {"normal", "power", "bash", "sneak", "blocked"});
+        if (test == "foot") valid = oneOf(predicate.option, {"left", "right"});
         if (!valid) Fail(n, "invalid option");
         // One kind, the engine's state it reads (the tests these options were before 11-01).
         if (test == "air" && predicate.option != "any") predicate.test = Test::kFalling;
@@ -265,6 +268,8 @@ Predicate ReadPredicate(XML n) {
     } else if (n.attribute("actions") || n.attribute("within") || n.attribute("ended"))
         Fail(n, "actions/within/ended require previousAction");
     if (test != "recentEvent" && n.attribute("events")) Fail(n, "events requires recentEvent");
+    // The two foot events whose last one a foot check reads.
+    if (test == "foot") predicate.eventNames = {"FootLeft", "FootRight"};
     if (predicate.test == Test::kEquippedType) {
         const auto hand = Required(n, "hand");
         if (hand != "left" && hand != "right") Fail(n, "invalid hand");

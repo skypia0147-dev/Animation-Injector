@@ -77,6 +77,19 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
             subject->GetFormID(), p.eventNames.size(), nearest, p.within);
         return boolean(nearest >= 0.0f && nearest <= p.within);
     }
+    case Test::kFoot: {
+        // The foot whose event came last (recorded only while such a check is loaded): FootLeft and FootRight.
+        float left = -1.0f, right = -1.0f;
+        if (p.events.size() == 2) {
+            if (!EventHistory::Ago(subject->GetHandle(), p.events[0], left)) left = -1.0f;
+            if (!EventHistory::Ago(subject->GetHandle(), p.events[1], right)) right = -1.0f;
+        }
+        logger::debug("[FlowTest] actor={:08X} test=foot option={} leftAgo={:.3f} rightAgo={:.3f}",
+            subject->GetFormID(), p.option, left, right);
+        if (left < 0.0f && right < 0.0f) return Value::kFalse;  // no step since the load
+        const bool leftLast = right < 0.0f || (left >= 0.0f && left < right);
+        return boolean(leftLast == (p.option == "left"));
+    }
     case Test::kPreviousAction: {
         // The last of our actions the subject finished (recorded only while such a check is loaded).
         ActionHistory::Last last;
