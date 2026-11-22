@@ -38,12 +38,16 @@ inline constexpr const char* kDirectionVariable = "AI_LadderDirection";
 inline constexpr const char* kTurnAnchorVariable = "AI_LadderTurnAnchor";
 // Seconds the direction has been held at the start of a slow sweep (LocomotionDrive's opposite turns).
 inline constexpr const char* kTurnHoldVariable = "AI_LadderTurnHold";
-// Turn events (11-21, user decision: left and right first, running only, one clip each): the moment the player presses
-// the opposite side while running sideways, the runtime sends one of these to the player's graph; a declaration
-// starts its pivot action on it (<Start event="AI_Turn_RightToLeft" to="...">). Sent at the key press, before the
-// engine slows down (about 0.25 s), so the clip plays the braking too. With no declaration they reach nothing.
+// Turn events (11-21 left and right, 11-22 forward and back; user decisions: running only, one clip each): the moment
+// the player presses the opposite way while running one way without facing it (sideways, or backward and forward as
+// the keys move the body: not TDM's directional setting, which turns the body around), the runtime sends one of these
+// to the player's graph; a declaration starts its pivot action on it (<Start event="AI_Turn_RightToLeft" to="...">).
+// Sent at the key press, before the engine slows down (about 0.25 s), so the clip plays the braking too. With no
+// declaration they reach nothing.
 inline constexpr const char* kTurnRightToLeftEvent = "AI_Turn_RightToLeft";
 inline constexpr const char* kTurnLeftToRightEvent = "AI_Turn_LeftToRight";
+inline constexpr const char* kTurnForwardToBackEvent = "AI_Turn_ForwardToBack";
+inline constexpr const char* kTurnBackToForwardEvent = "AI_Turn_BackToForward";
 
 // The notify hook, for CyclicFreeze and CyclicCrossBlend sent to `actor`: one the engine sent itself starts its own
 // cross blend, which the opposite turns then leave alone (they ignore their own sends).

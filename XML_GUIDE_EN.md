@@ -498,7 +498,7 @@ Vanilla movement blends the walk and run animations by speed. So walking at a st
 ### Turning to the opposite way
 
 - With the ladders on, a turn to the opposite way (forward and back, left and right) cross-blends the locomotion from the pose at that moment for 0.2 s. Nothing to write for it.
-- **Turn actions**: when the player runs sideways (run or sprint, not sneaking, speed 250 or more) and presses the other side, the runtime sends an event: `AI_Turn_RightToLeft` from right to left, `AI_Turn_LeftToRight` from left to right. It goes at the key press, before the engine slows down, so the HKX plays everything from the braking to the push-off the other way. Keep the actions it starts in an XML other than the `<Locomotion>` one.
+- **Turn actions**: when the player runs one way (run or sprint, not sneaking) and presses the opposite way, the runtime sends an event: `AI_Turn_RightToLeft` from right to left, `AI_Turn_LeftToRight` from left to right, `AI_Turn_ForwardToBack` from forward to back, `AI_Turn_BackToForward` from back to forward. It goes at the key press, before the engine slows down, so the HKX plays everything from the braking to the push-off the other way. Keep the actions it starts in an XML other than the `<Locomotion>` one.
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -514,7 +514,8 @@ Vanilla movement blends the walk and run animations by speed. So walking at a st
 </AnimationSet>
 ```
 
-  - Sent only while running sideways (a character running toward where it faces turns its body instead). No forward/back events yet.
+  - Speed: 250 or more forward and sideways, 160 or more running back (running back is about 200, walking back about 80). Never while walking.
+  - Left and right only while running sideways, forward and back only while the body moves the way the keys point (running back then forward, running forward then backing off). A character that runs toward where it faces (True Directional Movement's directional setting and the like) turns its body instead, and gets no event.
   - The other key must come within 0.15 s of letting go of the first; none is sent again within 0.4 s.
   - Give it an `enter` (about 0.1 s). Straight in from the running pose it jumps in one frame depending on where the feet are (0.12 s took one frame's movement from 68~135 to 16~21).
   - The HKX: start from the pose of running the first way, end in the pose of running the other way, with the travel in it (root motion). When it ends, the locomotion takes over over its `<Exit blend>`.

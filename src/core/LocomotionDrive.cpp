@@ -1,5 +1,6 @@
 #include "core/LocomotionDrive.h"
 #include "core/NodeFactory.h"
+#include "runtime/TdmMovement.h"
 
 #include <atomic>
 #include <cmath>
@@ -69,37 +70,50 @@ bool Notify(RE::Actor* actor, const RE::BSFixedString& event) {
     return accepted;
 }
 
-// Turn events (kTurnRightToLeftEvent): the player only, from the movement input. A side is the input pointing right or
-// left (x past 0.7, y under 0.4). The event goes when the other side is pressed within kPivotGap of the last frame the
-// first one was held, if on that frame the player ran (run or sprint, not sneaking) at kPivotSpeed or more and moved
-// that way sideways (Direction within 45 degrees of the side: not a body TDM had turned to face the way it went).
+// Turn events (kTurnRightToLeftEvent and the others): the player only, from the movement input. A way is the input
+// pointing right, left, forward or back (past 0.7 that way, under 0.4 across). The event goes when the opposite way is
+// pressed within kPivotGap of the last frame the first one was held, if on that frame the player ran (run or sprint,
+// not sneaking) at kPivotSpeed or more (kPivotBackSpeed running back) and its Direction was within 45 degrees of the way: right 0.25, left 0.75, back
+// 0.5 (a body TDM had turned to face the way it went reads forward), forward 0 only where back is a backward run (not
+// TDM's directional setting, in which back turns the body around and reads forward too).
 constexpr float kPivotSpeed = 250.0f;   // units/s: running (a test setup runs at 339, walks under about 130)
+constexpr float kPivotBackSpeed = 160.0f;  // units/s: running back (measured 200 running back, 80 walking back)
 constexpr float kPivotGap = 0.15f;      // seconds between letting go of one side and pressing the other
 constexpr float kPivotCooldown = 0.4f;  // seconds
+enum Way : int { kNoWay, kRight, kLeft, kForward, kBack };
+constexpr Way OppositeWay(Way w) {
+    return w == kRight ? kLeft : w == kLeft ? kRight : w == kForward ? kBack : w == kBack ? kForward : kNoWay;
+}
 struct Pivot {
-    int side = 0;        // the last side held: 1 right, -1 left
+    Way way = kNoWay;    // the last way held
     float since = 1e9f;  // seconds since it was last held
-    bool ready = false;  // on that frame: running, fast, sideways that way
+    bool ready = false;  // on that frame: running, fast, moving that way without facing it
     float cooldown = 0.0f;
 };
 Pivot g_pivot;  // the player's, on its update
 void PivotStep(RE::Actor* player, float delta) {
     static const RE::BSFixedString speedName{"Speed"}, directionName{"Direction"};
-    static const RE::BSFixedString rightToLeft{kTurnRightToLeftEvent}, leftToRight{kTurnLeftToRightEvent};
+    // The event for leaving each way (index: Way), as the name it is logged by.
+    static const char* const names[] = {nullptr, kTurnRightToLeftEvent, kTurnLeftToRightEvent, kTurnForwardToBackEvent,
+        kTurnBackToForwardEvent};
+    static const RE::BSFixedString events[] = {RE::BSFixedString{}, RE::BSFixedString{names[1]},
+        RE::BSFixedString{names[2]}, RE::BSFixedString{names[3]}, RE::BSFixedString{names[4]}};
+    static constexpr float facing[] = {0.0f, 0.25f, 0.75f, 0.0f, 0.5f};  // the Direction of a run that way
     auto* controls = RE::PlayerControls::GetSingleton();
     if (!controls) return;
     const float x = controls->data.moveInputVec.x, y = controls->data.moveInputVec.y;
-    const int side = std::fabs(y) < 0.4f ? (x > 0.7f ? 1 : x < -0.7f ? -1 : 0) : 0;
+    const Way way = std::fabs(y) < 0.4f ? (x > 0.7f ? kRight : x < -0.7f ? kLeft : kNoWay)
+                    : std::fabs(x) < 0.4f ? (y > 0.7f ? kForward : y < -0.7f ? kBack : kNoWay)
+                                          : kNoWay;
     auto& p = g_pivot;
     p.cooldown = std::max(0.0f, p.cooldown - delta);
-    if (side == 0) {
+    if (way == kNoWay) {
         p.since += delta;
         return;
     }
-    if (side == -p.side && p.since <= kPivotGap && p.ready && p.cooldown <= 0.0f) {
-        const bool accepted = player->NotifyAnimationGraph(p.side > 0 ? rightToLeft : leftToRight);
-        logger::info("[Locomotion] turn event {} (graph accepted {})",
-            p.side > 0 ? kTurnRightToLeftEvent : kTurnLeftToRightEvent, accepted);
+    if (way == OppositeWay(p.way) && p.since <= kPivotGap && p.ready && p.cooldown <= 0.0f) {
+        const bool accepted = player->NotifyAnimationGraph(events[p.way]);
+        logger::info("[Locomotion] turn event {} (graph accepted {})", names[p.way], accepted);
         p.cooldown = kPivotCooldown;
     }
     float speed = 0.0f, direction = -1.0f;
@@ -107,9 +121,12 @@ void PivotStep(RE::Actor* player, float delta) {
     player->GetGraphVariableFloat(directionName, direction);
     const auto* state = player->AsActorState();
     const bool running = state && (state->actorState1.running || state->IsSprinting()) && !player->IsSneaking();
-    p.ready =
-        running && speed >= kPivotSpeed && direction >= 0.0f && Apart(direction, side > 0 ? 0.25f : 0.75f) <= 0.125f;
-    p.side = side;
+    // Running forward reads forward in TDM's directional setting too, where back turns the body around.
+    const bool backRuns =
+        way != kForward || TdmMovement::Current(state && state->IsWeaponDrawn()) != TdmMovement::Mode::kDirectional;
+    p.ready = running && backRuns && speed >= (way == kBack ? kPivotBackSpeed : kPivotSpeed) && direction >= 0.0f &&
+              Apart(direction, facing[way]) <= 0.125f;
+    p.way = way;
     p.since = 0.0f;
 }
 // The direction a graph takes this frame on its way from `held` to `next`. Only the actor's active graph: the events
