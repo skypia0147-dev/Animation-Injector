@@ -5,6 +5,7 @@
 #include "core/AnimationLimit.h"
 #include "core/AnimationBindingWithTriggers.h"
 #include "core/ClipHooks.h"
+#include "core/OwnLocomotion.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/PairedRig.h"
 #include "Settings.h"
@@ -592,10 +593,22 @@ void Install() {
     const auto& settings = FrameworkSettings::Get();
     if (!settings.injectState) return;
     std::vector<OrdinaryClip> ordinary;
+    // The files of the own locomotion trees (<Tree use="own">), whatever bOrdinary says and before the action files
+    // (a budget reaches them last): a looping clip whose file is not resident plays nothing for the whole of its
+    // first activation, so the first walk or run in each direction slid in a still pose until the actor stopped
+    // (11-20, the unarmed files; the file was there on the clip's next activation).
+    for (const auto& file : OwnLocomotion::Files())
+        ordinary.push_back({file, "AI_Tree" + std::to_string(ordinary.size()) + "_Preload", View::kThird});
+    // The part actions' files (body=, core/UpperLayer.h), likewise always: a part clip activates when its layer's weight
+    // rises from 0, and a file not resident then would show a still pose for the whole play.
+    for (int a = 0; a < Actions::Count(); ++a)
+        if (const auto& spec = Actions::Spec(a); spec.Part() && !spec.clips.empty())
+            ordinary.push_back(
+                {spec.clips.front().file, "AI_Part" + std::to_string(ordinary.size()) + "_Preload", View::kThird});
     if (settings.preloadOrdinary)
         for (int a = 0; a < Actions::Count(); ++a) {
             const auto& spec = Actions::Spec(a);
-            if (spec.paired.enabled || spec.CreatureAction()) continue;
+            if (spec.paired.enabled || spec.CreatureAction() || spec.Part()) continue;  // parts: above
             for (const auto& clip : spec.clips)
                 ordinary.push_back({clip.file, clip.clipName + "_Preload", spec.view.view});
         }

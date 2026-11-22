@@ -59,6 +59,7 @@ void FrameworkSettings::Load() {
     ragdollTrace = ini.Bool(L"Debug", L"bRagdollTrace", false);
     headingWatch = ini.Bool(L"Debug", L"bHeadingWatch", true);
     nodeIdRenumber = ini.Bool(L"Compatibility", L"bNodeIdRenumber", true);
+    ladderToggleKey = std::clamp(ini.Int(L"Debug", L"iLadderToggleKey", 0), 0, 255);
     nodeIdStressNodes = std::clamp(ini.Int(L"Debug", L"iNodeIdStressNodes", 0), 0, 200000);
     nodeIdStressMachineEvery = std::clamp(ini.Int(L"Debug", L"iNodeIdStressMachineEvery", 8), 1, 64);
     logger::info("[RagdollTrace] enabled={}", ragdollTrace);
@@ -207,7 +208,7 @@ std::string Lower(std::string text) {
     return text;
 }
 bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out, std::vector<EventRuleSpec>* a_events,
-    LoadedNames* a_names) {
+    LoadedNames* a_names, LocomotionSpec* a_locomotion = nullptr, bool a_locomotionFile = true) {
     const auto file = PathText(a_file);
     pugi::xml_document doc;
     const auto res = doc.load_file(a_file.c_str());
@@ -223,6 +224,7 @@ bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out
     // partially loaded file would leave dangling references.
     std::vector<ActionSpec> parsed;
     std::vector<EventRuleSpec> events;
+    LocomotionSpec locomotion;
     std::string mod, error;
     // The set's id names its actions in the runtime (XmlV2::Compile): two mods' actions never meet. A second file
     // with the same id (two mods that kept the editor's default, or one mod installed twice) gets <id>_2, <id>_3, ...:
@@ -236,9 +238,24 @@ bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out
                          "다룹니다",
                 file, base, a_names->sets.at(Lower(base)), qualifier);
     }
-    if (!XmlV2::Compile(doc, file, parsed, events, mod, error, ResolveKeyName, qualifier)) {
+    if (!XmlV2::Compile(doc, file, parsed, events, locomotion, mod, error, ResolveKeyName, qualifier)) {
         logger::error("[Decl:v2] {}: {} — entire file skipped", file, error);
         return false;
+    }
+    // The locomotion file (runtime/LadderSpec.h kLocomotionFile) holds the locomotion and nothing else; no other
+    // file's <Locomotion> is used.
+    const bool declaresLocomotion = !locomotion.Empty();
+    if (a_locomotion && a_locomotionFile && declaresLocomotion && (!parsed.empty() || !events.empty())) {
+        logger::error("[Decl] {}: 이동 사다리 파일(Locomotion\\Locomotion.xml)에는 <Locomotion>만 둡니다 — entire file "
+                      "skipped",
+            file);
+        return false;
+    }
+    if (a_locomotion && !a_locomotionFile && declaresLocomotion) {
+        logger::warn("[Decl] {}: 이동 사다리는 Locomotion\\Locomotion.xml 한 파일에서만 읽습니다 — 이 파일의 "
+                     "<Locomotion>은 쓰지 않습니다",
+            file);
+        locomotion = {};
     }
     if (a_names) {
         // Qualified ids still meet only through underscores (set A_B's C and set A's B_C): the later file is not
@@ -253,11 +270,16 @@ bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out
         for (const auto& spec : parsed) a_names->actions.insert(Lower(spec.id));
     }
     logger::info("[Decl:v2] {}: validated", file);
-    logger::info("[Decl] {} (mod '{}'): 액션 {}개, 이벤트 등록 {}개", file, mod, parsed.size(), events.size());
+    logger::info("[Decl] {} (mod '{}'): 액션 {}개, 이벤트 등록 {}개, 이동 선언 {}", file, mod, parsed.size(),
+        events.size(), locomotion.declared ? "있음" : "없음");
     a_out.insert(a_out.end(), std::make_move_iterator(parsed.begin()), std::make_move_iterator(parsed.end()));
     if (a_events)
         a_events->insert(
             a_events->end(), std::make_move_iterator(events.begin()), std::make_move_iterator(events.end()));
+    if (a_locomotion && a_locomotionFile && declaresLocomotion) {
+        logger::info("[Decl] 이동 사다리: {} (mod '{}')", file, mod);
+        *a_locomotion = std::move(locomotion);
+    }
     return true;
 }
 }
@@ -276,12 +298,17 @@ bool LoadXmlFile(
     const std::filesystem::path& file, std::vector<ActionSpec>& output, std::vector<EventRuleSpec>& events) {
     return FromXml(file, output, &events, nullptr);
 }
-
-std::vector<ActionSpec> LoadAll(std::vector<EventRuleSpec>* events) {
-    return LoadAllFrom(std::filesystem::current_path() / "Data/SKSE/Plugins/AnimationInjector", events);
+bool LoadXmlFile(const std::filesystem::path& file, std::vector<ActionSpec>& output, std::vector<EventRuleSpec>& events,
+    LocomotionSpec& locomotion) {
+    return FromXml(file, output, &events, nullptr, &locomotion);
 }
 
-std::vector<ActionSpec> LoadAllFrom(const std::filesystem::path& root, std::vector<EventRuleSpec>* events) {
+std::vector<ActionSpec> LoadAll(std::vector<EventRuleSpec>* events, LocomotionSpec* locomotion) {
+    return LoadAllFrom(std::filesystem::current_path() / "Data/SKSE/Plugins/AnimationInjector", events, locomotion);
+}
+
+std::vector<ActionSpec> LoadAllFrom(
+    const std::filesystem::path& root, std::vector<EventRuleSpec>* events, LocomotionSpec* locomotion) {
     std::vector<ActionSpec> out;
     std::error_code ec;
     if (!std::filesystem::is_directory(root, ec)) {
@@ -299,7 +326,12 @@ std::vector<ActionSpec> LoadAllFrom(const std::filesystem::path& root, std::vect
     std::sort(xmls.begin(), xmls.end());
     // Each file's actions under its set's id, unique across the files: no file replaces another's action.
     LoadedNames names;
-    for (const auto& f : xmls) FromXml(f, out, events, &names);
+    // The locomotion file: <root>\Locomotion\Locomotion.xml, names ignoring case.
+    const auto locomotionFile = [](const std::filesystem::path& f) {
+        return _wcsicmp(f.filename().c_str(), std::wstring(kLocomotionFile).c_str()) == 0 &&
+               _wcsicmp(f.parent_path().filename().c_str(), std::wstring(kLocomotionFolder).c_str()) == 0;
+    };
+    for (const auto& f : xmls) FromXml(f, out, events, &names, locomotion, locomotionFile(f));
     // The per-action summary is only logged at debug; its strings are not built otherwise.
     for (const auto& s : out) {
         if (!FrameworkSettings::Get().debug) break;

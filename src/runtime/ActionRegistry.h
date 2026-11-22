@@ -2,6 +2,7 @@
 #include "runtime/ConditionValues.h"
 #include "PCH.h"
 #include "runtime/ActionSpec.h"
+#include "runtime/LadderSpec.h"
 #include "runtime/TdmMovement.h"
 
 // 로드된 액션 선언과 실행기의 목록. 1층(삽입·훅)과 3층(실행기)이 여기서 서로를 찾는다.
@@ -103,7 +104,14 @@ const std::vector<std::string>& AllEventNames();
 // The event registry's names (and "name|value" spellings) alone: every graph of an action project gets
 // them, not only the graphs an action is injected into.
 const std::vector<std::string>& RegistryEventNames();
+// The locomotion file's <Locomotion>, Locomotion\Locomotion.xml (runtime/LadderSpec.h, core/LocomotionSplit.h).
+const LocomotionSpec& Locomotion();
 bool AnyActive();  // 플레이어 실행기 중 Idle 이 아닌 것
+// Main thread: any full-body runner of this actor (player or NPC) is not idle.
+bool Busy(RE::Actor* actor);
+// Main thread: a full-body runner of this actor plays (kActive) other than the one of action `except`. One leaving (its
+// exit sent, blending out) does not count: a part action may start over its exit (runtime/PartRunner.h).
+bool BusyActive(RE::Actor* actor, int except = -1);
 // Main thread: an action of this actor has its Rotate window open, so a bAllowRotation true is still wanted. Anything
 // that saw a true and later restores it gives it back only then: an actor back in locomotion walks only with it false.
 bool RotationWindowOpen(RE::Actor* actor);

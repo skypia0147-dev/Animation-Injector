@@ -173,6 +173,12 @@ inline std::optional<Parsed> Parse(std::string_view payload) {
         f.text = v[2];
     } else if (same(name, "CancelPair"))
         ok = plain(EventOp::kCancel, 0);
+    else if (same(name, "GripHold"))
+        ok = plain(EventOp::kGripHold, 2) && ParseGrip(kGripHands, v[1], f.gripHand) &&
+             ParseGrip(kGripViews, v[2], f.gripView);
+    else if (same(name, "GripRelease"))
+        ok = plain(EventOp::kGripRelease, 2) && ParseGrip(kGripHands, v[1], f.gripHand) &&
+             ParseGrip(kGripViews, v[2], f.gripView);
     if (!ok) return std::nullopt;
     return f;
 }

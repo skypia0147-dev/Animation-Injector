@@ -2,6 +2,7 @@
 #include "runtime/DirectLinkRetirement.h"
 #include "core/PairRootRuntime.h"
 #include "runtime/HeldKeys.h"
+#include "runtime/PartRunner.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -829,6 +830,40 @@ int main() {
         frames(0.02f);
         assert(runners[1][1].starts == 1);
         HeldKeys::Get().Reset();
+    }
+    {
+        // Part actions (body=, 11-20 charge): a part source hands a full-body destination its start and blends out
+        // over that action's enter blend; a full-body source exits for a part destination; a part's ending
+        // transition and a part destination go to PartRunner, never a runner of the part action.
+        const auto partSetup = [](bool sourcePart, bool targetPart) {
+            Setup("", false);
+            PartRunner::calls = {};
+            specs[0].part = sourcePart;
+            specs[1].part = targetPart;
+            specs[1].enterBlend = 0.4f;
+            runners[1][0].state = ActionRunner::State::kActive;
+        };
+        partSetup(true, false);
+        Press();
+        assert(runners[1][1].starts == 1 && runners[1][0].exits == 0);
+        assert(PartRunner::calls.ends == 1 && PartRunner::calls.endAction == 0 && PartRunner::calls.endBlend == 0.4f);
+        partSetup(false, true);
+        Press();
+        assert(runners[1][0].exits == 1 && runners[1][1].starts == 0);
+        assert(PartRunner::calls.links == 1 && PartRunner::calls.linkSource == 0 && PartRunner::calls.linkTarget == 1);
+        partSetup(false, true);
+        PartRunner::calls.allow = false;  // the part layer refuses: the full-body source plays on
+        Press();
+        assert(runners[1][0].exits == 0 && PartRunner::calls.links == 0);
+        partSetup(true, true);
+        Press();
+        assert(PartRunner::calls.links == 1 && runners[1][0].exits == 0 && runners[1][1].starts == 0);
+        partSetup(true, false);
+        specs[0].links[0] = {};
+        specs[0].links[0].key = 9;
+        specs[0].links[0].end = true;
+        Press();
+        assert(PartRunner::calls.ends == 1 && runners[1][0].exits == 0);
     }
     std::cout << "Production ActionLinks scenarios passed\n";
 }

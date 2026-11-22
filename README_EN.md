@@ -1,6 +1,6 @@
 # Animation Injector
 
-**Version 1.0.8** · [한국어](README.md)
+**Version 1.0.9** · [한국어](README.md)
 
 Adding a new animation usually means patching the behavior graph with a tool such as Nemesis or Pandora. Animation Injector is an SKSE framework that skips that step.
 
@@ -44,6 +44,9 @@ Action mods combine these features into actions.
 | Carrying | Lift someone, carry them and put them down. How a target swinging under physics moves is set per lift action by a ragdoll file beside the XML (vanilla without one) |
 | QTE | Six kinds: timing, rapid presses, hold and release, key sequences and more. Each result can lead to a different action |
 | View | Third- and first-person actions and pairs; switching from first to third person to play one |
+| Body parts | Play on the upper body or one arm while moving. The upper body keeps the clip's pose whatever the legs' tilt and sway, and the whole clip plays while standing. Works with charges and transitions |
+| Grip hold | Keep the weapon in a hand where it is at that moment after the action ends (right, left or both hands; third or first person). Sheathing or changing equipment lets go |
+| Walk and run | One file, `Locomotion\Locomotion.xml`: each direction plays its walk or its run alone, at the actor's real speed (less foot sliding). Two-handed axes and hammers and unarmed get locomotion trees of their own. Switching sides while running sideways sends a turn event (`AI_Turn_RightToLeft`, `AI_Turn_LeftToRight`) to play a turn action |
 
 Pairs and carrying work in third person only.
 
@@ -107,4 +110,4 @@ If the game closes before the main menu with no crash log, launch it once more a
 
 ## License
 
-GNU General Public License 3.0 (`LICENSE`). Where to find the source code, and the commit this download was built from, is in `SOURCE.txt`. The licenses of the libraries it uses are in `licenses/`.
+GNU General Public License 3.0 (`LICENSE`). Where to find the source code, and the commit this download was built from, is in `SOURCE.txt`. The licenses of the libraries it uses are in `THIRD_PARTY_NOTICES.txt`.

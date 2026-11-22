@@ -14,4 +14,22 @@ bool Registered();
 // 클립 활성 때 실제 애니 길이를 모션 블록 duration 에 기록
 void SetClipDuration(const char* a_clipName, float a_seconds);
 
+// A copy of a vanilla clip under a new name (core/LocomotionSplit): in every character project the copy gets the source's
+// motion block (the same bound data index, so the same root motion), its playback field × rate, and its annotations.
+// A source the project does not have gives no copy there (logged once).
+struct ClipCopy {
+    std::string source;
+    std::string copy;
+    float rate = 1.0f;
+    // false: the copy gets the motion but none of the source's annotations (a clip whose own file carries them:
+    // core/OwnLocomotion's clips).
+    bool annotations = true;
+};
+// Queues the copies (one per copy name; a later request for a name already queued is ignored) and registers them in
+// the character projects loaded now; TryRegister registers them in projects that load later. Any thread.
+void QueueCopies(std::vector<ClipCopy> a_copies);
+// The clip's ground speed in the first character project that has it: its motion block's last translation key over
+// its duration (the file's own root travel). 0 when the clip is not registered or has no motion block.
+float ClipSpeed(const char* a_clip);
+
 }  // namespace AnimationInjector::AnimData

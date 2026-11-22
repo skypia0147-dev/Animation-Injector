@@ -2,6 +2,8 @@
 #include "runtime/ActionSpec.h"
 #include "runtime/PairedRig.h"
 #include "runtime/CarrySpec.h"
+#include "runtime/LadderSpec.h"
+#include "runtime/BodyPart.h"
 #include "ConditionFlowXml.h"
 #include "Cards.h"
 #include <algorithm>
@@ -240,7 +242,8 @@ const std::pair<std::string_view, EventOp> kOps[] = {{"hide", EventOp::kHide}, {
     {"iframeOff", EventOp::kIFrameOff}, {"armorOn", EventOp::kArmorOn}, {"armorOff", EventOp::kArmorOff},
     {"rotateOn", EventOp::kRotateOn}, {"rotateOff", EventOp::kRotateOff}, {"cancel", EventOp::kCancel},
     {"fireArrow", EventOp::kFireArrow}, {"ragdoll", EventOp::kRagdoll}, {"strike", EventOp::kStrike},
-    {"sound", EventOp::kSound}, {"globalSet", EventOp::kGlobalSet}, {"modEvent", EventOp::kModEvent}};
+    {"sound", EventOp::kSound}, {"globalSet", EventOp::kGlobalSet}, {"modEvent", EventOp::kModEvent},
+    {"gripHold", EventOp::kGripHold}, {"gripRelease", EventOp::kGripRelease}};
 // <Do op="magic" action> (11-01): one function for a spell, the action says what it does.
 const std::pair<std::string_view, EventOp> kMagicActions[] = {
     {"cast", EventOp::kMagicCast}, {"add", EventOp::kMagicAdd}, {"remove", EventOp::kMagicRemove}};
@@ -347,6 +350,8 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
             if (e.attribute(n))
                 fail(e, std::string(n) +
                             ": <EventValues>에는 수치만 씁니다(0.12.281). 마법·래그돌 방향은 이벤트 등록에서 정합니다");
+        if (e.attribute("view") || (e.attribute("hand") && get(e, "op").starts_with("grip")))
+            fail(e, "잡기의 손(hand)·시점(view)은 이벤트 등록에서 정합니다");
         for (const char* n : kStrikeKinds)
             if (e.attribute(n))
                 fail(e, std::string(n) + ": 타격의 대상·방식(pick·hit·hand·block)은 이벤트 등록에서 정합니다");
@@ -365,15 +370,15 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
         shape(e, {"at", "op", "action", "target", "plugin", "form", "delay", "stamina", "magicka", "health", "strength",
                      "duration", "factor", "damage", "direction", "force", "pick", "hit", "hand", "block", "ratio",
                      "amount", "radius", "angle", "up", "down", "edge", "reaction", "without", "file", "bone", "volume",
-                     "value", "restore", "name", "text", "number", "measure", "ease"});
+                     "value", "restore", "name", "text", "number", "measure", "ease", "view"});
     else if (use == DoUse::kRegistry)
         shape(e, {"op", "action", "plugin", "form", "direction", "pick", "hit", "hand", "block", "reaction", "without",
-                     "file", "bone", "restore", "name", "text", "measure", "duration"});
+                     "file", "bone", "restore", "name", "text", "measure", "duration", "view"});
     const auto op = required(e, "op");
     choice(e, "op",
         {"hide", "show", "magic", "cost", "shake", "stopVelocity", "timeOn", "timeOff", "iframeOn", "iframeOff",
             "armorOn", "armorOff", "rotateOn", "rotateOff", "cancel", "fireArrow", "ragdoll", "strike", "sound",
-            "globalSet", "modEvent"});
+            "globalSet", "modEvent", "gripHold", "gripRelease"});
     choice(e, "action", {"cast", "add", "remove"});
     if (op == "magic")
         required(e, "action");
@@ -448,10 +453,20 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
         if (use != DoUse::kValues && get(e, "name").empty()) fail(e, "modEvent에는 name이 필요합니다");
     } else if (e.attribute("name") || e.attribute("text") || e.attribute("number"))
         fail(e, "name·text·number는 modEvent에서만 씁니다");
+    // A hold of a hand's attachment bone (1.0.9): which hands (required where the registry or a clip time says what
+    // it acts with) and which views (default third person). A release lets go at once.
+    const bool grip = op == "gripHold" || op == "gripRelease";
+    if (grip) {
+        if (use != DoUse::kValues) required(e, "hand");
+        choice(e, "hand", {"right", "left", "both"});
+        choice(e, "view", {"third", "first", "both"});
+    } else if (e.attribute("view"))
+        fail(e, "view는 gripHold·gripRelease에서만 씁니다");
     if (op != "strike")
         for (const char* n : {"pick", "hit", "hand", "block", "ratio", "amount", "radius", "angle", "up", "down",
                  "edge", "reaction", "without"})
-            if (e.attribute(n)) fail(e, std::string(n) + "는 strike(타격)에서만 씁니다");
+            if (e.attribute(n) && !(grip && std::string_view(n) == "hand"))
+                fail(e, std::string(n) + "는 strike(타격)에서만 씁니다");
     auto number = [](pugi::xml_attribute attr, float fallback, float maximum) {
         const float value = attr.as_float(fallback);
         return std::isfinite(value) ? std::clamp(value, 0.0f, maximum) : fallback;
@@ -481,6 +496,10 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
         const float value = e.attribute("value").as_float(0.0f);
         f.value = std::isfinite(value) ? value : 0.0f;
         f.restore = get(e, "restore") == "end";
+    }
+    if (grip) {
+        ParseGrip(kGripHands, get(e, "hand", "right"), f.gripHand);
+        ParseGrip(kGripViews, get(e, "view", "third"), f.gripView);
     }
     if (op == "modEvent") {
         f.name = get(e, "name");
@@ -557,7 +576,8 @@ struct Compiler {
     std::set<std::string> singleActions;
     std::map<std::string, PairedRig::Kind> actionRigs;  // an Action's rig (creature actions, 11-05), a Pair's initiator
     std::set<std::string> putdownActions;               // Actions a Carry names as its putdown
-    View fileView = View::kThird;                       // <AnimationSet view> (runtime/ViewSpec.h)
+    std::set<std::string> partActions;  // Actions with body= (runtime/BodyPart.h): no pair, QTE or partner goes to one
+    View fileView = View::kThird;       // <AnimationSet view> (runtime/ViewSpec.h)
     std::map<std::string, InputInfo> inputs;
     std::set<std::string> actionIds, inputIds;
     std::vector<std::string> declared;  // every Action/Pair id in document order
@@ -849,11 +869,16 @@ struct Compiler {
                 }
             } else if (r.attribute("to")) {
                 actionRef(r, "to");
+                if (partActions.contains(get(r, "to")))
+                    fail(r, "QTE 결과로는 부위 동작(body)으로 갈 수 없습니다: " + get(r, "to"));
                 if (r.attribute("recipient")) fail(r, "transition recipient is fixed to the initiator");
                 if (r.attribute("partnerTo")) {
                     actionRef(r, "partnerTo");
                     if (!pair || actions.at(get(r, "to")) == "pair" || actions.at(get(r, "partnerTo")) == "pair")
                         fail(r, "partnerTo requires pair to two ordinary actions");
+                    if (partActions.contains(get(r, "partnerTo")))
+                        fail(r,
+                            "페어 상대(partnerTo)의 동작으로 부위 동작(body)은 쓰지 않습니다: " + get(r, "partnerTo"));
                 }
                 // The result sends this event; a connection on it starts the destination.
                 const auto event = "AI_" + global(get(owner, "id")) + "_QTE_" + id + "_" + name;
@@ -978,7 +1003,7 @@ struct Compiler {
                         "일반 동작의 시각 기능은 그 동작을 재생하는 액터에게 적용됩니다: target·from을 쓰지 않습니다");
                 const auto op = get(d, "op");
                 if (!op.empty() && !has({"hide", "show", "magic", "shake", "stopVelocity", "ragdoll", "strike", "sound",
-                                            "globalSet", "modEvent", "fireArrow"},
+                                            "globalSet", "modEvent", "fireArrow", "gripHold", "gripRelease"},
                                        op))
                     fail(d,
                         "일반 동작의 시각 기능이 아닙니다: " + op +
@@ -999,7 +1024,7 @@ struct Compiler {
         const bool pair = std::string_view(n.name()) == "Pair";
         shape(n,
             {"id", "clip", "view", "otherView", "air", "attack", "enter", "block", "safety", "lostBlend", "reorient",
-                "interruptOnHit", "loop", "maxHold", "rig"},
+                "interruptOnHit", "loop", "maxHold", "rig", "body"},
             {"Exit", "Rotate", "IFrame", "HyperArmor", "TimeScale", "Cost", "MoveCancel", "Transition", "FindPartner",
                 "Carry", "QTE", "CarryRelease", "EventValues", "Do", "Camera"});
         if (!pair) {
@@ -1008,6 +1033,33 @@ struct Compiler {
             if (n.child("FindPartner") || n.child("Carry")) fail(n, "액션 종류에 맞지 않는 요소입니다");
         }
         // Only the putdown Action a Carry names; the Carry checks that it has this slot.
+        // A part action (body=, runtime/BodyPart.h): the upper body or one arm over the locomotion, third person,
+        // never a state of the root machine. What it may declare is listed in BodyPart.h.
+        if (n.attribute("body")) {
+            const auto part = ParseBodyPart(get(n, "body"));
+            if (!part) fail(n, "body는 upper, rightArm, leftArm 중 하나입니다: " + get(n, "body"));
+            if (pair) fail(n, "body는 일반 동작(Action)에만 씁니다");
+            if (n.attribute("rig") && PairedRig::FromName(get(n, "rig")) != PairedRig::Kind::kCharacter)
+                fail(n, "body는 사람(character) 동작에만 씁니다");
+            if (putdownActions.contains(get(n, "id"))) fail(n, "운반의 내려놓기 동작에는 body를 쓰지 않습니다");
+            if (n.attribute("view") && get(n, "view") != "third")
+                fail(n, "부위 동작(body)은 3인칭(view=\"third\")으로만 재생됩니다");
+            for (const char* attr : {"otherView", "air", "attack", "block"})
+                if (n.attribute(attr)) fail(n, std::string("부위 동작(body)에는 ") + attr + "를 쓰지 않습니다");
+            for (const char* child :
+                {"Rotate", "IFrame", "HyperArmor", "TimeScale", "Cost", "MoveCancel", "QTE", "Camera", "CarryRelease"})
+                if (auto c = n.child(child))
+                    fail(c, std::string("부위 동작(body)에는 <") + child + ">를 쓰지 않습니다");
+            // Its transitions are a full-body action's (charge 11-20: start, hold and release each on its own part),
+            // but it plays while moving: a movement key's press is not a transition of it.
+            for (auto t : n.children("Transition")) {
+                if (get(t, "on") == "move")
+                    fail(t, "부위 동작(body)은 이동하면서 재생되므로 이동 전환(on=\"move\")을 쓰지 않습니다");
+                if (t.attribute("blend"))
+                    fail(t,
+                        "부위 동작(body)의 전환에는 blend를 쓰지 않습니다(도착 동작의 들어가기 블렌드로 이어집니다)");
+            }
+        }
         if (auto r = one(n, "CarryRelease"); r && !putdownActions.contains(get(n, "id")))
             fail(r, "CarryRelease는 운반(Carry)의 putdown이 가리키는 Action에만 씁니다");
         if (pair && (n.child("Rotate") || n.child("IFrame") || n.child("HyperArmor") || n.child("TimeScale") ||
@@ -1064,6 +1116,10 @@ struct Compiler {
             if (pair && s.view.view == View::kFirst) fail(n, "otherView는 1인칭 페어에 쓰지 않습니다");
             s.view.otherView = *start;
         }
+        if (n.attribute("body")) {
+            s.body = *ParseBodyPart(get(n, "body"));
+            s.view.view = View::kThird;
+        }
         {
             auto f = required(n, "clip");
             clip(n, f);
@@ -1079,6 +1135,13 @@ struct Compiler {
             if (pair || putdownActions.contains(s.id)) fail(n, "반복(loop)은 일반 동작에만 씁니다");
             num(n, "maxHold", 600, 0.1);
             s.loop.maxHold = n.attribute("maxHold").as_float(s.loop.maxHold);
+            // A part loop plays on until it is ended (crossed arms): maxHold only when written, or by default (3 s)
+            // when a charge's release goes from it (on="release").
+            if (s.Part() && !n.attribute("maxHold")) {
+                bool release = false;
+                for (auto t : n.children("Transition")) release |= get(t, "on") == "release";
+                if (!release) s.loop.maxHold = 0.0f;
+            }
         }
         // Every root input is declared on every action, without changing its ID.
         for (const auto& [id, info] : inputs)
@@ -1239,6 +1302,14 @@ struct Compiler {
                 } else {
                     actionRef(t, "to");
                     connect.to = get(t, "to");
+                    // A part action (body=) and a full-body one go to each other (charge 11-20); a pair does not.
+                    if (partActions.contains(connect.to) && pair)
+                        fail(t, "페어에서 부위 동작(body)으로는 전환할 수 없습니다: " + connect.to);
+                    if (s.Part() && actions.at(connect.to) == "pair")
+                        fail(t, "부위 동작(body)에서 페어로는 전환할 수 없습니다: " + connect.to);
+                    if (partActions.contains(connect.to) && t.attribute("blend"))
+                        fail(t,
+                            "부위 동작(body)으로 가는 전환에는 blend를 쓰지 않습니다(그 동작의 들어가기 블렌드로 이어집니다)");
                     if (const auto found = actionRigs.find(connect.to);
                         found != actionRigs.end() && !PairedRig::SharesAssets(found->second, s.rig))
                         fail(t, "다른 스켈레톤(rig)의 동작으로는 전환할 수 없습니다: " + connect.to);
@@ -1257,6 +1328,9 @@ struct Compiler {
                                         get(t, "partnerTo"));
                         connect.partner = true;
                         connect.partnerTo = get(t, "partnerTo");
+                        if (partActions.contains(connect.partnerTo))
+                            fail(t, "페어 상대(partnerTo)의 동작으로 부위 동작(body)은 쓰지 않습니다: " +
+                                        connect.partnerTo);
                     }
                 }
                 connect.blend = t.attribute("blend");
@@ -1607,9 +1681,42 @@ std::string triggerName(Node st) {
     for (const unsigned char c : raw) out += std::isalnum(c) ? static_cast<char>(c) : '_';
     return out;
 }
+// <Locomotion><Tree weapon use/><Except set/></Locomotion> (docs/설계-이동사다리-완충칸.md, section 7). One <Tree>
+// per weapon kind, one <Except> per set. An empty <Locomotion/> is every set.
+LocomotionSpec Locomotion(Node locomotion, const std::string& sourceName) {
+    shape(locomotion, {}, {"Tree", "Except"});
+    LocomotionSpec spec;
+    spec.declared = true;
+    spec.sourceName = sourceName;
+    for (auto t : locomotion.children("Tree")) {
+        shape(t, {"weapon", "use"});
+        const auto weapon = ParseTreeWeapon(required(t, "weapon"));
+        if (!weapon) fail(t, "weapon은 2HW 또는 H2H입니다: " + get(t, "weapon"));
+        const auto use = ParseTreeUse(required(t, "use"));
+        if (!use) fail(t, "use는 own 또는 2HM입니다: " + get(t, "use"));
+        if (*use == TreeUse::kShared && !TreeKindOf(*weapon).sharedAllowed)
+            fail(t, "use=\"2HM\"은 weapon=\"2HW\"에만 씁니다");
+        auto& tree = spec.trees[static_cast<std::size_t>(*weapon)];
+        if (tree.use != TreeUse::kVanilla) fail(t, "같은 weapon을 두 번 지정했습니다: " + get(t, "weapon"));
+        tree.use = *use;
+        tree.sourceName = sourceName;
+    }
+    for (auto e : locomotion.children("Except")) {
+        shape(e, {"set"});
+        const auto set = ParseLadderSet(required(e, "set"));
+        if (!set)
+            fail(e,
+                "set은 1HM, 2HM, 2HW, H2H, Bow, CrossBow, Magic, MagicCast, Sheathed, Sneak, Block1HM, Block2HM, Block2HW, BlockH2H, BlockBow, BlockSneak 중 하나입니다: " +
+                    get(e, "set"));
+        auto& excepted = spec.except[static_cast<std::size_t>(*set)];
+        if (excepted) fail(e, "같은 set을 두 번 뺐습니다: " + get(e, "set"));
+        excepted = true;
+    }
+    return spec;
+}
 bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
-    std::vector<EventRuleSpec>& events, std::string& mod, std::string& error, KeyResolver resolveKey,
-    std::string_view qualifier) {
+    std::vector<EventRuleSpec>& events, LocomotionSpec& locomotionOutput, std::string& mod, std::string& error,
+    KeyResolver resolveKey, std::string_view qualifier) {
     error.clear();
     try {
         auto root = source.document_element();
@@ -1619,7 +1726,8 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
         if (roots != 1) fail(root, "루트 요소는 하나여야 합니다");
         if (std::string_view(root.name()) != "AnimationSet") fail(root, "AnimationSet 루트가 필요합니다");
         if (get(root, "version") != "6") fail(root, "형식 6(version=\"6\")만 읽습니다");
-        shape(root, {"version", "id", "view"}, {"Inputs", "EventRegistry", "Start", "Condition", "Action", "Pair"});
+        shape(root, {"version", "id", "view"},
+            {"Inputs", "EventRegistry", "Start", "Condition", "Action", "Pair", "Locomotion"});
         identifier(root, required(root, "id"));
         Compiler c{resolveKey};
         c.qualifier = std::string(qualifier);
@@ -1642,6 +1750,7 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
                 identifier(a, id);
                 if (!c.taken.insert(lower(id)).second) fail(a, "ID 중복: " + id);
                 if (kind == "Action") c.singleActions.insert(id);
+                if (kind == "Action" && a.attribute("body")) c.partActions.insert(id);
                 c.actionRigs[id] =
                     a.attribute("rig") ? PairedRig::FromName(get(a, "rig")) : PairedRig::Kind::kCharacter;
                 if (auto carry = a.child("Carry"); kind == "Pair" && carry.attribute("putdown"))
@@ -1663,6 +1772,8 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
         }
         std::vector<EventRuleSpec> registry;
         if (auto r = one(root, "EventRegistry")) c.registry(r, sourceName, registry);
+        LocomotionSpec locomotion;
+        if (auto l = one(root, "Locomotion")) locomotion = Locomotion(l, sourceName);
         // Ways into each action (T2): starts, transitions, QTE results, card rows and carry putdowns that name it.
         std::map<std::string, int> ways;
         auto count = [&](Node n, const char* attr) {
@@ -1745,12 +1856,15 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
             if (kind.empty()) fail(node, "정의되지 않은 액션: " + to);
             if (kind != "action") fail(node, "이벤트 QTE의 to는 일반 동작만 가리킵니다: " + to);
         }
-        if ((c.declared.empty() && registry.empty()) || actions.size() > 256)
-            fail(root, "1~256개 액션 또는 이벤트 등록이 필요합니다(조건으로 고르는 시작·전환도 하나씩 셉니다)");
+        if ((c.declared.empty() && registry.empty() && locomotion.Empty()) || actions.size() > 256)
+            fail(root,
+                "1~256개 액션, 이벤트 등록 또는 이동 사다리(Locomotion)가 필요합니다(조건으로 고르는 시작·전환도 하나씩 "
+                "셉니다)");
         mod = get(root, "id");
         output.insert(output.end(), std::make_move_iterator(actions.begin()), std::make_move_iterator(actions.end()));
         for (auto& r : registry) c.qualify(r.qtes);
         events.insert(events.end(), std::make_move_iterator(registry.begin()), std::make_move_iterator(registry.end()));
+        locomotionOutput = std::move(locomotion);
         return true;
     } catch (const std::exception& e) {
         error = e.what();
@@ -1761,7 +1875,13 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
 bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
     std::vector<EventRuleSpec>& events, std::string& mod, std::string& error, KeyResolver resolveKey,
     std::string_view qualifier) {
-    return CompileFormat6(source, sourceName, output, events, mod, error, resolveKey, qualifier);
+    LocomotionSpec locomotion;
+    return CompileFormat6(source, sourceName, output, events, locomotion, mod, error, resolveKey, qualifier);
+}
+bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
+    std::vector<EventRuleSpec>& events, LocomotionSpec& locomotion, std::string& mod, std::string& error,
+    KeyResolver resolveKey, std::string_view qualifier) {
+    return CompileFormat6(source, sourceName, output, events, locomotion, mod, error, resolveKey, qualifier);
 }
 bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
     std::string& mod, std::string& error, KeyResolver resolveKey, std::string_view qualifier) {

@@ -3,6 +3,9 @@
 #include "core/AnimDataRegistry.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionSpec.h"
+#include <cstddef>
+#include <mutex>
+#include <set>
 
 namespace AnimationInjector::AnimData {
 
@@ -245,7 +248,104 @@ bool PlaysIn(const ActionSpec& spec, PairedRig::Kind project) {
 }
 }
 
+namespace {
+// ── Ladder clip copies (QueueCopies) ─────────────────────────────────────────
+std::mutex g_copyMutex;
+std::vector<ClipCopy> g_copies;
+std::unordered_set<std::string> g_copyNames;  // queued copy names (ignoring case: lowered)
+std::set<std::pair<const AnimationData*, std::string>> g_copyDone;
+std::string LowerName(std::string_view s) {
+    std::string out(s);
+    for (auto& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return out;
+}
+// One copy in one project. The ClipData is new (annotations are per copy); the motion block is shared.
+void ApplyCopy(AnimationData* ad, const char* project, const ClipCopy& c) {
+    const auto key = std::make_pair(static_cast<const AnimationData*>(ad), LowerName(c.copy));
+    if (!g_copyDone.insert(key).second) return;
+    RE::BSFixedString copyKey{c.copy.c_str()};
+    if (ad->clips.find(copyKey) != ad->clips.end()) return;
+    const auto found = ad->clips.find(RE::BSFixedString{c.source.c_str()});
+    if (found == ad->clips.end() || !Readable(found->second, sizeof(ClipData))) {
+        logger::warn(
+            "[AnimData] {}: '{}' has no animation data; its ladder copy '{}' gets none", project, c.source, c.copy);
+        return;
+    }
+    const ClipData* src = found->second;
+    const std::size_t n = src->numTriggers;
+    if (n && !Readable(src, offsetof(ClipData, triggers) + n * sizeof(ClipTriggerData))) return;
+    std::vector<std::pair<RE::BSFixedString, float>> kept;
+    if (c.annotations)
+        for (std::size_t i = 0; i < n; ++i) kept.emplace_back(src->triggers[i].name, src->triggers[i].time);
+    const std::size_t bytes =
+        offsetof(ClipData, triggers) + std::max<std::size_t>(1, kept.size()) * sizeof(ClipTriggerData);
+    auto* cd = static_cast<ClipData*>(RE::malloc(bytes));
+    if (!cd) return;
+    std::memset(cd, 0, bytes);
+    cd->motionSpeed = src->motionSpeed * c.rate;
+    cd->boundIdx = src->boundIdx;
+    cd->numTriggers = static_cast<std::uint16_t>(kept.size());
+    for (std::size_t i = 0; i < kept.size(); ++i) {
+        new (&cd->triggers[i].name) RE::BSFixedString(kept[i].first);
+        cd->triggers[i].time = kept[i].second;
+    }
+    ad->clips.insert(RE::BSTTuple<RE::BSFixedString, ClipData*>{copyKey, cd});
+    logger::debug("[AnimData] {}: ladder copy '{}' of '{}' (speed {:.3f}, annotations {}/{})", project, c.copy,
+        c.source, cd->motionSpeed, kept.size(), n);
+}
+// Every queued copy in every loaded character project. Caller holds g_copyMutex.
+void ApplyCopiesLocked(const char* a_reason) {
+    if (g_copies.empty()) return;
+    auto* s = FindSingleton();
+    if (!s) return;
+    for (const auto& kv : s->animDatas) {
+        const char* name = kv.first.c_str();
+        if (ProjectRig(name) != PairedRig::Kind::kCharacter || !kv.second) continue;
+        const auto before = kv.second->clips.size();
+        for (const auto& c : g_copies) ApplyCopy(kv.second, name, c);
+        if (kv.second->clips.size() != before)
+            logger::info("[AnimData] ({}) {}: ladder copies registered {} (clips={})", a_reason, name,
+                kv.second->clips.size() - before, kv.second->clips.size());
+    }
+}
+}  // namespace
+
+float ClipSpeed(const char* a_clip) {
+    auto* s = FindSingleton();
+    if (!s || !a_clip) return 0.0f;
+    const RE::BSFixedString key{a_clip};
+    for (const auto& kv : s->animDatas) {
+        if (ProjectRig(kv.first.c_str()) != PairedRig::Kind::kCharacter || !kv.second) continue;
+        auto* ad = kv.second;
+        const auto found = ad->clips.find(key);
+        if (found == ad->clips.end() || !Readable(found->second, sizeof(ClipData))) continue;
+        const auto idx = found->second->boundIdx;
+        if (idx == kNoBound || idx >= ad->boundDatas.size || !ad->boundDatas.data) continue;
+        const auto* c =
+            reinterpret_cast<const Container*>(reinterpret_cast<std::uintptr_t>(ad->boundDatas.data) + idx * kStride);
+        if (!Readable(c, sizeof(Container)) || c->transCount < 1 || c->transCount > 4096 || c->duration <= 0.0f)
+            continue;
+        const auto* keys = reinterpret_cast<const RE::NiPoint3*>(c->transPtr & ~std::uintptr_t(1));
+        if (!Readable(keys, c->transCount * sizeof(RE::NiPoint3))) continue;
+        const auto& last = keys[c->transCount - 1];
+        return std::sqrt(last.x * last.x + last.y * last.y) / c->duration;
+    }
+    return 0.0f;
+}
+
+void QueueCopies(std::vector<ClipCopy> a_copies) {
+    std::lock_guard lock(g_copyMutex);
+    for (auto& c : a_copies)
+        if (g_copyNames.insert(LowerName(c.copy)).second) g_copies.push_back(std::move(c));
+    ApplyCopiesLocked("QueueCopies");
+}
+
 bool TryRegister(const char* a_reason) {
+    {
+        // Ladder copies go into each character project as it loads, with or without actions.
+        std::lock_guard lock(g_copyMutex);
+        ApplyCopiesLocked(a_reason);
+    }
     if (g_registered || Actions::Count() == 0) return g_registered;
     auto* s = FindSingleton();
     if (!s) return false;

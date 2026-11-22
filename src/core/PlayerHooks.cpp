@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "core/FullBodyEntry.h"
+#include "core/LocomotionDrive.h"
 #include "core/PairEntry.h"
 #include "core/PlayerHooks.h"
 #include "runtime/EventHistory.h"
@@ -43,6 +44,9 @@ struct Notify {
             static_cast<RE::Actor*>(a_this);  // Actor 의 IAnimationGraphManagerHolder 부분객체 → 정적 캐스트로 되돌림
         // A recentEvent check hears events sent to the graph too, accepted or not (runtime/EventHistory.h).
         EventHistory::Record(actor, a_event.c_str());
+        // The engine's own locomotion cross blend: the opposite turns leave it alone (core/LocomotionDrive).
+        static const RE::BSFixedString cyclicFreeze{"CyclicFreeze"}, cyclicCrossBlend{"CyclicCrossBlend"};
+        if (a_event == cyclicFreeze || a_event == cyclicCrossBlend) LocomotionDrive::NoteCyclicEvent(actor);
         // Pair diagnostics (engine events around paired scenes); every event of every actor passes here.
         if (spdlog::should_log(spdlog::level::debug) && a_event.c_str() &&
             (std::strncmp(a_event.c_str(), "pa_", 3) == 0 || std::strstr(a_event.c_str(), "Paired") ||

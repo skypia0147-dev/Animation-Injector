@@ -1,4 +1,5 @@
 #pragma once
+#include "runtime/BodyPart.h"
 #include "PCH.h"
 #include "runtime/QteSpec.h"
 #include "runtime/GameControls.h"
@@ -151,6 +152,9 @@ struct ActionSpec {
     std::string id;       // "Dodge"
     std::string localId;  // the id as written in its file, before the file's qualifier: names its ragdoll file
     ViewSpec view;        // the camera view it plays in (runtime/ViewSpec.h); pairs and carries: third
+    // The part of the body it plays on (runtime/BodyPart.h): kWhole, a state of the root machine, or a part layer
+    // over the locomotion (core/UpperLayer.h), run by runtime/PartRunner.h instead of an ActionRunner.
+    BodyPart body = BodyPart::kWhole;
     // Whose graph plays it (11-05): character, or a creature of runtime/PairedRigCatalog.h. A creature action's
     // clip is relative to that creature's actor folder and it is injected into that creature's root machine.
     PairedRig::Kind rig = PairedRig::Kind::kCharacter;
@@ -248,6 +252,7 @@ struct ActionSpec {
     bool SelectsOnly() const { return clips.empty() && !flow.nodes.empty(); }
     // A creature's own action (11-05): not a pair, played in that creature's graph with its clip relative to that
     // creature's actor folder.
+    bool Part() const { return body != BodyPart::kWhole; }
     bool CreatureAction() const { return !paired.enabled && rig != PairedRig::Kind::kCharacter; }
 };
 

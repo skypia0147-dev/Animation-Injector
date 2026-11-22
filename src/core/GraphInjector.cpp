@@ -14,6 +14,9 @@
 #include "runtime/ActionRegistry.h"
 #include "Settings.h"
 #include "core/BoundedNodeSearch.h"
+#include "core/OwnLocomotion.h"
+#include "core/LocomotionSplit.h"
+#include "core/UpperLayer.h"
 #include <atomic>
 #include <bit>
 #include <format>
@@ -298,25 +301,30 @@ int RegisterAnimationFiles(RE::hkbCharacterStringData* strings, const char* stag
     // different indices just because their registration paths differ.
     // Each view's project takes the files of the actions that play in it (runtime/ViewSpec.h); first
     // person never gets a paired state.
-    const auto& files = PairedRig::Equal(strings->name.c_str() ? strings->name.c_str() : "", "FirstPerson")
-                            ? Actions::FirstPersonClipFiles()
-                            : Actions::AllClipFiles(rig);
+    const bool firstPerson = PairedRig::Equal(strings->name.c_str() ? strings->name.c_str() : "", "FirstPerson");
+    const auto& files = firstPerson ? Actions::FirstPersonClipFiles() : Actions::AllClipFiles(rig);
     bool full = false;
-    for (const auto& file : files) {
-        if (FindName(names, file.c_str()) >= 0) continue;
-        if (AnimationTableFull(names, strings->name.c_str())) {
-            full = true;
-            break;
+    const auto append = [&](const std::vector<std::string>& list) {
+        for (const auto& file : list) {
+            if (FindName(names, file.c_str()) >= 0) continue;
+            if (AnimationTableFull(names, strings->name.c_str())) {
+                full = true;
+                return false;
+            }
+            LoadingProgress::Registration loading;
+            if (!AppendName(names, file.c_str())) {
+                loading.Fail();
+                logger::error("[Inject] {} animation registration failed project='{}' file='{}'", stage,
+                    strings->name.c_str() ? strings->name.c_str() : "?", file);
+                return false;
+            }
+            ++added;
         }
-        LoadingProgress::Registration loading;
-        if (!AppendName(names, file.c_str())) {
-            loading.Fail();
-            logger::error("[Inject] {} animation registration failed project='{}' file='{}'", stage,
-                strings->name.c_str() ? strings->name.c_str() : "?", file);
-            break;
-        }
-        ++added;
-    }
+        return true;
+    };
+    // <Tree use="own">: the own trees' locomotion files after the action files, in every third-person character
+    // project (core/OwnLocomotion.h Files()).
+    if (append(files) && !firstPerson && rig == PairedRig::Kind::kCharacter) append(OwnLocomotion::Files());
     const char* project = strings->name.c_str();
     // The loading panel's animation row: the character projects (both views), whose tables the actions fill.
     if (!files.empty() &&
@@ -2195,6 +2203,7 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
         const auto& spec = Actions::Spec(a);
         if (spec.clips.empty()) continue;  // a selecting action has nothing to play (XmlV2, 0.12.244)
         if (spec.CreatureAction()) continue;
+        if (spec.Part()) continue;  // a part action is a clip of a part layer (core/UpperLayer.h), not a state
         if (spec.paired.enabled) {
             // A creature-started pair (11-05 phase 2) gives the character its partner role only, none to a pair
             // between creatures.
@@ -2271,7 +2280,7 @@ HkbSymbolIdMap* SymbolHook(RE::hkbBehaviorGraph* a_master, const RE::BSScrapArra
             thread, a_path ? a_path : "(none)", a_graphs.size(), Actions::Count(), mapsEmpty);
     const auto filesStart = ProfileClock::now();
     int filesAdded = 0;
-    if (Actions::Count() > 0) {
+    if (Actions::Count() > 0 || !OwnLocomotion::Files().empty()) {
         auto* setup = a_character ? a_character->setup.get() : nullptr;
         auto* data = setup ? setup->data.get() : nullptr;
         filesAdded = RegisterAnimationFiles(data ? data->stringData.get() : nullptr, "pre-symbol");
@@ -2372,6 +2381,21 @@ HkbSymbolIdMap* SymbolHook(RE::hkbBehaviorGraph* a_master, const RE::BSScrapArra
             "[InjectProfile] #{} Symbol own filesMs={:.3f} eventsMs={:.3f} statesMs={:.3f} registryMs={:.3f} filesAdded={} eventGraphs={} eventsAdded={} existing={} failed={} registryGraphs={} registryAdded={} forward=begin",
             serial, filesMs, eventsMs, statesMs, registryMs, filesAdded, actionEventGraphs, eventCounts.added,
             eventCounts.existing, eventCounts.failed, registryGraphs, registryCounts.added);
+    // <Locomotion> buffer slots (core/LocomotionSplit.h), after the actions: they keep the node budget first.
+    if (mapsEmpty && eventRig == PairedRig::Kind::kCharacter && !firstPersonPath) {
+        const bool renumbering = NodeIdRenumber::Active();
+        LocomotionSplit::Apply(a_master, a_graphs, a_character, [&](RE::hkbBehaviorGraph* graph, std::size_t nodes) {
+            auto* root = graph ? graph->rootGenerator.get() : nullptr;
+            return root && (renumbering || CountNodes(root) + nodes + kNodeIdsKeptFree <= kNodeIdLimit);
+        });
+        // The part layers (body= actions, core/UpperLayer.h) over everything the root's modifier list covers.
+        UpperLayer::Apply(a_master, a_graphs, a_character, [&](RE::hkbBehaviorGraph* graph, std::size_t nodes) {
+            auto* root = graph ? graph->rootGenerator.get() : nullptr;
+            return root && (renumbering || CountNodes(root) + nodes + kNodeIdsKeptFree <= kNodeIdLimit);
+        });
+    }
+    // Every third-person character project shares that pass's bone mask: its skeleton is checked against it once.
+    if (eventRig == PairedRig::Kind::kCharacter && !firstPersonPath) LocomotionSplit::CheckMask(a_character);
     const auto forwardStart = ProfileClock::now();
     auto* result = _origSymbol(a_master, a_graphs, a_path, a_character, a_ev, a_var);
     const double forwardMs = ElapsedMs(forwardStart);

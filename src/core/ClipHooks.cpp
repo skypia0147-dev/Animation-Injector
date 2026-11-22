@@ -7,6 +7,8 @@
 #include "core/ClipHooks.h"
 #include "core/NodeFactory.h"
 #include "core/GraphInjector.h"
+#include "core/LocomotionDrive.h"
+#include "core/UpperLayer.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/ClipWindows.h"
@@ -98,6 +100,29 @@ struct Activate {
         // Any clip that sends a registered window's on and off events owns that window (11-02).
         if (auto* ac = a_this->animationControl.get(); ac && ac->binding && ac->binding->animation.get())
             ClipWindows::Activated(a_this, ac->binding->animation.get(), ActorForContext(a_ctx));
+        // An own locomotion tree's dedicated file: its own ground speed, read once (core/LocomotionDrive.h). The
+        // "animmotion x y z" annotations are the root's position at their times; the last one over its time is the
+        // speed the file's feet were made for.
+        if (const char* file = a_this->animationName.c_str(); LocomotionDrive::WantsFileSpeed(file))
+            if (auto* ac = a_this->animationControl.get(); ac && ac->binding && ac->binding->animation.get()) {
+                const auto* animation = ac->binding->animation.get();
+                float at = -1.0f, distance = 0.0f;
+                for (const auto& track : animation->annotationTracks)
+                    for (const auto& note : track.annotations) {
+                        const char* text = note.text.c_str();
+                        float x = 0.0f, y = 0.0f, z = 0.0f;
+                        if (text && std::strncmp(text, "animmotion ", 11) == 0 && note.time > at &&
+                            std::sscanf(text + 11, "%f %f %f", &x, &y, &z) >= 2) {
+                            at = note.time;
+                            distance = std::sqrt(x * x + y * y);
+                        }
+                    }
+                const float seconds = at > 0.0f ? at : animation->duration;
+                LocomotionDrive::FileSpeedKnown(file, seconds > 0.0f && distance > 0.0f ? distance / seconds : 0.0f);
+            }
+        // A part layer's clip (body=, core/UpperLayer.h): its length, for the runner's exit time.
+        if (auto* ac = a_this->animationControl.get(); ac && ac->binding && ac->binding->animation.get())
+            UpperLayer::OnClipActivated(a_this, ac->binding->animation->duration);
         if (!ours || Actions::Spec(action).paired.enabled) return;
         float dur = 0.0f;
         bool moves = false;

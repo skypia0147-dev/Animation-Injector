@@ -667,6 +667,54 @@ int main() {
                      "GlobalSet|a.esp|D62|x", "ModEvent||t|1", "Strike", "CancelPair|1", "Nothing"})
                 Check(!Parse(bad), (std::string("refused: '") + bad + "'").c_str());
         }
+        // A hold of a hand's attachment bone (1.0.9): gripHold / gripRelease, their hand, view and blend.
+        {
+            const auto p = Parse("<Action id='R' clip='r.hkx'><Do at='0.6' op='gripHold' hand='left' view='both'/>"
+                                 "</Action><Action id='N' clip='n.hkx'><Do at='0' op='gripRelease' hand='both'/>"
+                                 "<Do at='0.1' op='gripRelease' hand='right' view='first'/></Action>");
+            Check(p.ok && p.actions[0].pairFeatures.timed.size() == 1 && p.actions[1].pairFeatures.timed.size() == 2,
+                "a clip time takes them");
+            if (p.ok) {
+                const auto& hold = p.actions[0].pairFeatures.timed[0].function;
+                const auto& release = p.actions[1].pairFeatures.timed[0].function;
+                const auto& plain = p.actions[1].pairFeatures.timed[1].function;
+                Check(hold.op == EventOp::kGripHold && hold.gripHand == GripHand::kLeft &&
+                          hold.gripView == GripView::kBoth,
+                    "a hold's hand and view");
+                Check(release.op == EventOp::kGripRelease && release.gripHand == GripHand::kBoth &&
+                          release.gripView == GripView::kThird,
+                    "a release's hand; third person when no view is given");
+                Check(plain.gripHand == GripHand::kRight && plain.gripView == GripView::kFirst, "a release's view");
+            }
+            const auto reg = Parse("<EventRegistry><Event name='Grip'><Do op='gripHold' hand='right' view='first'/>"
+                                   "</Event><Event name='Let'><Do op='gripRelease' hand='right'/></Event>"
+                                   "</EventRegistry>");
+            Check(reg.ok && reg.events[0].functions[0].gripView == GripView::kFirst &&
+                      reg.events[1].functions[0].op == EventOp::kGripRelease &&
+                      reg.events[1].functions[0].gripHand == GripHand::kRight,
+                "registered events: their hand and view");
+            for (const char* bad : {"<Action id='A' clip='a.hkx'><Do at='0' op='gripHold'/></Action>",
+                     "<Action id='A' clip='a.hkx'><Do at='0' op='gripHold' hand='middle'/></Action>",
+                     "<Action id='A' clip='a.hkx'><Do at='0' op='gripHold' hand='right' view='side'/></Action>",
+                     "<Action id='A' clip='a.hkx'><Do at='0' op='gripHold' hand='right' blend='0.1'/></Action>",
+                     "<Action id='A' clip='a.hkx'><Do at='0' op='gripRelease' hand='right' blend='0'/></Action>",
+                     "<Action id='A' clip='a.hkx'><Do at='0' op='hide' view='first'/></Action>",
+                     "<EventRegistry><Event name='L'><Do op='gripRelease' hand='right' blend='1'/></Event>"
+                     "</EventRegistry>",
+                     "<Action id='A' clip='a.hkx'><EventValues><Event name='L'><Do op='gripRelease' hand='left'/>"
+                     "</Event></EventValues></Action><EventRegistry><Event name='L'><Do op='gripRelease' "
+                     "hand='left'/></Event></EventRegistry>"})
+                Check(Rejected(bad), (std::string("refused: ") + bad).c_str());
+            using AnnotationCommands::Parse;
+            const auto hold = Parse("GripHold|both|first"), release = Parse("GripRelease|left|both");
+            Check(hold && hold->op == EventOp::kGripHold && hold->gripHand == GripHand::kBoth &&
+                      hold->gripView == GripView::kFirst && release && release->op == EventOp::kGripRelease &&
+                      release->gripHand == GripHand::kLeft && release->gripView == GripView::kBoth,
+                "AI.GripHold|hand|view and AI.GripRelease|hand|view");
+            for (const char* bad : {"GripHold", "GripHold|right", "GripHold|up|third", "GripHold|right|side",
+                     "GripRelease|right", "GripRelease|right|third|0", "GripRelease|up|third"})
+                Check(!Parse(bad), (std::string("refused: '") + bad + "'").c_str());
+        }
         // A window's span on a registered event (11-02): the registry's own, 0~60 seconds, windows only.
         {
             const auto p = Parse("<EventRegistry><Event name='Ghost'><Do op='iframeOn' duration='0.3'/></Event>"

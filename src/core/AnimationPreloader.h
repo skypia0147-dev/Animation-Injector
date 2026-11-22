@@ -24,6 +24,9 @@ namespace AnimationInjector::AnimationPreloader {
 //     file size per project (default 0: no limit, as OAR); files past it load when played, as before
 //     0.12.224. Sizes are read from the loose files once at Install, only when a budget is set; a file not
 //     found on disk (an archive) counts as the average size.
+//   - The files of the own locomotion trees (core/OwnLocomotion.h Files) in the character's third-person
+//     projects: always, before the action files. A looping clip never picks up a file that arrives while it
+//     plays, so the first walk or run on such a file showed a still pose until the actor stopped (11-20).
 // At most 16 files are queued per graph update; the engine reads them one after another. A file waits as long as
 // the engine's queue moves (other requests, such as OAR's preloads, may come first); it times out and is queued
 // again only when neither one of the set's files became ready nor the queue moved for 5 seconds.

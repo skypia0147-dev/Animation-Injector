@@ -204,6 +204,8 @@ A feature applies to the actor that sent the event (the one playing the action).
 | `globalSet` | Change a global's value | `plugin` `form` `restore="end"` (set back when it ends); value `value` |
 | `modEvent` | Send a mod event to Papyrus | `name` `text`; value `number` |
 | `cancel` | End the pair | |
+| `gripHold` | Grip hold: keep the hand's weapon bone (right: Weapon, left: Shield) at its value at this moment, past the end of the action ([Grip hold](#grip-hold)) | `hand="right\|left\|both"`, `view="third\|first\|both"` (default third) |
+| `gripRelease` | End a grip hold (at once) | `hand`, `view` |
 
 A feature that stays on (hiding, invulnerability and such) ends when its pair (`show`, `iframeOff`, ...) comes or when the actions that follow have all ended. But `iframeOn`, `armorOn`, `rotateOn` and `timeOn` turned on by a registered event, while some event is registered with their pair, stay on until that event comes, even after the animation ends (they end on death, ragdoll or a load). But when the HKX that sent the on event also sends the off event later, it works as a range: it ends when the off event comes or when that HKX ends or is cut short. This holds for our actions and for any other mod's or vanilla HKX alike. A registered on function with a `duration` (seconds, 0~60) ends when that time is up; an off event before then ends it then, and it lasts its time even when the HKX ends or is cut short (real seconds for a time scale, game time for the others).
 
@@ -230,8 +232,96 @@ An HKX annotation `AI.Command|value|value` runs a feature at its time with no re
 | `AI.GlobalSet\|plugin\|form\|value` | Change a global's value (not set back) |
 | `AI.ModEvent\|name\|text\|number` | Send a mod event to Papyrus |
 | `AI.CancelPair` | End the pair |
+| `AI.GripHold\|hand\|view` | Grip hold (hand right, left, both; view third, first, both) |
+| `AI.GripRelease\|hand\|view` | End a grip hold |
 
 A strike has no command for its many settings; register it on an event. An on command ends by the rules above; an off command can always be sent, so without one it stays on until death, ragdoll or a load. Commands and registered events are one feature (`AI.IFrameOff` also ends invulnerability a registered event turned on).
+
+## Grip hold
+
+For an action that changes how the weapon is held, such as switching to a reverse grip, and the grip should stay after the action ends (1.0.9 and later). H switches to a reverse grip and keeps it; J goes back to the normal grip.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="MyGrip">
+  <Start key="H" to="Reverse">
+    <Check kind="actorStatus" option="weaponDrawn"/>
+  </Start>
+  <Start key="J" to="Normal">
+    <Check kind="actorStatus" option="weaponDrawn"/>
+  </Start>
+  <Action id="Reverse" clip="Animations\MyGrip\ReverseGrip.hkx">
+    <Do at="0.6" op="gripHold" hand="right"/>
+    <Exit blend="0.2"/>
+  </Action>
+  <Action id="Normal" clip="Animations\MyGrip\NormalGrip.hkx">
+    <Do at="0" op="gripRelease" hand="right"/>
+    <Exit blend="0.2"/>
+  </Action>
+</AnimationSet>
+```
+
+- `gripHold` remembers the weapon bone's position and rotation relative to the hand at that moment (right hand `Weapon`, left hand `Shield`) and keeps that value in every animation that plays afterwards, attacks and part actions included. The body and arms move as the animations say; only the way the weapon is held stays.
+- `gripRelease` lets go at once: from that frame the animation's value shows. Start the release action's first frame in the reverse grip and no seam shows.
+- Released on its own when: the weapon is sheathed, that hand's equipment changes, death, ragdoll, loading a save.
+- `view`: the views it holds in (`third`, `first`, `both`). The value taken in the view the action played in is carried over to the other view, so the hold works in first person even when the action has no first-person HKX.
+- The left hand needs Left Hand Equipment Overhaul 2.0 or later: vanilla's adjustment (`DW_ShieldAdjustment`) overrides the Shield bone. Make left-hand reverse-grip HKX from the reference pose, with an `Adjustment_Additive` annotation at 0 seconds, and an `Adjustment_Off` annotation at the end of the release action. For a left-hand hold carried over to the other view, Animation Injector sends that view `Adjustment_Additive` itself, and `Adjustment_Off` when the hold ends.
+- Also usable as a registered event: `<Event name="…"><Do op="gripHold" hand="right" view="both"/></Event>`. Any HKX that sends that event name runs it, ours or another mod's, vanilla or OAR. The HKX annotation commands are `AI.GripHold|right|third` and `AI.GripRelease|right|third`.
+
+## Upper body or one arm while moving (body)
+
+With `body` an `<Action>` plays on the upper body or one arm only; the legs keep the locomotion, so **the player walks and runs freely while it plays** (drinking a potion, crossed arms, a wave). Third person only.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="WalkingIdles">
+  <Start key="Num1" to="CrossArms"/>
+  <Start key="Num2" to="Wave"/>
+  <Action id="CrossArms" clip="Animations\MyMod\CrossArms.hkx" body="upper" loop="true">
+    <Transition key="Num1" end="true"/>
+  </Action>
+  <Action id="Wave" clip="Animations\MyMod\Wave.hkx" body="rightArm" enter="0.2">
+    <Exit blend="0.4"/>
+  </Action>
+</AnimationSet>
+```
+
+- `body`: `upper` (the spine and everything above it), `rightArm` (the right clavicle to the fingers, the right hand's weapon and AnimObjectR), `leftArm` (the left one, the shield and AnimObjectL). Left out, the action is a full-body action as before.
+- With `upper`, **standing plays the whole HKX** (legs and hips too: the HKX's legs carry its leaning upper body), and **moving, the legs are the locomotion's** while the upper body keeps the HKX's pose. Starting to move, the legs go over to the locomotion as the speed rises; stopping, they come back. Sneaking always keeps the locomotion's legs.
+  - While moving the upper body takes none of the locomotion's sway, only its turn toward the way it goes (side steps). A lean the HKX makes by tilting COM was held up by its own legs, so it is left out while moving; the spine's own bend stays.
+  - An arm (`rightArm`, `leftArm`) follows the locomotion's torso: a hand at the mouth moves with the head while walking.
+- The upper body and each arm can play at once (crossed arms with `upper` and a wave with `rightArm`: the right arm is the wave's). A new action on a busy part (a start or a transition) crosses over from the running one at once, over the new action's `enter`.
+- End: a clip played once ends at its end (`<Exit at>`); with `loop="true"`, by an end transition (`<Transition key end="true">`), another transition or `maxHold`. A part loop has a `maxHold` only when written, or its default 3 s when it has a charge release (`on="release"`). Blend in and out with `enter` and `<Exit blend>` (0.3 s by default).
+- It also ends on: an attack, a block, drawing or sheathing, casting, a jump or the air, a sprint start, a full-body action, ragdoll, knockdown, furniture, a mount, swimming, a switch to first person, death.
+- Started during a sprint, it stops the sprint (the player runs) and plays; the sprint key held through it does not sprint again until it is pressed again. An NPC does not start one while sprinting.
+- Allowed: `loop` and `maxHold`, `enter`, `<Exit at blend>`, `<Do at>` (clip-time functions), starts (`<Start>` keys, events, condition cards), and `<Transition>`s as a full-body action's: keys, events, press kinds (`press`), on its end (`on="end"`), charge release (`on="release"`), ending (`end="true"`), condition cards. Part and full-body actions transition to each other (charge, below). HKX annotations become events as in other actions (AnimObjects too).
+- Not allowed: `<Pair>`, `rig` (creatures), `view="first|both"`, `otherView`, `air`, `attack`, `block`, `<Rotate>`, `<IFrame>`, `<HyperArmor>`, `<TimeScale>`, `<Cost>`, `<MoveCancel>`, `<QTE>`, `<Camera>`, movement transitions (`on="move"`: it plays while moving), a `blend` on a transition into or out of a part action (the destination's `enter` crosses), transitions between a pair and a part action, and a QTE result or `partnerTo` naming a part action.
+- Leave `FootLeft` and `FootRight` annotations out of an upper-body HKX: the locomotion makes the footsteps.
+
+### Charging with part actions
+
+Each of a charge's three actions (start, hold, release) has its own part. With the start and the hold on the upper body the player **charges while walking**; with the release on the whole body they stop and let it go.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="WalkingCharge">
+  <Start key="G" press="hold" to="ChargeStart"/>
+  <Action id="ChargeStart" clip="Animations\MyMod\ChargeStart.hkx" body="upper">
+    <Transition to="ChargeHold" on="end"/>
+  </Action>
+  <Action id="ChargeHold" clip="Animations\MyMod\ChargeHold.hkx" body="upper" loop="true" maxHold="4">
+    <Transition to="ChargeRelease" on="release"/>
+  </Action>
+  <Action id="ChargeRelease" clip="Animations\MyMod\ChargeRelease.hkx"/>
+</AnimationSet>
+```
+
+- On the same part (start -> hold) the upper body crosses over without a break, over the destination's `enter` (0.3 s by default).
+- Part -> whole body (hold -> release): the full-body action starts and the upper body blends out over the release's `enter`.
+- Whole body -> part: the part action blends in while the full-body action leaves through its own `<Exit blend>`.
+- To another part (upper -> right arm): the running part blends out and the new one blends in.
+- `maxHold` counts from the press of the start key (as a full-body charge's); past it the key counts as released and the release goes.
+- An attack, a block, a jump and the like during the charge end the part action there, without a release.
 
 ## Creature actions
 
@@ -373,6 +463,61 @@ Key names are physical keys, whatever the keyboard input language.
 - The waits are a start's: a `tap` on release (after the wait for a second press when the key also has a `double`), a `hold` at the hold time, a `double` at its second press.
 - A condition card's movement direction is the one of the first press (even if the movement key is up when the kind is known).
 - While the action is on its way out (its exit blend), or when it ends before the kind is known, the press goes to the key's `<Start>` as the kind it turned out to be. A `tap` or `hold` no start takes goes to the `down` starts.
+
+## Separating walk and run (Locomotion)
+
+Vanilla movement blends the walk and run animations by speed. So walking at a steady speed still mixes in some run (about 15% for one-handed forward, about 31% for magic backward), and the playback rate hardly changes when the character's speed does, so the feet slide. With a `<Locomotion>`, each direction plays a walk or a run alone; the two mix only while changing between them and while stopping, and the playback rate follows the character's actual speed.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="WalkRunSplit">
+  <Locomotion>
+    <Tree weapon="2HW" use="own"/>
+    <Tree weapon="H2H" use="own"/>
+    <Except set="Sneak"/>
+  </Locomotion>
+</AnimationSet>
+```
+
+- `<Locomotion/>` alone applies to every weapon state and direction. There are no numbers to write.
+- Playback rate = the character's actual speed / the file's ground speed. A plugin that changes movement speeds, a speed buff or slow, and the weight of what is carried all change the speed, and the feet still keep the ground (within 0.1x to 10x).
+- A file's ground speed is found automatically. Vanilla files (and files that replace them through OAR) use the motion data registered in the game. For an own tree's files, see `<Tree>` below.
+- Walk or run is chosen from the character's walking/running state and its actual speed. Changing from a run to a walk crosses over as the speed comes down to the walk speed; stopping takes the legs toward the walk while the upper body keeps the run until it blends into the idle. While walk and run mix, the upper body is the run's (Spine2 and above, arms, hands, head).
+- `<Except set="…"/>` (a child of `<Locomotion>`, one per set): leaves that weapon state vanilla. `set` is `1HM` (one-handed and unarmed drawn), `2HM` (greatsword), `2HW` (two-handed axes and hammers), `H2H` (unarmed), `Bow`, `CrossBow`, `Magic` (magic readied), `MagicCast` (moving while casting), `Sheathed`, `Sneak`; moving while blocking is `Block1HM` (one-handed, unarmed, magic), `Block2HM`, `Block2HW`, `BlockH2H`, `BlockBow` (bow and crossbow), `BlockSneak`. `2HW`, `Block2HW`, `H2H` and `BlockH2H` exist only with that weapon's `<Tree use="own">`. Moving while blocking always plays the walk alone.
+- The original clips are not changed; copies are made, so animations replaced through OAR are followed. NPCs that use the same graphs get it too.
+- `<Tree weapon="…" use="…"/>` (a child of `<Locomotion>`, one per weapon): gives a weapon that borrows another weapon's locomotion tree in vanilla one of its own. There are two such weapons.
+  - `weapon="2HW"` (two-handed axes and hammers): vanilla plays the 2HM direction ladders on its legs only and a direction-less walk/run blend on its arms, so a change of the legs' rate puts the arms out of step. `use="2HM"`: moving and sneaking both use the greatsword's (2HM) ones; the axe or hammer is held like a greatsword while moving. `use="own"`: builds a 2HW tree laid out like 2HM's. Sneaking is like 2HM's: sneak legs, this tree's upper body.
+  - `weapon="H2H"` (unarmed): vanilla plays the one-handed tree whole. `use="own"` makes a copy of that tree for unarmed alone and points the unarmed state at it; one-handed weapons are unchanged. Unarmed sneaking plays the common sneak tree and is not changed.
+  - The files of `use="own"`: each slot of the tree plays the original file's name with its prefix replaced, `meshes\actors\character\animations\2HW_<name>.hkx` (from the 2HM files, for example `2HW_RunForward.hkx`) or `H2H_<name>.hkx` (from the 1HM files, for example `H2H_RunForward.hkx`), when that file exists, else the original file. A file's length and stride are free. If the file carries movement annotations (`animmotion x y z`, the notation Animation Motion Revolution uses, for example `animmotion 0 190.16 0` at the end of the cycle), the last annotation's distance over its time is the file's ground speed, so a step made not to slide in the animation tool does not slide in game either. Without them the original file's ground speed is used (the file is played as if its step were the original's). Animation Motion Revolution does not have to be installed. Foot sync and footsteps come from the file's own `FootLeft` and `FootRight` annotations, so every file needs both.
+  - `use="own"` for unarmed (`weapon="H2H"`) also makes the arms follow the movement animation while moving. In vanilla, unarmed takes only the legs and torso from the movement animation and holds the arms in one fixed pose (`H2H_LocoMotionPose.hkx`). The unarmed standing pose, sprinting, first person and moving while blocking are unchanged. A direction without an `H2H_` file plays the one-handed animation, arms included, so a mod that uses the unarmed tree should ship the files of every direction it means to use.
+  - Moving while blocking gets the same tree, so that weapon walks with these files instead of the original weapon's legs (blocking uses the lower body only; the upper body is the block pose).
+- One file in the whole game declares it: `SKSE\Plugins\AnimationInjector\Locomotion\Locomotion.xml` (names ignoring case). That file holds the `<Locomotion>` and nothing else (with an action or an event registration in it the whole file is skipped). A `<Locomotion>` in any other XML is not read, and the log says so.
+- When two mods ship one, the files share a path, so the mod manager's (MO2 and others) higher-priority mod's file is used whole. An own tree's HKX files follow the same priority. Put the mod's name in the `AnimationSet`'s `id` (the log names whose file it is).
+- Comparing with vanilla: set a key at `[Debug] iLadderToggleKey` in `AnimationInjector.ini` to switch it on and off in game. Off, the own trees (`<Tree use="own">`) go back to the vanilla trees too, so their files do not play.
+
+### Turning to the opposite way
+
+- With the ladders on, a turn to the opposite way (forward and back, left and right) cross-blends the locomotion from the pose at that moment for 0.2 s. Nothing to write for it.
+- **Turn actions**: when the player runs sideways (run or sprint, not sneaking, speed 250 or more) and presses the other side, the runtime sends an event: `AI_Turn_RightToLeft` from right to left, `AI_Turn_LeftToRight` from left to right. It goes at the key press, before the engine slows down, so the HKX plays everything from the braking to the push-off the other way. Keep the actions it starts in an XML other than the `<Locomotion>` one.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="PivotTurn">
+  <Start event="AI_Turn_RightToLeft" actor="player" to="PivotLeft"/>
+  <Start event="AI_Turn_LeftToRight" actor="player" to="PivotRight"/>
+  <Action id="PivotLeft" clip="Animations\PivotTurn\PivotRightToLeft.hkx" enter="0.12">
+    <Exit blend="0.2"/>
+  </Action>
+  <Action id="PivotRight" clip="Animations\PivotTurn\PivotLeftToRight.hkx" enter="0.12">
+    <Exit blend="0.2"/>
+  </Action>
+</AnimationSet>
+```
+
+  - Sent only while running sideways (a character running toward where it faces turns its body instead). No forward/back events yet.
+  - The other key must come within 0.15 s of letting go of the first; none is sent again within 0.4 s.
+  - Give it an `enter` (about 0.1 s). Straight in from the running pose it jumps in one frame depending on where the feet are (0.12 s took one frame's movement from 68~135 to 16~21).
+  - The HKX: start from the pose of running the first way, end in the pose of running the other way, with the travel in it (root motion). When it ends, the locomotion takes over over its `<Exit blend>`.
 
 ## Checking a file
 

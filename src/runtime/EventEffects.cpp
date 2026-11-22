@@ -7,6 +7,7 @@
 #include "runtime/ActorImmunity.h"
 #include "runtime/ClipWindows.h"
 #include "runtime/FireArrow.h"
+#include "runtime/GripHold.h"
 #include "runtime/PairEventRoles.h"
 #include "runtime/PairFeatures.h"
 #include "runtime/PairedSession.h"
@@ -469,6 +470,9 @@ void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor,
         Strike::Run(actor, partner, f.strike);
         break;
     }
+    // A hold outlives the clip that sent it (1.0.9): its own release or an automatic one ends it, not the run.
+    case EventOp::kGripHold: GripHold::Hold(actor, f.gripHand, f.gripView); break;
+    case EventOp::kGripRelease: GripHold::Release(actor, f.gripHand, f.gripView); break;
     }
     logger::debug("[EventEffects] '{}' op={} actor={:08X} scope={}", context.origin, static_cast<int>(f.op),
         actor->GetFormID(), scope);

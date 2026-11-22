@@ -11,6 +11,7 @@
 #include "core/PairInputGate.h"
 #include "runtime/PairFeatures.h"
 #include "runtime/EventEffects.h"
+#include "runtime/GripHold.h"
 #include "runtime/ActionHistory.h"
 #include "runtime/HitHistory.h"
 #include "runtime/EventHistory.h"
@@ -25,6 +26,9 @@
 #include "core/AirControl.h"
 #include "core/PlayerHooks.h"
 #include "core/HitDispatch.h"
+#include "core/LocomotionDrive.h"
+#include "core/UpperLayer.h"
+#include "runtime/PartRunner.h"
 #include "core/PairedStartHooks.h"
 #include "core/HeadingWatch.h"
 #include "core/AnimationPreloader.h"
@@ -111,6 +115,8 @@ void EndSession() {
     EventRegistry::ResetOnLoad();
     AnnotationCommands::ResetOnLoad();
     EventEffects::ResetOnLoad();
+    GripHold::ReleaseAll();
+    LocomotionDrive::ResetOnLoad();
     ActionHistory::ResetOnLoad();
     HitHistory::ResetOnLoad();
     EventHistory::ResetOnLoad();
@@ -127,6 +133,20 @@ void AnnounceEventsNextFrame() {
 }
 }
 
+namespace {
+constexpr std::size_t kTrampolineSize = 1024;
+// Once every hook is installed (kDataLoaded): the trampoline space they took. A hook added later that brings it near
+// the request warns here before a list with more hooks runs out (a request past it ends the game at load: "Failed to handle allocation request").
+void LogTrampolineUse() {
+    const auto& trampoline = SKSE::GetTrampoline();
+    const auto used = trampoline.allocated_size(), capacity = trampoline.capacity();
+    if (used * 5 > capacity * 4)
+        logger::warn("[Trampoline] {} of {} bytes used: past 80%, raise kTrampolineSize (main.cpp)", used, capacity);
+    else
+        logger::info("[Trampoline] {} of {} bytes used", used, capacity);
+}
+}  // namespace
+
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
     // Our logger preserves the previous run before opening a fresh log file.
     SKSE::Init(a_skse, false);
@@ -136,13 +156,22 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
         REL::Module::get().version().string());
     BeginStartupRecord();
     AnimationInjector::Carry::InstallSerialization();
-    SKSE::AllocTrampoline(4096);
+    // From SKSE's branch pool, which every plugin shares (users read the request in skse64.log; 4096 until 1.0.9, the
+    // largest of the 74 requests in a large mod list's log). What the hooks take, 14 bytes a call-site hook, 8 a 6-byte one, the code they
+    // generate: MotionHook up to about 400 (more when another mod such as AMR hooks one of its sites), HeadingWatch
+    // about 100, PairedStartHooks and PairRootRuntime about 70 each, GraphInjector, PairInputGate and NodeIdRenumber
+    // about 64. LogTrampolineUse reports the real figure once every hook is in.
+    SKSE::AllocTrampoline(kTrampolineSize);
 
     using namespace AnimationInjector;
     FrameworkSettings::Get().Load();
     LoadingProgress::SetEnabled(FrameworkSettings::Get().loadingProgress);
-    Actions::Load();                                                   // XML declarations and runners
-    GraphInjector::Install();                                          // CreateSymbolIdMap / LoadClips
+    Actions::Load();             // XML declarations and runners
+    GraphInjector::Install();    // CreateSymbolIdMap / LoadClips
+    LocomotionDrive::Install();  // <Locomotion>: the split blenders' per-actor values, per actor update
+    UpperLayer::Install();       // body= actions: the upper layer's stabilizer (generate exits)
+    PartRunner::Install();       // body= actions: a sprint the start stopped stays stopped while its key is held
+    GripHold::Install();         // gripHold: RootBehaviorGraph generate exit (both views)
     NodeIdRenumber::Install(FrameworkSettings::Get().nodeIdRenumber);  // graphs past 65535 nodes
     // A carry start gives a bAllowRotation true back only to an action still wanting it.
     PairStartControl::SetRotationOwner(Actions::RotationWindowOpen);
@@ -194,6 +223,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
             CarryHold::Install();
             PairInputGate::Install();
             MotionHook::Install();  // Install outside the AMR hook.
+            LogTrampolineUse();     // The last hook that takes trampoline space is in.
             AnimData::TryRegister("kDataLoaded");
             // Observe release input before the ordinary sink can start a carry.
             Carry::Register();

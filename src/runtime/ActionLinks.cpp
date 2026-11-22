@@ -2,6 +2,7 @@
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/PairedSession.h"
+#include "runtime/PartRunner.h"
 #include "core/PairRootRuntime.h"
 #include "runtime/HeldKeys.h"
 #include <mutex>
@@ -511,7 +512,10 @@ void Update(float delta) {
                 const bool& handled;
                 ~ExitOnFail() {
                     if (!item.exitOnFail || handled) return;
-                    if (auto* source = Actions::RunnerFor(actor, item.source, false)) source->ExitForLink();
+                    if (Actions::Spec(item.source).Part())
+                        PartRunner::EndAction(actor, item.source, "its end or release transition did not go");
+                    else if (auto* source = Actions::RunnerFor(actor, item.source, false))
+                        source->ExitForLink();
                     logger::debug("[Connect] '{}' end/release transition did not go; source exits",
                         Actions::Spec(item.source).id);
                 }
@@ -519,7 +523,9 @@ void Update(float delta) {
             // <Transition end="true">: the source leaves through its own exit, with its exit blend.
             if (item.end) {
                 auto* runner = Actions::RunnerFor(actor.get(), item.source, false);
-                handled = runner && runner->ExitForLink();
+                handled = Actions::Spec(item.source).Part()
+                              ? PartRunner::EndAction(actor.get(), item.source, "its ending transition")
+                              : runner && runner->ExitForLink();
                 logger::debug("[Connect] actor={:08X} '{}' ending transition: exit requested={}", actor->GetFormID(),
                     Actions::Spec(item.source).id, handled);
                 continue;
@@ -575,6 +581,37 @@ void Update(float delta) {
                 // Custom transition events were injected for the original destination only.
                 if (item.enter != RE::BSFixedString{} || item.airEnter != RE::BSFixedString{}) continue;
                 item.target = selected;
+            }
+            // A part action at either end (body=, runtime/PartRunner.h, 11-20): not a state of the root machine.
+            //   to a part action      PartRunner::Link: its layer crosses to it (the same layer, itself again too),
+            //                         or it starts on its own layer; a full-body source exits first.
+            //   part -> full body     the full-body action starts as a start would; the part layer blends out over
+            //                         its enter blend.
+            if (Actions::Spec(item.source).Part() || Actions::Spec(item.target).Part()) {
+                if (item.paired || Actions::Spec(item.target).paired.enabled) continue;
+                if (Actions::Spec(item.target).Part()) {
+                    if (!PartRunner::CanLink(actor.get(), item.source, item.target)) {
+                        logger::debug("[Connect] target='{}' (part) preflight=false; source continues",
+                            Actions::Spec(item.target).id);
+                        continue;
+                    }
+                    if (!Actions::Spec(item.source).Part()) {
+                        auto* source = Actions::RunnerFor(actor.get(), item.source, false);
+                        if (!source || !source->ExitForLink()) continue;
+                    }
+                    handled = PartRunner::Link(actor.get(), item.source, item.target);
+                } else {
+                    auto* destination = Actions::RunnerFor(actor.get(), item.target, true);
+                    handled = destination && destination->Request();
+                    if (handled) {
+                        const float blend = Actions::Spec(item.target).enterBlend;
+                        PartRunner::EndAction(actor.get(), item.source, "a transition to a full-body action",
+                            blend >= 0.0f ? blend : -1.0f);
+                    }
+                }
+                logger::debug("[Connect] actor={:08X} '{}' -> '{}' (part) accepted={}", actor->GetFormID(),
+                    Actions::Spec(item.source).id, Actions::Spec(item.target).id, handled);
+                continue;
             }
             // The same action again (10-31): its clip restarts through the graph's self-transition. A loop moving the
             // same way plays on (a moving charge keeps its cycle).

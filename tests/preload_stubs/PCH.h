@@ -126,7 +126,8 @@ struct AnimationFileManagerSingleton {
 namespace AnimationInjector {
 struct FrameworkSettings {
     bool injectState = true;
-    bool preloadOrdinary = true;
+    static inline bool ordinary = true;  // a test turns [Preload] bOrdinary off
+    bool preloadOrdinary = ordinary;
     int preloadOrdinaryBudgetMB = 0;
     static FrameworkSettings Get() { return {}; }
 };
@@ -143,6 +144,8 @@ struct SpecType {
     ViewSpec view;
     PairedRig::Kind rig = PairedRig::Kind::kCharacter;  // a creature's own action (11-05)
     bool CreatureAction() const { return !paired.enabled && rig != PairedRig::Kind::kCharacter; }
+    bool part = false;  // body= (runtime/BodyPart.h): preloaded whatever bOrdinary says
+    bool Part() const { return part; }
 };
 }
 // The plugin's rule (runtime/ActionSpec.h): a first-person pair plays its first-person copy in every project.

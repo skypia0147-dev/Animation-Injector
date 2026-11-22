@@ -204,6 +204,8 @@ HKX에 넣은 주석 이벤트가 오면 기능을 실행합니다. 이벤트와
 | `globalSet` | 글로벌 값 바꾸기 | `plugin` `form` `restore="end"`(끝나면 되돌림); 값 `value` |
 | `modEvent` | Papyrus에 모드 이벤트 보내기 | `name` `text`; 값 `number` |
 | `cancel` | 페어 끝내기 | |
+| `gripHold` | 무기 잡기 유지: 그 순간 손의 무기 뼈(오른손 Weapon, 왼손 Shield) 값을 동작이 끝난 뒤에도 유지 ([무기 잡기 유지](#무기-잡기-유지)) | `hand="right\|left\|both"`, `view="third\|first\|both"`(기본 third) |
+| `gripRelease` | 잡기 유지 풀기(바로) | `hand`, `view` |
 
 켜 두는 기능(숨기기·무적 등)은 짝 기능(`show`·`iframeOff` 등)이 오거나 이어지는 동작이 모두 끝나면 꺼집니다. 다만 등록된 이벤트로 켠 `iframeOn`·`armorOn`·`rotateOn`·`timeOn`은 짝 기능을 등록한 이벤트가 있으면 애니메이션이 끝나도 그 이벤트가 올 때까지 유지됩니다(사망·래그돌·불러오기 때는 꺼짐). 단, 켜는 이벤트를 보낸 HKX가 그보다 뒤에 끄는 이벤트도 보내면 구간처럼 동작합니다: 끄는 이벤트가 오거나 그 HKX가 끝나거나 끊기면 꺼집니다. 우리 동작이든 다른 모드·바닐라 HKX든 같습니다. 등록의 켜는 기능에 `duration`(초, 0~60)을 주면 그 시간이 지나면 꺼집니다. 그 전에 끄는 이벤트가 오면 그때 꺼지고, HKX가 끝나거나 끊겨도 남은 시간은 유지됩니다(시간 배율은 실제 초, 그 밖은 게임 시간).
 
@@ -230,8 +232,96 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 | `AI.GlobalSet\|플러그인\|폼\|값` | 글로벌 값 바꾸기(되돌리기 없음) |
 | `AI.ModEvent\|이름\|글\|숫자` | Papyrus에 모드 이벤트 보내기 |
 | `AI.CancelPair` | 페어 끝내기 |
+| `AI.GripHold\|손\|시점` | 무기 잡기 유지 (손 right·left·both, 시점 third·first·both) |
+| `AI.GripRelease\|손\|시점` | 잡기 유지 풀기 |
 
 타격(`strike`)은 설정이 많아 명령이 없습니다. 이벤트 등록으로 씁니다. 켜는 명령의 끄기는 위의 규칙을 따르고, 끄는 명령은 언제든 보낼 수 있으므로 끄는 명령을 넣지 않으면 사망·래그돌·불러오기 전까지 켜져 있습니다. 명령과 등록 이벤트는 같은 기능으로 취급합니다(`AI.IFrameOff`는 등록 이벤트가 켠 무적도 끕니다).
+
+## 무기 잡기 유지
+
+무기를 역수로 고쳐 잡는 동작처럼, 동작이 끝난 뒤에도 무기를 쥔 모양을 그대로 두고 싶을 때 씁니다(1.0.9 이상). H를 누르면 역수로 고쳐 잡고 그 그립을 유지하며, J를 누르면 다시 정상으로 잡습니다.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="MyGrip">
+  <Start key="H" to="Reverse">
+    <Check kind="actorStatus" option="weaponDrawn"/>
+  </Start>
+  <Start key="J" to="Normal">
+    <Check kind="actorStatus" option="weaponDrawn"/>
+  </Start>
+  <Action id="Reverse" clip="Animations\MyGrip\ReverseGrip.hkx">
+    <Do at="0.6" op="gripHold" hand="right"/>
+    <Exit blend="0.2"/>
+  </Action>
+  <Action id="Normal" clip="Animations\MyGrip\NormalGrip.hkx">
+    <Do at="0" op="gripRelease" hand="right"/>
+    <Exit blend="0.2"/>
+  </Action>
+</AnimationSet>
+```
+
+- `gripHold`는 그 순간 손에 대한 무기 뼈의 위치·회전(오른손 `Weapon`, 왼손 `Shield`)을 기억하고, 그 뒤 재생되는 모든 애니메이션(공격, 부위 동작 포함)에서 그 값으로 유지합니다. 몸과 팔은 애니메이션대로 움직이고 무기를 쥔 모양만 남습니다.
+- `gripRelease`는 그 프레임에 바로 풀고 애니메이션 값으로 돌아갑니다. 풀기 동작의 첫 프레임을 역수 자세로 만들면 이음매가 보이지 않습니다.
+- 저절로 풀리는 때: 무기를 넣을 때, 그 손의 장비가 바뀔 때, 죽음, 래그돌, 세이브 불러오기.
+- `view`: 유지할 시점(`third` 3인칭, `first` 1인칭, `both` 둘 다). 동작이 재생된 시점에서 잡은 값을 다른 시점에 옮겨 쓰므로, 그 동작에 1인칭 HKX가 없어도 1인칭에서 유지됩니다.
+- 왼손은 바닐라 보정(`DW_ShieldAdjustment`)이 Shield 뼈를 덮어써서, Left Hand Equipment Overhaul 2.0 이상이 있어야 보입니다. 왼손 역수 HKX는 기본 자세 기준으로 만들고 0초에 `Adjustment_Additive` 주석을, 풀기 동작 끝에 `Adjustment_Off` 주석을 넣습니다. 다른 시점으로 옮긴 왼손 유지에는 Animation Injector가 그 시점에 `Adjustment_Additive`를 보내고, 유지가 끝나면 `Adjustment_Off`를 보냅니다.
+- 등록 이벤트로도 씁니다: `<Event name="…"><Do op="gripHold" hand="right" view="both"/></Event>`. 그 이벤트 이름을 주석으로 보내는 HKX라면 우리 동작이든 다른 모드·바닐라·OAR 애니메이션이든 실행됩니다. HKX 주석 명령은 `AI.GripHold|right|third`, `AI.GripRelease|right|third`입니다.
+
+## 이동하면서 상체·팔만 (body)
+
+`<Action>`에 `body`를 쓰면 그 동작은 상체나 한쪽 팔에만 재생되고, 다리는 이동 애니메이션 그대로라 **재생하는 동안 자유롭게 걷고 달릴 수 있습니다**(물약 마시기, 팔짱, 손 흔들기 같은 연출). 3인칭에서만 재생합니다.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="WalkingIdles">
+  <Start key="Num1" to="CrossArms"/>
+  <Start key="Num2" to="Wave"/>
+  <Action id="CrossArms" clip="Animations\MyMod\CrossArms.hkx" body="upper" loop="true">
+    <Transition key="Num1" end="true"/>
+  </Action>
+  <Action id="Wave" clip="Animations\MyMod\Wave.hkx" body="rightArm" enter="0.2">
+    <Exit blend="0.4"/>
+  </Action>
+</AnimationSet>
+```
+
+- `body`: `upper`(척추부터 위 전부), `rightArm`(오른쪽 쇄골~손가락, 오른손 무기·AnimObjectR), `leftArm`(왼쪽, 방패·AnimObjectL). 생략하면 지금처럼 전신 동작입니다.
+- `upper`는 **서 있을 때는 HKX 전신 그대로**(다리·골반까지, HKX의 다리가 숙인 상체를 받칩니다), **움직이면 다리는 이동 애니메이션**이고 상체는 HKX 자세를 지킵니다. 출발하면 속도가 오르는 데 맞춰 다리가 이동 애니메이션으로 넘어가고, 멈추면 돌아옵니다. 잠행 중에는 늘 이동 애니메이션 다리입니다.
+  - 움직이는 동안 상체는 이동 애니메이션의 앞뒤·좌우 흔들림을 받지 않고, 몸통이 진행 방향으로 도는 것(옆걸음 등)만 따라 돕니다. HKX가 COM을 기울여 만든 숙임은 HKX 다리가 받치던 것이라 이동 중에는 빠지고, 척추 자체의 숙임은 남습니다.
+  - 팔(`rightArm`·`leftArm`)은 이동 애니메이션의 몸통을 따라갑니다: 입에 댄 손이 걸으며 움직이는 머리와 함께 움직입니다.
+- 상체 하나와 양팔은 동시에 재생할 수 있습니다(예: 상체 팔짱 + 오른팔 손 흔들기는 오른팔이 이깁니다). 같은 부위에 새 동작이 오면(시작이든 전환이든) 지금 동작에서 새 동작으로 바로 교차합니다(새 동작의 `enter` 시간).
+- 끝: 한 번 재생이면 클립 끝(`<Exit at>`), `loop="true"`면 끝내기 전환(`<Transition key end="true">`)이나 다른 전환, `maxHold`. 부위 반복 동작의 `maxHold`는 쓴 경우에만 있고, 차지 종료 전환(`on="release"`)이 있으면 쓰지 않아도 기본 3초입니다. 들어오고 빠지는 시간은 `enter`·`<Exit blend>`(기본 0.3초).
+- 저절로 끝나는 경우: 공격, 막기, 무기 꺼내기·넣기, 시전, 점프·공중, 전력질주 시작, 전신 동작 시작, 래그돌·쓰러짐·가구·탈것·수영, 1인칭 전환, 죽음.
+- 전력질주 중에 시작하면 전력질주를 멈추고(달리기로) 재생합니다. 전력질주 키를 계속 누르고 있어도 다시 누르기 전에는 전력질주로 돌아가지 않습니다. NPC는 전력질주 중이면 시작하지 않습니다.
+- 쓸 수 있는 것: `loop`·`maxHold`, `enter`, `<Exit at blend>`, `<Do at>`(시각 기능), 시작(`<Start>`의 키·이벤트·조건 카드), 그리고 전신 동작과 같은 `<Transition>`: 키·이벤트·누르는 방식(`press`), 끝나면(`on="end"`), 차지 종료(`on="release"`), 끝내기(`end="true"`), 조건 카드. 부위 동작과 전신 동작은 서로 전환할 수 있습니다(아래 차지). HKX 주석은 다른 동작처럼 이벤트가 됩니다(AnimObject도).
+- 쓸 수 없는 것: `<Pair>`, `rig`(크리처), `view="first|both"`, `otherView` `air` `attack` `block`, `<Rotate>` `<IFrame>` `<HyperArmor>` `<TimeScale>` `<Cost>` `<MoveCancel>` `<QTE>` `<Camera>`, 이동 전환(`on="move"`, 이동하면서 재생하므로), 부위 동작에 들어가거나 나오는 전환의 `blend`(도착 동작의 `enter`로 이어집니다), 페어와 부위 동작 사이의 전환, QTE 결과·`partnerTo`가 부위 동작을 가리키는 것.
+- 상체 HKX에 `FootLeft`·`FootRight` 주석을 넣지 마세요. 발소리는 이동 애니메이션이 냅니다.
+
+### 부위 동작으로 차지
+
+차지의 세 동작(시작·차지 중·릴리즈)은 각각 부위를 따로 정합니다. 시작과 차지 중을 상체로 두면 **걸으면서 차지**하고, 릴리즈를 전신으로 두면 멈춰 서서 내지릅니다.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="WalkingCharge">
+  <Start key="G" press="hold" to="ChargeStart"/>
+  <Action id="ChargeStart" clip="Animations\MyMod\ChargeStart.hkx" body="upper">
+    <Transition to="ChargeHold" on="end"/>
+  </Action>
+  <Action id="ChargeHold" clip="Animations\MyMod\ChargeHold.hkx" body="upper" loop="true" maxHold="4">
+    <Transition to="ChargeRelease" on="release"/>
+  </Action>
+  <Action id="ChargeRelease" clip="Animations\MyMod\ChargeRelease.hkx"/>
+</AnimationSet>
+```
+
+- 같은 부위로 이어지면(시작 → 차지 중) 상체가 끊기지 않고 교차합니다. 시간은 도착 동작의 `enter`(기본 0.3초)입니다.
+- 부위 → 전신(차지 중 → 릴리즈): 전신 동작이 시작되고 상체는 릴리즈의 `enter` 시간 동안 빠집니다.
+- 전신 → 부위: 전신 동작이 자기 `<Exit blend>`로 빠지는 동안 부위 동작이 들어옵니다.
+- 다른 부위로 가면(상체 → 오른팔) 지금 부위는 빠지고 새 부위가 들어옵니다.
+- `maxHold`는 시작 키를 누른 때부터 셉니다(전신 차지와 같음). 지나면 키를 뗀 것으로 보고 릴리즈합니다.
+- 차지 중에 공격·막기·점프 등이 오면 부위 동작은 그대로 끝나고 릴리즈하지 않습니다.
 
 ## 크리처 동작
 
@@ -373,6 +463,61 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 - 기다리는 시간은 시작과 같습니다: `tap`은 뗄 때(같은 키에 `double`이 있으면 두 번째 누름을 기다린 뒤), `hold`는 기준 시간, `double`은 두 번째로 누르는 순간.
 - 조건 카드의 이동 방향은 처음 누른 순간의 값입니다(판정이 끝날 때 이동키를 뗐어도).
 - 동작이 끝나 가는 중이거나(종료 블렌드) 판정 도중 끝나면, 그 누름은 판정된 종류로 그 키의 `<Start>`에 넘어갑니다. `tap`·`hold`를 받는 시작이 없으면 `down` 시작으로 갑니다.
+
+## 걷기·달리기 분리 (Locomotion)
+
+바닐라 이동은 걷기와 달리기 애니메이션을 속도로 섞습니다. 그래서 정속으로 걸을 때도 달리기가 섞이고(한손 무기 앞 약 15%, 마법 뒤 약 31%), 재생 빠르기는 캐릭터의 속도가 바뀌어도 거의 그대로라 발이 미끄러집니다. `<Locomotion>`이 있으면 방향마다 걷기 또는 달리기 하나만 재생하고, 둘은 걷기↔달리기를 바꿀 때와 멈출 때만 섞입니다. 재생 빠르기는 캐릭터의 실제 속도를 따라갑니다.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="WalkRunSplit">
+  <Locomotion>
+    <Tree weapon="2HW" use="own"/>
+    <Tree weapon="H2H" use="own"/>
+    <Except set="Sneak"/>
+  </Locomotion>
+</AnimationSet>
+```
+
+- `<Locomotion/>`만 적어도 모든 무기 상태·방향에 적용됩니다. 적을 숫자는 없습니다.
+- 재생 빠르기 = 캐릭터의 실제 속도 ÷ 그 파일의 발 속도. 이동 속도를 바꾸는 플러그인, 속도 버프·감속, 든 장비의 무게로 속도가 달라져도 발이 땅에 붙습니다(0.1~10배 안에서).
+- 파일의 발 속도는 자동으로 구합니다. 바닐라 파일(과 그것을 OAR로 바꾼 파일)은 게임에 등록된 이동 데이터를 씁니다. 전용 트리의 파일은 아래 `<Tree>`를 보세요.
+- 걷기·달리기 선택은 캐릭터의 걷기/달리기 상태와 실제 속도로 합니다. 달리다 걷기로 바꾸면 속도가 걷기 속도 근처로 내려오면서 넘어가고, 멈출 때는 다리가 걷기 쪽으로 넘어가되 상체는 달리기 동작을 유지한 채 대기 자세로 넘어갑니다. 걷기와 달리기가 섞이는 동안 상체는 달리기 것입니다(Spine2 위·팔·손·머리).
+- `<Except set="…"/>`(`<Locomotion>`의 자식, 세트마다 하나): 그 무기 상태는 바닐라 그대로 둡니다. `set`은 `1HM`(한손·맨손 뽑음) `2HM`(양손검) `2HW`(양손 도끼·망치) `H2H`(맨손) `Bow` `CrossBow` `Magic`(마법 준비) `MagicCast`(시전하며 이동) `Sheathed`(무기 넣음) `Sneak`(잠행), 막기 중 이동은 `Block1HM`(한손·맨손·마법) `Block2HM`(양손) `Block2HW` `BlockH2H` `BlockBow`(활·석궁) `BlockSneak`입니다. `2HW`·`Block2HW`·`H2H`·`BlockH2H`는 그 무기의 `<Tree use="own">`이 있을 때만 있습니다. 막기 중 이동은 늘 걷기만 재생합니다.
+- 원래 클립은 고치지 않고 사본을 만들므로 OAR로 교체한 애니메이션을 그대로 따릅니다. 같은 그래프를 쓰는 NPC에도 적용됩니다.
+- `<Tree weapon="…" use="…"/>`(`<Locomotion>`의 자식, 무기마다 하나): 바닐라에서 다른 무기의 이동 트리를 빌려 쓰는 무기에 전용 이동을 줍니다. 그런 무기는 둘입니다.
+  - `weapon="2HW"`(양손 도끼·망치): 바닐라는 다리만 2HM 방향 블렌더이고 팔은 방향 없는 걷기/달리기 블렌드라, 다리의 빠르기가 바뀌면 팔과 박자가 어긋납니다. `use="2HM"`은 이동과 잠행 이동 모두 양손검(2HM) 것을 씁니다(도끼·망치를 이동 중에 대검처럼 쥡니다). `use="own"`은 2HM과 같은 구조의 2HW 전용 트리를 만듭니다. 잠행은 2HM처럼 다리는 잠행, 상체는 이 트리입니다.
+  - `weapon="H2H"`(맨손): 바닐라는 한손 무기와 같은 트리를 그대로 씁니다. `use="own"`은 그 트리를 복사한 맨손 전용 트리를 만들고 맨손 상태만 그쪽을 쓰게 합니다. 한손 무기는 그대로입니다. 맨손 잠행은 무기 공통 잠행 트리라 바뀌지 않습니다.
+  - `use="own"`의 파일: 전용 트리의 각 칸은 원래 파일 이름의 앞머리를 바꾼 `meshes\actors\character\animations\2HW_<이름>.hkx`(2HM 파일 기준, 예: `2HW_RunForward.hkx`) 또는 `H2H_<이름>.hkx`(1HM 파일 기준, 예: `H2H_RunForward.hkx`)가 있으면 그 파일을, 없으면 원래 파일을 재생합니다. 파일의 길이와 보폭은 자유입니다. 파일 안에 이동 거리 주석(`animmotion x y z`, Animation Motion Revolution과 같은 표기, 예: 한 주기 끝에 `animmotion 0 190.16 0`)이 있으면 마지막 주석의 거리 ÷ 그 시각을 이 파일의 발 속도로 써서, 툴에서 발이 미끄러지지 않게 만든 걸음이 게임에서도 그대로 맞습니다. 주석이 없으면 원래 파일의 발 속도를 씁니다(원래 파일과 걸음이 같다고 보고 재생합니다). Animation Motion Revolution은 설치돼 있지 않아도 됩니다. 발 동기와 발소리는 파일 안의 `FootLeft`·`FootRight` 주석을 쓰므로 파일마다 두 주석이 모두 있어야 합니다.
+  - 맨손(`weapon="H2H"`)의 `use="own"`은 움직이는 동안 팔도 이동 애니메이션을 따르게 합니다. 바닐라의 맨손은 다리·몸통만 이동 애니메이션이고 팔은 고정 자세(`H2H_LocoMotionPose.hkx`)입니다. 서 있을 때의 맨손 자세, 질주, 1인칭, 막기 이동은 그대로입니다. `H2H_` 파일이 없는 방향은 한손 무기 애니메이션이 팔까지 재생되므로, 맨손 전용 트리를 쓰는 모드는 쓰는 방향의 파일을 모두 넣는 것이 좋습니다.
+  - 막기 중 이동에도 같은 트리를 만들어, 그 무기가 원래 무기의 다리 대신 이 파일로 걷습니다(막기 이동은 하체만 쓰고 상체는 막기 자세입니다).
+- 선언은 게임 전체에 **한 파일**만 씁니다: `SKSE\Plugins\AnimationInjector\Locomotion\Locomotion.xml`(대소문자 무관). 이 파일에는 `<Locomotion>`만 둡니다(동작·이벤트 등록과 함께 있으면 파일 전체를 건너뜁니다). 다른 XML에 있는 `<Locomotion>`은 읽지 않고 로그에 경고를 남깁니다.
+- 두 모드가 넣으면 같은 경로의 파일이 겹치므로, 모드 관리자(MO2 등)의 우선순위가 높은 모드의 파일 하나가 통째로 쓰입니다. 전용 트리의 HKX도 같은 우선순위를 따릅니다. `AnimationSet`의 `id`에는 모드 이름을 적습니다(로그에 어느 모드의 파일인지 나옵니다).
+- 바닐라와 비교: `AnimationInjector.ini`의 `[Debug] iLadderToggleKey`에 키를 지정하면 게임 안에서 켜고 끌 수 있습니다. 끄면 전용 트리(`<Tree use="own">`)도 바닐라 트리로 돌아가 전용 파일이 재생되지 않습니다.
+
+### 반대 방향 전환
+
+- 이동 사다리가 켜져 있으면 반대 방향으로 바꿀 때(앞↔뒤, 좌↔우) 이동 블렌드가 그 순간의 자세에서 0.2초 동안 교차합니다. 따로 쓸 것은 없습니다.
+- **전환 동작**: 플레이어가 옆으로 달리다(달리기·전력질주, 잠행 아님, 속도 250 이상) 반대쪽 키를 누르면 런타임이 이벤트를 보냅니다. 오른쪽→왼쪽은 `AI_Turn_RightToLeft`, 왼쪽→오른쪽은 `AI_Turn_LeftToRight`. 키를 누르는 순간(엔진이 감속을 시작하기 전)이라 HKX가 멈칫하는 브레이크부터 반대로 밀어내는 출발까지 맡습니다. 이 이벤트로 시작하는 동작은 `<Locomotion>`과 다른 XML에 둡니다.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="PivotTurn">
+  <Start event="AI_Turn_RightToLeft" actor="player" to="PivotLeft"/>
+  <Start event="AI_Turn_LeftToRight" actor="player" to="PivotRight"/>
+  <Action id="PivotLeft" clip="Animations\PivotTurn\PivotRightToLeft.hkx" enter="0.12">
+    <Exit blend="0.2"/>
+  </Action>
+  <Action id="PivotRight" clip="Animations\PivotTurn\PivotLeftToRight.hkx" enter="0.12">
+    <Exit blend="0.2"/>
+  </Action>
+</AnimationSet>
+```
+
+  - 옆으로 달릴 때만 보냅니다(캐릭터가 진행 방향을 보고 달리는 경우는 몸을 돌리는 것이라 보내지 않음). 앞↔뒤 이벤트는 아직 없습니다.
+  - 이전 키를 뗀 뒤 0.15초 안에 반대 키를 눌러야 합니다. 0.4초 안에는 다시 보내지 않습니다.
+  - `enter`를 꼭 씁니다(0.1초 안팎). 달리던 자세에서 바로 들어가면 발 위치에 따라 한 프레임에 크게 튑니다(0.12초로 한 프레임 이동 68~135 → 16~21).
+  - HKX: 반대쪽으로 달리던 자세에서 시작해 반대 방향 달리기 자세로 끝나게 만들고, 이동 거리(루트 이동)를 넣습니다. 이 동작이 끝나면 이동 애니메이션으로 `<Exit blend>` 동안 넘어갑니다.
 
 ## 검사하기
 

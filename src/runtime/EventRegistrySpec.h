@@ -1,4 +1,5 @@
 #pragma once
+#include "runtime/GripSpec.h"
 #include "runtime/QteSpec.h"
 #include "runtime/RagdollPush.h"
 #include "runtime/StrikeSpec.h"
@@ -45,6 +46,10 @@ enum class EventOp : std::uint8_t {
     kSound,      // play a sound file or a registered sound at one of the actor's bones (0.12.296)
     kGlobalSet,  // set a global's value; restore="end" gives the old one back when the run ends (0.12.296)
     kModEvent,   // send an SKSE mod event (name, text, number, the actor) to Papyrus (0.12.296)
+    // A hand's attachment bone held at its value at this moment, past the clip (1.0.9, GripSpec.h), until
+    // kGripRelease or an automatic release (sheathing, that hand's equipment change, death, ragdoll, load).
+    kGripHold,
+    kGripRelease,
 };
 // The actors a function changes. A registered event's function changes its sender (kSender, 0.12.273). A pair's
 // clip-time effect names a role (0.12.275): kInitiator started the pair, kReceiver is the actor it was started on
@@ -84,6 +89,9 @@ struct EventFunctionSpec {
     // kModEvent: an SKSE mod event `name` with `text` and `number`, sent as the actor's.
     std::string name, text;
     float number = 0.0f;
+    // kGripHold / kGripRelease: which hands and views (the registry's, what it acts with).
+    GripHand gripHand = GripHand::kRight;
+    GripView gripView = GripView::kThird;
     bool operator==(const EventFunctionSpec&) const = default;
 };
 
@@ -111,6 +119,8 @@ inline EventFunctionSpec WithValues(const EventFunctionSpec& registry, const Eve
     out.span = registry.span;
     out.name = registry.name;
     out.text = registry.text;
+    out.gripHand = registry.gripHand;
+    out.gripView = registry.gripView;
     out.strike.pick = registry.strike.pick;
     out.strike.hostileOnly = registry.strike.hostileOnly;
     out.strike.hand = registry.strike.hand;

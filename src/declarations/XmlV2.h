@@ -8,6 +8,7 @@
 namespace AnimationInjector {
 struct ActionSpec;
 struct EventRuleSpec;
+struct LocomotionSpec;
 }
 
 namespace AnimationInjector::XmlV2 {
@@ -23,6 +24,11 @@ using KeyResolver = std::uint32_t (*)(const char*);
 bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
     std::vector<EventRuleSpec>& events, std::string& mod, std::string& error, KeyResolver resolveKey,
     std::string_view qualifier = {});
+// The same, also collecting the file's <Locomotion> (runtime/LadderSpec.h) into `locomotion`. A file may hold only
+// <Locomotion>. It names weapon kinds and sets, not actions: the qualifier does not apply to it.
+bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
+    std::vector<EventRuleSpec>& events, LocomotionSpec& locomotion, std::string& mod, std::string& error,
+    KeyResolver resolveKey, std::string_view qualifier = {});
 // The same, keeping only the actions (tools and tests that read actions).
 bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
     std::string& mod, std::string& error, KeyResolver resolveKey, std::string_view qualifier = {});

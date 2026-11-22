@@ -1,6 +1,7 @@
 #include "PCH.h"
 #include "runtime/PairTargetMath.h"
 #include "runtime/ActionRunner.h"
+#include "runtime/PartRunner.h"
 #include "runtime/PostCancelTime.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/ActionHistory.h"
@@ -122,6 +123,9 @@ bool ActionRunner::MatchesRig(RE::Actor* a) const {
 }
 
 bool ActionRunner::Conditions(RE::Actor* p, bool a_linkPreflight) const {
+    // A part action (body=) is not a state of ours: its own conditions (runtime/PartRunner.h). A transition to one
+    // goes through PartRunner::Link (runtime/ActionLinks.cpp), never this runner, so a link preflight refuses it.
+    if (Spec().Part()) return !a_linkPreflight && PartRunner::CanStart(p, _idx);
     const auto& c = Spec().condition;
     auto deny = [&](const char* a_why) {
         logger::debug("[{}] 거부: {}", Spec().id, a_why);
@@ -162,6 +166,7 @@ bool ActionRunner::Conditions(RE::Actor* p, bool a_linkPreflight) const {
 
 bool ActionRunner::Request(int origin) { return RequestImpl(nullptr, nullptr, origin); }
 bool ActionRunner::CanStart() const {
+    if (Spec().Part()) return PartRunner::CanStart(Owner(), _idx);
     if (!Conditions(Owner()) || Spec().clips.empty()) return false;
     auto* p = Owner();
     auto* cc = p ? p->GetCharController() : nullptr;
@@ -235,6 +240,9 @@ void ActionRunner::SetupPlayback() {
 
 bool ActionRunner::RequestImpl(const RE::BSFixedString* ground, const RE::BSFixedString* air, int origin) {
     auto* p = Owner();
+    // A part action plays on its layer, run by PartRunner; this runner stays idle. Transitions go to PartRunner::Link.
+    if (Spec().Part())
+        return !ground && PartRunner::Start(p, _idx, origin >= 0 && origin != _idx ? "start" : "request");
     if (ground ? !Conditions(p, true) : !CanStart()) return false;
     if (!_isPlayer)
         EventMaps::Ensure(p,

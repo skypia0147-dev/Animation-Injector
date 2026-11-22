@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING "" FORCE)
-project(AnimationInjector VERSION 1.0.8)
+project(AnimationInjector VERSION 1.0.9)
 enable_language(RC)
 add_executable(AnimationInjectorFileLifetimeTests EXCLUDE_FROM_ALL tests/AnimationFileLifetime.cpp)
 target_include_directories(AnimationInjectorFileLifetimeTests PRIVATE tests/file_lifetime_stubs src)
@@ -189,6 +189,28 @@ target_compile_definitions(AnimationInjectorEventRegistryTests PRIVATE UNICODE _
 target_compile_options(AnimationInjectorEventRegistryTests PRIVATE /utf-8)
 target_precompile_headers(AnimationInjectorEventRegistryTests REUSE_FROM AnimationInjectorTestPch)
 target_link_libraries(AnimationInjectorEventRegistryTests PRIVATE CommonLibSSE::CommonLibSSE pugixml::pugixml)
+# <Locomotion>: parsing, rejections and the one-file rule (docs/설계-이동사다리-완충칸.md).
+add_executable(AnimationInjectorLadderTests EXCLUDE_FROM_ALL tests/Ladders.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
+target_include_directories(AnimationInjectorLadderTests PRIVATE src)
+target_compile_definitions(AnimationInjectorLadderTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(AnimationInjectorLadderTests PRIVATE /utf-8)
+target_precompile_headers(AnimationInjectorLadderTests REUSE_FROM AnimationInjectorTestPch)
+target_link_libraries(AnimationInjectorLadderTests PRIVATE CommonLibSSE::CommonLibSSE pugixml::pugixml)
+# The generated vanilla ladder table (core/VanillaLadders.inl) that <Locomotion> rebuilds changed blenders from.
+add_executable(AnimationInjectorVanillaLadderTests EXCLUDE_FROM_ALL tests/VanillaLadders.cpp src/core/VanillaLadders.cpp)
+target_include_directories(AnimationInjectorVanillaLadderTests PRIVATE src)
+target_compile_options(AnimationInjectorVanillaLadderTests PRIVATE /utf-8)
+# Part actions (body=, runtime/BodyPart.h): what the parser reads and refuses.
+add_executable(AnimationInjectorBodyPartsTests EXCLUDE_FROM_ALL tests/BodyParts.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
+target_include_directories(AnimationInjectorBodyPartsTests PRIVATE src)
+target_compile_definitions(AnimationInjectorBodyPartsTests PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(AnimationInjectorBodyPartsTests PRIVATE /utf-8)
+target_precompile_headers(AnimationInjectorBodyPartsTests REUSE_FROM AnimationInjectorTestPch)
+target_link_libraries(AnimationInjectorBodyPartsTests PRIVATE CommonLibSSE::CommonLibSSE pugixml::pugixml)
+# The upper layer's stabilizer (core/UpperStabilize.h, docs/설계-상체레이어.md).
+add_executable(AnimationInjectorUpperStabilizeTests EXCLUDE_FROM_ALL tests/UpperStabilize.cpp src/core/UpperStabilize.cpp)
+target_include_directories(AnimationInjectorUpperStabilizeTests PRIVATE src)
+target_compile_options(AnimationInjectorUpperStabilizeTests PRIVATE /utf-8)
 # XML format 6: condition cards, starts onto actions (T1-T7), the attributes and renamed elements, older forms named.
 add_executable(AnimationInjectorFormat6Tests EXCLUDE_FROM_ALL tests/Format6.cpp src/Settings.cpp src/declarations/XmlV2.cpp src/declarations/Cards.cpp src/declarations/ConditionFlowXml.cpp)
 target_include_directories(AnimationInjectorFormat6Tests PRIVATE src)
@@ -458,7 +480,7 @@ add_test(NAME XmlCheck COMMAND AnimationInjectorXmlCheck --json "${AI_DDS_PORT}"
 # The XML guides' examples are files the runtime reads: a grammar change that breaks one fails here.
 foreach(guide XML_GUIDE XML_GUIDE_EN)
     add_test(NAME Doc_${guide} COMMAND ${CMAKE_COMMAND} -D "DOC=${CMAKE_SOURCE_DIR}/${guide}.md"
-        -D "CHECKER=$<TARGET_FILE:AnimationInjectorXmlCheck>" -D "OUT=${CMAKE_BINARY_DIR}/doc-examples" -D EXPECT=9
+        -D "CHECKER=$<TARGET_FILE:AnimationInjectorXmlCheck>" -D "OUT=${CMAKE_BINARY_DIR}/doc-examples" -D EXPECT=14
         -P "${CMAKE_SOURCE_DIR}/tests/DocExamples.cmake")
 endforeach()
 # --compare on cards: an empty False (format 5's Stop) equals none, and to="X" with common conditions equals the

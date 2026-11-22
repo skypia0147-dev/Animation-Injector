@@ -186,8 +186,13 @@ std::vector<std::string> registrySnapshot(std::vector<EventRuleSpec> events) {
     std::sort(out.begin(), out.end());
     return out;
 }
+bool load(
+    const wchar_t* path, std::vector<ActionSpec>& out, std::vector<EventRuleSpec>& events, LocomotionSpec& locomotion) {
+    return Declarations::LoadXmlFile(path, out, events, locomotion);
+}
 bool load(const wchar_t* path, std::vector<ActionSpec>& out, std::vector<EventRuleSpec>& events) {
-    return Declarations::LoadXmlFile(path, out, events);
+    LocomotionSpec locomotion;
+    return load(path, out, events, locomotion);
 }
 bool load(const wchar_t* path, std::vector<ActionSpec>& out) {
     std::vector<EventRuleSpec> events;
@@ -370,15 +375,30 @@ int validateJson(const wchar_t* path) {
     spdlog::set_default_logger(log);
     std::vector<ActionSpec> out;
     std::vector<EventRuleSpec> events;
-    const bool ok = load(path, out, events);
+    LocomotionSpec locomotion;
+    const bool ok = load(path, out, events, locomotion);
     spdlog::set_default_logger(previous);  // The sink refers to locals of this frame.
-    std::vector<std::string> ids, names;
+    // The sets a <Locomotion> splits (runtime/LadderSpec.h Applies).
+    std::vector<std::string> ids, names, sets;
+    for (std::size_t i = 0; i < kLadderSetCount; ++i)
+        if (locomotion.Applies(static_cast<LadderSet>(i))) sets.emplace_back(LadderSetName(static_cast<LadderSet>(i)));
     for (const auto& a : out) ids.push_back(a.id);
     for (const auto& e : events) names.push_back(e.name);
     std::cout << "{\"format\":1,\"valid\":" << (ok ? "true" : "false") << ",\"actions\":";
     jsonList(std::cout, ids);
     std::cout << ",\"events\":";
     jsonList(std::cout, names);
+    std::cout << ",\"locomotion\":" << (locomotion.declared ? "true" : "false") << ",\"sets\":";
+    jsonList(std::cout, sets);
+    std::cout << ",\"trees\":";
+    {
+        std::vector<std::string> trees;
+        for (std::size_t i = 0; i < kTreeKinds.size(); ++i)
+            if (locomotion.trees[i].use != TreeUse::kVanilla)
+                trees.push_back(std::string(kTreeKinds[i].xml) + ":" +
+                                std::string(kTreeUseNames[static_cast<std::size_t>(locomotion.trees[i].use)]));
+        jsonList(std::cout, trees);
+    }
     std::cout << ",\"errors\":";
     jsonList(std::cout, errors);
     std::cout << ",\"warnings\":";
@@ -486,7 +506,10 @@ int wmain(int argc, wchar_t** argv) {
     if (argc == 2) {
         std::vector<ActionSpec> out;
         std::vector<EventRuleSpec> events;
-        if (!load(argv[1], out, events)) return 2;
+        LocomotionSpec locomotion;
+        if (!load(argv[1], out, events, locomotion)) return 2;
+        std::size_t sets = 0;
+        for (std::size_t i = 0; i < kLadderSetCount; ++i) sets += locomotion.Applies(static_cast<LadderSet>(i));
         // A lift action's ragdoll file next to this file (runtime/RagdollProfile): the game would skip a rejected
         // one for vanilla, but its author wants to know.
         for (const auto& a : out) {
@@ -501,7 +524,15 @@ int wmain(int argc, wchar_t** argv) {
                 return 2;
             }
         }
-        std::cout << "Valid: " << out.size() << " actions, " << events.size() << " registered events\n";
+        std::cout << "Valid: " << out.size() << " actions, " << events.size() << " registered events, " << sets
+                  << " locomotion sets" << '\n';
+        for (std::size_t i = 0; i < kTreeKinds.size(); ++i)
+            if (locomotion.trees[i].use != TreeUse::kVanilla)
+                std::cout << "Tree " << kTreeKinds[i].xml
+                          << " use=" << kTreeUseNames[static_cast<std::size_t>(locomotion.trees[i].use)] << '\n';
+        for (std::size_t i = 0; i < kLadderSetCount; ++i)
+            if (locomotion.declared && locomotion.except[i])
+                std::cout << "Except " << LadderSetName(static_cast<LadderSet>(i)) << '\n';
         for (auto& a : out) {
             std::cout << a.id << " key=" << a.trigger.key << " clips=" << a.clips.size()
                       << " rig=" << PairedRig::Name(a.rig) << " targetRig=" << PairedRig::Name(a.paired.targetRig)

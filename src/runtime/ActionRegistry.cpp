@@ -8,6 +8,7 @@
 #include "runtime/InputSink.h"
 #include "runtime/EventHistory.h"
 #include "runtime/ActionRegistry.h"
+#include "runtime/PartRunner.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/ClipIndex.h"
 #include "core/EventMaps.h"
@@ -24,6 +25,7 @@
 #include "runtime/FlowLinkRoutes.h"
 #include "runtime/DeclarationCatalog.h"
 #include "runtime/EventRegistry.h"
+#include "runtime/GripHold.h"
 #include "runtime/EquipmentCondition.h"
 #include "runtime/EventSuppression.h"
 #include "runtime/ExtendedConditions.h"
@@ -279,6 +281,7 @@ std::vector<ActionSpec> g_specs;
 // Built with g_specs and read-only afterwards (hooks on any thread).
 ClipIndex g_clipIndex;
 DeclarationCatalog g_catalog;
+LocomotionSpec g_locomotion;
 std::unordered_map<std::string, int> g_idIndex;  // exact id -> action
 std::unordered_map<std::uint32_t, std::vector<int>> g_keyActions, g_padActions;
 // Actions started by a game control (0.12.292), and whether any start or transition names one.
@@ -294,6 +297,7 @@ const std::vector<int> kNoActions;
 struct Declared {
     std::vector<ActionSpec> specs;
     std::vector<EventRuleSpec> events;  // every file's EventRegistry, merged by EventRegistry::Build
+    LocomotionSpec locomotion;          // the locomotion file's <Locomotion> (runtime/LadderSpec.h)
     ClipIndex clips;
     DeclarationCatalog catalog;
     std::unordered_map<std::string, int> ids;
@@ -309,7 +313,7 @@ Declared BuildDeclarations() {
     using Clock = std::chrono::steady_clock;
     Declared d;
     const auto loadStart = Clock::now();
-    d.specs = Declarations::LoadAll(&d.events);
+    d.specs = Declarations::LoadAll(&d.events, &d.locomotion);
     ExpandFlowLinkRoutes(d.specs);
     d.clips.Build(d.specs);
     // Lookups that used to walk every action: by id, by start key, button or game control, and the links
@@ -422,6 +426,7 @@ void Publish() {
         if (g_dataLoaded) ResolveKeywordNames();
     }
     g_clipIndex = std::move(d.clips);
+    g_locomotion = std::move(d.locomotion);
     g_catalog = std::move(d.catalog);
     g_idIndex = std::move(d.ids);
     g_keyActions = std::move(d.keyActions);
@@ -690,11 +695,13 @@ struct
         PairFeatures::Update(a_delta);
         EventRegistry::Update(a_delta);
         AnnotationCommands::Update();
+        GripHold::Update(a_delta);
         PairedSession::Update(a_delta);
         PairRootScale::Update();
         if (g_playerBound.load(std::memory_order_acquire))
             g_player->ForEach([&](int, ActionRunner& r) { r.Update(a_delta); });
         UpdateNpcRunners(a_delta);
+        PartRunner::Update(a_delta);      // part actions (body=): the layer weights, clocks and interruptions
         static float ensureTimer = 0.0f;  // NPC 프로젝트 DB 에 이벤트 이름 등록 (외부 진입 이벤트가 오기 전에)
         Qte::Update(a_delta);
         QteMenu::Sync();  // the QTE menu is open only while a QTE is on screen
@@ -985,10 +992,22 @@ const std::vector<std::string>& RegistryEventNames() {
     EnsureLoaded();
     return g_catalog.registryEvents;
 }
+const LocomotionSpec& Locomotion() {
+    EnsureLoaded();
+    return g_locomotion;
+}
 
 bool AnyActive() {
     return g_playerBound.load(std::memory_order_acquire) &&
            g_player->FindIf([](int, ActionRunner& r) { return r.GetState() != ActionRunner::State::kIdle; });
+}
+bool Busy(RE::Actor* actor) {
+    return actor && FindRunner(actor, [](int, ActionRunner& r) { return r.GetState() != ActionRunner::State::kIdle; });
+}
+bool BusyActive(RE::Actor* actor, int except) {
+    return actor && FindRunner(actor, [&](int a, ActionRunner& r) {
+        return a != except && r.GetState() == ActionRunner::State::kActive;
+    });
 }
 bool RotationWindowOpen(RE::Actor* actor) {
     return actor && FindRunner(actor, [](int, ActionRunner& r) { return r.RotationWindowOn(); }) != nullptr;
@@ -1028,6 +1047,7 @@ void BeforeGameLoad() {
     PairRootRuntime::Reset();
     NativePairEnd::Reset();
     ResetEventTriggers();
+    PartRunner::Reset();
     g_callbacks.Clear();
     for (auto& [id, entry] : NpcSnapshot()) entry->runners.ForEach([](int, ActionRunner& r) { r.ResetOnLoad(); });
     if (g_playerBound.load(std::memory_order_acquire)) g_player->ForEach([](int, ActionRunner& r) { r.ResetOnLoad(); });
@@ -1049,6 +1069,7 @@ void OnGameLoad() {
     ActionLinks::ResetOnLoad();
     AirControl::ResetOnLoad();
     PairedSession::ResetOnLoad();
+    PartRunner::Reset();
     static int n = 0;
     BindPlayer();
     g_callbacks.Clear();

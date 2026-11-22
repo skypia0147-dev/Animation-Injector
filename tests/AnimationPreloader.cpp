@@ -489,6 +489,19 @@ int main(int argc, char** argv) {
         assert(files[1].loaderName == "dodgeA_Preload");
         assert(files[2].path == "Animations\\Dodge\\B.hkx" && files[3].path == "Animations\\Stop\\C.hkx");
         assert(ProjectMask("FirstPerson") == kFirstPerson && ProjectMask("firstperson") == kFirstPerson);
+        // 11-20: the own locomotion trees' files are jobs too, third person only, before the action files and with
+        // ordinary preloading off as well.
+        OwnLocomotion::treeFiles = {"Animations\\H2H_RunForward.hkx", "Animations\\H2H_WalkForward.hkx"};
+        Install();
+        assert(files.size() == 6 && files[0].paired);
+        assert(files[1].path == "Animations\\H2H_RunForward.hkx" && !files[1].paired && files[1].rigs == third);
+        assert(files[1].loaderName == "AI_Tree0_Preload" && files[2].loaderName == "AI_Tree1_Preload");
+        assert(files[3].path == "Animations\\Dodge\\A.hkx");
+        FrameworkSettings::ordinary = false;
+        Install();
+        assert(files.size() == 3 && files[1].path == "Animations\\H2H_RunForward.hkx");
+        FrameworkSettings::ordinary = true;
+        OwnLocomotion::treeFiles.clear();
         assert(ProjectMask("DefaultMale") == PairedRig::Mask(PairedRig::Kind::kCharacter) && ProjectMask(nullptr) == 0);
 
         // A budget keeps declaration order; a file whose size cannot be read counts as the average.

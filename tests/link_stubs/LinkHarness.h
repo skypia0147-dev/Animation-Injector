@@ -89,6 +89,9 @@ struct HarnessSpec {
     } paired, loop;
     std::vector<int> clips;
     std::vector<ActionLinkSpec> links;
+    bool part = false;  // body= (runtime/PartRunner.h)
+    float enterBlend = -1.0f;
+    bool Part() const { return part; }
 };
 inline std::array<HarnessSpec, 4> specs;
 class ActionRunner {

@@ -9,6 +9,7 @@
 #include "runtime/GameControlBindings.h"
 #include "core/InputDispatchHook.h"
 #include "core/GameInputReplay.h"
+#include "core/LocomotionToggle.h"
 #include <climits>
 
 namespace AnimationInjector {
@@ -164,6 +165,8 @@ RE::BSEventNotifyControl InputSink::ProcessEvent(RE::InputEvent* const* a_event,
 
         const auto dev = be->device.get();
         const auto id = be->GetIDCode();
+        // [Debug] iLadderToggleKey: the <Locomotion> ladders on/off, for comparing with vanilla (core/LocomotionToggle.h).
+        if (allowActions && dev == RE::INPUT_DEVICE::kKeyboard && be->IsDown()) LocomotionToggle::OnKeyDown(id);
         const bool gamepad = dev == RE::INPUT_DEVICE::kGamepad;
         const std::uint32_t code = dev == RE::INPUT_DEVICE::kMouse ? id + 256 : id;
         // The game control this press stands for (0.12.292): a start or transition on it matches any device.
