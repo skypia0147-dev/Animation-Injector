@@ -199,9 +199,19 @@ int FootSyncs(RE::hkbBehaviorGraph* graph, const RE::hkbClipTriggerArray* trigge
     return bits;
 }
 
+// <Stance>: a vanilla clip that plays a file, and the graph it is in (its trigger event ids are that graph's).
+struct Played {
+    RE::hkbBehaviorGraph* graph = nullptr;
+    const RE::hkbClipGenerator* clip = nullptr;
+};
+using PlayedFiles = std::unordered_map<std::string, Played>;  // lowered animation path
+
 struct Builder {
     std::vector<AnimData::ClipCopy>& copies;
     RE::hkbBehaviorGraph* graph = nullptr;  // the graph that owns the blenders (event ids are its own)
+    RE::hkbCharacter* character = nullptr;  // <Stance> files are bound by its animation table
+    const PlayedFiles* played = nullptr;    // <Stance>: the vanilla clips of the stance files
+    int stanceClips = 0;
     int nodes = 0;
     const BlenderGeneratorLayout* blender = nullptr;  // the blender being patched (SyncedTriggers looks in it)
     std::unordered_set<std::string> completed;        // clips whose copies took another slot's triggers (logged once)
@@ -277,6 +287,70 @@ struct Builder {
         }
     }
 
+    // <Stance>: a clip of the stance file standing beside `own` (the walk or run copy) in its stance blender. A vanilla
+    // clip that plays the file gives its triggers (vanilla HKX carry no foot annotations; their foot events are the
+    // behavior's), their events renamed into this graph, its flags and playback speed, and its ground speed; without one
+    // the file's own FootLeft / FootRight annotations become its sync points and its animmotion annotations its speed.
+    // Its motion is `own`'s (registered as a copy of own's source clip).
+    RE::hkbClipGenerator* Stance(const Slot& own, const std::string& file, char side) {
+        const auto name = fmt::format("{}_AIS{}", NodeFactory::NodeName(own.clip), side);
+        const Played* like = nullptr;
+        if (played)
+            if (const auto it = played->find(Lower(file)); it != played->end()) like = &it->second;
+        RE::hkbClipTriggerArray* triggers = nullptr;
+        if (like && like->clip->triggers.get()) {
+            const auto* source = like->clip->triggers.get();
+            const auto* data = like->graph ? like->graph->data.get() : nullptr;
+            const auto* strings = data ? data->stringData.get() : nullptr;
+            std::vector<NodeFactory::TriggerDef> defs;
+            for (int i = 0; strings && i < source->triggers._size; ++i) {
+                const auto& t = source->triggers._data[i];
+                const int id = static_cast<int>(t.event.id);
+                if (id < 0 || id >= strings->eventNames._size) continue;
+                const char* event = strings->eventNames._data[id].c_str();
+                if (const int mine = event ? NodeFactory::InjectEvent(graph, event) : -1; mine >= 0)
+                    defs.push_back({t.localTime, mine, t.relativeToEndOfClip});
+            }
+            if (!defs.empty()) triggers = NodeFactory::MakeTriggerArray(defs);
+        }
+        const int binding = NodeFactory::EnsureAnimationName(character, file.c_str());
+        auto* c = NodeFactory::MakeClip(name.c_str(), file.c_str(),
+            static_cast<std::uint16_t>(binding >= 0 ? binding : 0xFFFF), triggers, own.clip,
+            !like || (like->clip->flags & kDontConvertAnnotations) == 0);
+        c->mode = own.clip->mode;
+        if (like) {
+            c->playbackSpeed = like->clip->playbackSpeed;
+            c->flags = like->clip->flags;
+        } else
+            c->flags = 0;  // convert the file's annotations: its own foot sync points
+        ++nodes;
+        ++stanceClips;
+        const float vanillaSpeed = like ? AnimData::ClipSpeed(NodeFactory::NodeName(like->clip)) : 0.0f;
+        float fileSpeed = vanillaSpeed >= 1.0f ? vanillaSpeed : AnimData::ClipSpeed(own.sourceName.c_str());
+        // An own tree's clip (H2H, 2HW) is not registered yet: its vanilla source's speed, as BindRate takes it. Without
+        // a speed the rate was not bound and the stance file played at 1x (11-23: unarmed, the feet slid back 40/s).
+        if (fileSpeed < 1.0f)
+            for (const auto& made : copies)
+                if (_stricmp(made.copy.c_str(), own.sourceName.c_str()) == 0) {
+                    fileSpeed = AnimData::ClipSpeed(made.source.c_str());
+                    break;
+                }
+        // A file with no vanilla clip reads its own speed from its animmotion annotations when it first plays.
+        if (fileSpeed < 1.0f && !like) fileSpeed = 100.0f;
+        logger::debug("[Stance] {} plays {}: vanilla clip '{}' speed {:.1f}, {}'s {:.1f} -> rate from {:.1f}", name,
+            file, like ? NodeFactory::NodeName(like->clip) : "-", vanillaSpeed, own.sourceName,
+            AnimData::ClipSpeed(own.sourceName.c_str()), fileSpeed);
+        if (fileSpeed >= 1.0f && LocomotionDrive::BindRate(graph, c, fileSpeed, like ? "" : file.c_str()))
+            ++bound;
+        else {
+            ++unbound;
+            logger::warn(
+                "[Stance] {} ({}): its rate could not be bound; it plays at 1x and the feet slide", name, file);
+        }
+        copies.push_back(AnimData::ClipCopy{own.sourceName, name, own.rate});
+        return c;
+    }
+
     // A new clip from `from` with playback × rate. It shares the source's triggers and gets its annotations: every
     // slot of a ladder then aligns on the same sync point ids (FootLeft, FootRight), as vanilla's own same-clip buffer
     // MT_WalkForwardFast does. Renamed sync events broke that: Havok matches sync points by id, so a buffer whose
@@ -312,8 +386,8 @@ struct Builder {
 // A child object for a new clip, with the bone weights and world-from-model weight of the slot it stands beside, or
 // `boneWeights` in place of the slot's. The objects it holds (the clip, the slot's binding set, the bone weights) get a
 // reference each, as OwnLocomotion::CopyChild's do. (Objects NodeFactory makes are never freed: InitRefObj.)
-BlenderGeneratorChildLayout* MakeChild(const BlenderGeneratorChildLayout* like, RE::hkbClipGenerator* clip,
-    float weight, RE::hkReferencedObject* boneWeights = nullptr) {
+BlenderGeneratorChildLayout* MakeChild(const BlenderGeneratorChildLayout* like, RE::hkbGenerator* clip, float weight,
+    RE::hkReferencedObject* boneWeights = nullptr) {
     auto* c = static_cast<BlenderGeneratorChildLayout*>(NodeFactory::AllocZero(sizeof(BlenderGeneratorChildLayout)));
     std::memcpy(c, like, sizeof(BlenderGeneratorChildLayout));
     NodeFactory::InitRefObj(c, RE::VTABLE_hkbBlenderGeneratorChild);
@@ -469,10 +543,75 @@ int SetValues(BlenderGeneratorLayout* b, const std::vector<Values>& layout, bool
     return b->children._size;
 }
 
+// <Stance> (runtime/LadderSpec.h): the walk or run copy `own` and the stance clips of this direction under a blender of
+// the direction blender's kind on kStanceVariable, children [left -1, own 0, right 1] (those whose file exists), synced
+// as the direction blender is (flags 0x11): the stance clips step with own. Null when no stance file plays here or the
+// blender could not be bound (then `own` stands alone, as without a <Stance>).
+RE::hkbGenerator* StanceBlend(
+    const BlenderGeneratorLayout* outer, const Slot& own, LadderDirection direction, bool run, Builder& build) {
+    const auto& locomotion = Actions::Locomotion();
+    std::vector<std::pair<float, std::string>> sides;
+    for (const auto side : {StanceSide::kLeft, StanceSide::kRight}) {
+        const auto& s = locomotion.Stance(side);
+        if (!s.declared) continue;
+        if (auto file = StanceFile(run ? s.run : s.walk, direction); OwnLocomotion::Listed(file))
+            sides.emplace_back(side == StanceSide::kLeft ? -1.0f : 1.0f, std::move(file));
+    }
+    if (sides.empty() || !build.character) return nullptr;
+    std::vector<std::pair<float, RE::hkbClipGenerator*>> kids{{0.0f, own.clip}};
+    for (const auto& [at, file] : sides) kids.emplace_back(at, build.Stance(own, file, at > 0.0f ? 'R' : 'L'));
+    std::sort(kids.begin(), kids.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    auto* b = static_cast<BlenderGeneratorLayout*>(NodeFactory::AllocZero(sizeof(BlenderGeneratorLayout)));
+    std::memcpy(b, outer, sizeof(BlenderGeneratorLayout));
+    NodeFactory::InitRefObj(b, RE::VTABLE_hkbBlenderGenerator);
+    auto* node = reinterpret_cast<RE::hkbNode*>(b);
+    std::memset(&node->name, 0, sizeof(node->name));
+    NodeFactory::MakeString(
+        node->name, fmt::format("{}_AIStance{}", NodeFactory::NodeName(outer), run ? 'R' : 'W').c_str());
+    NodeFactory::EmptyArray(node->cachedBindables);
+    node->areBindablesCached = false;
+    if (auto* set = node->variableBindingSet.get()) NodeFactory::AddRef(set);  // the direction blender's, rebound below
+    NodeFactory::EmptyArray(b->childrenInternalStates);
+    NodeFactory::EmptyArray(b->sortedChildren);
+    b->blendParameter = 0.0f;
+    b->minCyclicBlendParameter = 0.0f;
+    b->maxCyclicBlendParameter = 0.0f;
+    b->indexOfSyncMasterChild = -1;
+    auto* data = static_cast<BlenderGeneratorChildLayout**>(
+        NodeFactory::AllocZero(kids.size() * sizeof(BlenderGeneratorChildLayout*)));
+    for (std::size_t i = 0; i < kids.size(); ++i) {
+        auto* child =
+            static_cast<BlenderGeneratorChildLayout*>(NodeFactory::AllocZero(sizeof(BlenderGeneratorChildLayout)));
+        NodeFactory::InitRefObj(child, RE::VTABLE_hkbBlenderGeneratorChild);
+        NodeFactory::EmptyArray(reinterpret_cast<RE::hkbBindable*>(child)->cachedBindables);
+        child->generator = kids[i].second;
+        NodeFactory::AddRef(reinterpret_cast<RE::hkReferencedObject*>(kids[i].second));
+        child->weight = kids[i].first;
+        child->worldFromModelWeight = 1.0f;
+        data[i] = child;
+    }
+    NodeFactory::OwnArray(b->children, data, static_cast<int>(kids.size()));
+    ++build.nodes;
+    if (!LocomotionDrive::RebindStance(build.graph, node)) return nullptr;
+    return reinterpret_cast<RE::hkbGenerator*>(b);
+}
+
+// The direction a ladder blender's name ends in ("1HM_ForwardLeftBlend": forwardLeft).
+std::optional<LadderDirection> DirectionOf(std::string_view name) {
+    for (std::size_t d = 0; d < LadderNames::kDirections.size(); ++d) {
+        const auto tail = fmt::format("_{}Blend", LadderNames::kDirections[d].second);
+        if (name.size() >= tail.size() &&
+            _strnicmp(name.data() + name.size() - tail.size(), tail.c_str(), tail.size()) == 0)
+            return static_cast<LadderDirection>(d);
+    }
+    return std::nullopt;
+}
+
 // Adds the walk and the run clip after the vanilla slots (a blender whose children are vanilla: Rebuild ran first
-// when they were not). Returns the clips made.
+// when they were not). With a <Stance> file for the direction (`stance`), the walk or run stands in a stance blender.
+// Returns the clips made.
 int Patch(BlenderGeneratorLayout* b, const Picked& picked, Builder& build, RE::hkReferencedObject* walkMask,
-    const std::string& key) {
+    const std::string& key, std::optional<LadderDirection> stance) {
     const int n = b->children._size;
     build.blender = b;
     const int before = build.nodes;
@@ -492,8 +631,14 @@ int Patch(BlenderGeneratorLayout* b, const Picked& picked, Builder& build, RE::h
         layout.push_back({-kParked + static_cast<float>(i), data[i]->weight});
     }
     // While the walk and the run mix, the walk gives the legs and the run the upper body.
-    data[n] = MakeChild(walkSlot, walk.clip, LocomotionDrive::kWalkAxis, walkMask);
-    data[n + 1] = MakeChild(runSlot, run.clip, LocomotionDrive::kRunAxis);
+    RE::hkbGenerator* walkGenerator = walk.clip;
+    RE::hkbGenerator* runGenerator = run.clip;
+    if (stance) {
+        if (auto* s = StanceBlend(b, walk, *stance, false, build)) walkGenerator = s;
+        if (auto* s = StanceBlend(b, run, *stance, true, build)) runGenerator = s;
+    }
+    data[n] = MakeChild(walkSlot, walkGenerator, LocomotionDrive::kWalkAxis, walkMask);
+    data[n + 1] = MakeChild(runSlot, runGenerator, LocomotionDrive::kRunAxis);
     layout.push_back({LocomotionDrive::kWalkAxis, kParked});
     layout.push_back({LocomotionDrive::kRunAxis, kParked + 1.0f});
     NodeFactory::OwnArray(b->children, data, n + 2);
@@ -634,6 +779,51 @@ Summary Apply(RE::hkbBehaviorGraph* master, const RE::BSScrapArray<RE::hkbBehavi
     const bool anyOwn = locomotion.AnyOwnTree();
     std::vector<AnimData::ClipCopy> copies;
     std::vector<Child> buffer;
+    // <Stance>: the vanilla clips that play its files, in any of the character's graphs.
+    PlayedFiles played;
+    if (locomotion.AnyStance()) {
+        std::unordered_map<std::string, std::vector<Played>> candidates;
+        std::unordered_set<std::string> wanted;
+        for (const auto& f : OwnLocomotion::Files()) wanted.insert(Lower(f));
+        for (auto* graph : all) {
+            std::unordered_set<RE::hkbNode*> seen;
+            std::vector<RE::hkbNode*> stack;
+            if (graph->rootGenerator) stack.push_back(graph->rootGenerator.get());
+            while (!stack.empty()) {
+                auto* node = stack.back();
+                stack.pop_back();
+                if (!node || !seen.insert(node).second || seen.size() > 200000) continue;
+                if (NodeFactory::SameVTable(node, RE::VTABLE_hkbClipGenerator)) {
+                    const auto* clip = static_cast<const RE::hkbClipGenerator*>(node);
+                    if (const char* file = clip->animationName.c_str(); file && wanted.contains(Lower(file)))
+                        candidates[Lower(file)].push_back(Played{graph, clip});
+                }
+                if (NodeFactory::SameVTable(node, RE::VTABLE_hkbBehaviorReferenceGenerator)) continue;
+                const int count = ListChildren(node, buffer);
+                for (int i = count - 1; i >= 0; --i) stack.push_back(buffer[i].node);
+            }
+        }
+        // The clip that plays the file as a walk or run does: at 1x and with both foot sync points (a ladder's Slow slot
+        // plays it at 0.1x, 11-23: its foot triggers and speed put the feet off the ground).
+        for (auto& [file, list] : candidates) {
+            const Played* best = nullptr;
+            float bestScore = 1e9f;
+            for (const auto& c : list) {
+                const int feet = FootSyncs(c.graph, c.clip->triggers.get());
+                const float score = std::fabs(c.clip->playbackSpeed - 1.0f) + (feet == 3 ? 0.0f : 10.0f);
+                logger::debug("[Stance] {}: candidate '{}' in {} playback {:.2f} feet {} speed {:.1f}", file,
+                    NodeFactory::NodeName(c.clip), NodeFactory::NodeName(c.graph->rootGenerator.get()),
+                    c.clip->playbackSpeed, feet, AnimData::ClipSpeed(NodeFactory::NodeName(c.clip)));
+                if (score < bestScore) {
+                    bestScore = score;
+                    best = &c;
+                }
+            }
+            if (best) played.emplace(file, *best);
+        }
+        logger::info("[Stance] {} of its files are played by a vanilla clip (their foot triggers and speed are used)",
+            played.size());
+    }
     {
         // A vanilla clip that binds playbackSpeed alone, anywhere in the character's graphs: the sample the walk and
         // run clips' binding sets are copied from (LocomotionDrive::BindRate).
@@ -739,6 +929,8 @@ Summary Apply(RE::hkbBehaviorGraph* master, const RE::BSScrapArray<RE::hkbBehavi
                     take(OwnLocomotion::BuildBlock(weapon, graph, character, blockSelector, copies, fits));
         if (found.empty()) continue;
         Builder build{copies, graph};
+        build.character = character;
+        build.played = &played;
         std::size_t need = 0;
         struct Ready {
             BlenderGeneratorLayout* blender;
@@ -770,7 +962,7 @@ Summary Apply(RE::hkbBehaviorGraph* master, const RE::BSScrapArray<RE::hkbBehavi
                 continue;
             }
             auto differences = Differences(b, *vanilla);
-            need += 2 + (differences.empty() ? 0 : vanilla->slots.size());
+            need += 2 + (differences.empty() ? 0 : vanilla->slots.size()) + (locomotion.AnyStance() ? 6 : 0);
             ready.push_back({b, vanilla, picked, std::move(differences)});
         }
         if (ready.empty()) continue;
@@ -789,7 +981,11 @@ Summary Apply(RE::hkbBehaviorGraph* master, const RE::BSScrapArray<RE::hkbBehavi
                     graphName, name, differences);
             }
             const int before = b->children._size;
-            Patch(b, picked, build, walkMask, LayoutKey(graphName, name));
+            std::optional<LadderDirection> stance;
+            if (const auto set = graphRows.find(Lower(name));
+                locomotion.AnyStance() && set != graphRows.end() && LocomotionSpec::StanceSet(set->second))
+                stance = DirectionOf(name);
+            Patch(b, picked, build, walkMask, LayoutKey(graphName, name), stance);
             ++summary.patched;
             // Moving while blocking is always the walk: its blenders read an axis that stays at the walk clip.
             if (block ? LocomotionDrive::RebindWalk(graph, node) : LocomotionDrive::Rebind(graph, node)) ++gaits;
@@ -833,8 +1029,9 @@ Summary Apply(RE::hkbBehaviorGraph* master, const RE::BSScrapArray<RE::hkbBehavi
         }
         heldDirections += directions;
         logger::info("[Locomotion] {}: {} blenders split ({} of that name are other ladders), {} clips, {} direction "
-                     "blends hold their direction at speed 0",
-            graphName, ready.size(), other, build.nodes, directions);
+                     "blends hold their direction at speed 0{}",
+            graphName, ready.size(), other, build.nodes, directions,
+            build.stanceClips ? fmt::format("; {} stance clips", build.stanceClips) : std::string());
     }
     int missing = 0;
     for (const auto* table : {&rows, &blockRows})

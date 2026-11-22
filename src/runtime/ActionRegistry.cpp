@@ -262,8 +262,19 @@ int SelectStart(RE::Actor* actor, int source, RE::ActorHandle partner, Condition
     const int selected = ResolveFlow(actor, source, target, !origin->Spec().suppress.events.empty(), request);
     auto* destination = RunnerFor(actor, selected, true);
     if (!destination) return -1;
-    if (destination->Spec().paired.enabled)
-        return destination->CanRequest() && destination->CanRequestPairLink(target) ? selected : -1;
+    if (destination->Spec().paired.enabled) {
+        if (destination->CanRequest() && destination->CanRequestPairLink(target)) return selected;
+        // A pair with no partner did not start without a word in a log without debug (11-23: grapples that touched
+        // their target failed for the target 60 degrees aside of a 100-degree cone). The debug log names whom the
+        // search left out.
+        if (!target.get())
+            logger::info(
+                "[PairStart] actor={:08X} '{}' -> '{}' not started: no partner within {:.0f} units and {:.0f} degrees "
+                "either side ahead (<FindPartner range angle>)",
+                actor->GetFormID(), Spec(source).id, destination->Spec().id, destination->Spec().paired.range,
+                destination->Spec().paired.angle * 0.5f);
+        return -1;
+    }
     return destination->CanStart() ? selected : -1;
 }
 

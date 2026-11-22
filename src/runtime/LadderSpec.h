@@ -139,11 +139,49 @@ struct TreeSpec {
 };
 
 inline constexpr std::size_t kLadderSetCount = 16;
+
+// <Stance side="right|left" from="25" full="45" walk="Animations\bowdrawn_walk" run="...">: while an upper-body part
+// action plays (body="upper"), its clip's chest turned that way from the front by more than `from` degrees moves the
+// legs onto these walk / run files, wholly at `full` (11-23, user decision). `walk` and `run` are path prefixes the
+// direction is appended to (`Forward`, `ForwardLeft`, ... `BackwardRight`, then `.hkx`), as vanilla names
+// bowdrawn_walkforward.hkx; a missing file keeps that direction's own walk or run. The runtime measures the turn
+// (core/UpperLayer.h StanceTurn) and writes kStanceVariable; every split direction blender's walk and run become a blend
+// of [left stance, own, right stance] on it (core/LocomotionSplit.h). Not while sneaking or blocking.
+enum class StanceSide : std::uint8_t { kRight, kLeft };
+struct StanceSpec {
+    bool declared = false;
+    float from = 25.0f, full = 45.0f;  // degrees
+    std::string walk, run;             // path prefixes under Actors\Character, or empty
+    std::string sourceName;
+};
+inline constexpr const char* kStanceVariable = "AI_Stance";  // -1 (left) .. 0 (own) .. 1 (right)
+inline constexpr std::array<std::string_view, 2> kStanceSideNames{"right", "left"};
+inline std::optional<StanceSide> ParseStanceSide(std::string_view text) {
+    if (text == "right") return StanceSide::kRight;
+    if (text == "left") return StanceSide::kLeft;
+    return std::nullopt;
+}
+// "Animations\bowdrawn_walk" + "ForwardLeft" + ".hkx"
+inline std::string StanceFile(const std::string& prefix, LadderDirection direction) {
+    if (prefix.empty()) return {};
+    std::string out = prefix;
+    out += LadderNames::kDirections[static_cast<std::size_t>(direction)].second;
+    out += ".hkx";
+    return out;
+}
+// The share of a side's stance for a chest turned `turn` degrees that way (0 .. 1, linear from `from` to `full`).
+inline float StanceShare(const StanceSpec& s, float turn) {
+    if (!s.declared || !(s.full > s.from)) return 0.0f;
+    const float t = (turn - s.from) / (s.full - s.from);
+    return t <= 0.0f ? 0.0f : t >= 1.0f ? 1.0f : t;
+}
+
 // Everything a <Locomotion> declares: the sets it leaves vanilla and its trees.
 struct LocomotionSpec {
     bool declared = false;                       // a <Locomotion> was read
     std::array<bool, kLadderSetCount> except{};  // by LadderSet: <Except set>
     std::array<TreeSpec, 2> trees;               // by TreeWeapon
+    std::array<StanceSpec, 2> stances;           // by StanceSide: <Stance>
     std::string sourceName;                      // the file that declared it
     // The set's direction blenders are split. The sets of a weapon's own tree exist only with that tree.
     bool Applies(LadderSet set) const {
@@ -166,6 +204,10 @@ struct LocomotionSpec {
         return false;
     }
     bool Empty() const { return !declared; }
+    const StanceSpec& Stance(StanceSide side) const { return stances[static_cast<std::size_t>(side)]; }
+    bool AnyStance() const { return stances[0].declared || stances[1].declared; }
+    // The sets whose direction blenders take the stances: not sneaking, not blocking (a part action ends on a block).
+    static bool StanceSet(LadderSet set) { return set != LadderSet::kSneak && !LadderInBlock(set); }
 };
 
 // One file declares the locomotion of the whole game: `<declarations>\Locomotion\Locomotion.xml` (names ignoring

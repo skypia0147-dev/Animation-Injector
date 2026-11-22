@@ -80,7 +80,14 @@ Summary Apply(RE::hkbBehaviorGraph* master, const RE::BSScrapArray<RE::hkbBehavi
 // layer's weight is how much; 0 forgets the character. On the animation thread the spine then goes from its stabilized
 // rotation to the clip's own local one by the same amount.
 void SetStand(const RE::hkbCharacter* character, float stand);
-// Load: forgets every character's standing amount (their graphs go).
+// facing="camera" (11-23): the camera's direction in the character's model frame (yaw about the up axis,
+// counterclockwise from above, from the actor's front; pitch up), radians. On the animation thread the upper body is
+// turned there by the layer's weight, the turn shared by NPC Spine, Spine1 and Spine2. `on` false forgets the character.
+void SetAim(const RE::hkbCharacter* character, bool on, float yaw = 0.0f, float pitch = 0.0f);
+// <Stance> (runtime/LadderSpec.h): how far the upper layer's clip turns the chest from the front, in degrees about the
+// up axis (left positive, right negative), as last generated for the character (animation thread); false before.
+bool StanceTurn(const RE::hkbCharacter* character, float& degrees);
+// Load: forgets every character's standing amount, aim and stance turn (their graphs go).
 void ClearStand();
 // The selector index of a part action's clip in its layer's slots; -1 when the layer or the clip was not made.
 int ClipIndex(int action);

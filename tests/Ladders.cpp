@@ -109,6 +109,41 @@ int main() {
             const auto with = Parse(R"(<Action id="A" clip="a.hkx"/><Locomotion/>)");
             Check(with.ok && with.actions.size() == 1 && with.Applies(LadderSet::kBow), "next to an action");
         }
+        // <Stance side from full walk run> (11-23).
+        {
+            const auto p = Parse(
+                R"(<Locomotion><Stance side="right" walk="Animations\bowdrawn_walk"/><Stance side="left" from="10" full="30" run="Animations\L_run"/></Locomotion>)");
+            Check(p.ok, p.error.c_str());
+            const auto& right = p.locomotion.Stance(StanceSide::kRight);
+            const auto& left = p.locomotion.Stance(StanceSide::kLeft);
+            Check(right.declared && Near(right.from, 25.0f) && Near(right.full, 45.0f) &&
+                      right.walk == "Animations\\bowdrawn_walk" && right.run.empty(),
+                "a right stance with its default range");
+            Check(left.declared && Near(left.from, 10.0f) && Near(left.full, 30.0f) && left.walk.empty() &&
+                      left.run == "Animations\\L_run",
+                "a left stance with its range and run");
+            Check(p.locomotion.AnyStance() && p.Applies(LadderSet::k1HM), "a stance keeps every set split");
+            Check(StanceFile(right.walk, LadderDirection::kForwardLeft) == "Animations\\bowdrawn_walkForwardLeft.hkx",
+                "the direction is appended to the prefix");
+            Check(StanceFile("", LadderDirection::kForward).empty(), "no prefix, no file");
+            Check(Near(StanceShare(right, 20.0f), 0.0f) && Near(StanceShare(right, 35.0f), 0.5f) &&
+                      Near(StanceShare(right, 60.0f), 1.0f),
+                "the share rises from `from` to `full`");
+            Check(LocomotionSpec::StanceSet(LadderSet::k1HM) && LocomotionSpec::StanceSet(LadderSet::kSheathed) &&
+                      !LocomotionSpec::StanceSet(LadderSet::kSneak) && !LocomotionSpec::StanceSet(LadderSet::kBlockBow),
+                "not while sneaking or blocking");
+            Check(!Parse(R"(<Locomotion/>)").locomotion.AnyStance(), "no stance by default");
+            Check(Rejected(R"(<Locomotion><Stance side="up" walk="a"/></Locomotion>)"), "side is right or left");
+            Check(Rejected(R"(<Locomotion><Stance side="right"/></Locomotion>)"), "a walk or a run is needed");
+            Check(Rejected(R"(<Locomotion><Stance side="right" walk="a" from="40" full="30"/></Locomotion>)"),
+                "full above from");
+            Check(Rejected(R"(<Locomotion><Stance side="right" walk="a"/><Stance side="right" run="b"/></Locomotion>)"),
+                "one per side");
+            Check(Rejected(R"(<Locomotion><Stance side="right" walk="Animations\a_walkforward.hkx"/></Locomotion>)"),
+                "a prefix, not a file");
+            Check(
+                Rejected(R"(<Locomotion><Stance side="right" walk="a" set="Bow"/></Locomotion>)"), "unknown attribute");
+        }
         // <Except set>.
         {
             const auto p = Parse(R"(<Locomotion><Except set="Sneak"/><Except set="BlockSneak"/></Locomotion>)");

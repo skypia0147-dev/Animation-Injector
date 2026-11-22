@@ -187,9 +187,36 @@ const std::vector<std::string>& Files() {
                 TreeKindOf(weapon).xml, found.size(), p.To(), missing.size(), p.From());
             out.insert(out.end(), found.begin(), found.end());
         }
+        // <Stance> (11-23): each side's walk and run files that exist, in the direction order of LadderNames.
+        for (std::size_t s = 0; s < 2; ++s) {
+            const auto& stance = Actions::Locomotion().stances[s];
+            if (!stance.declared) continue;
+            std::vector<std::string> found, missing;
+            for (const auto* prefix : {&stance.walk, &stance.run})
+                for (std::size_t d = 0; d < LadderNames::kDirections.size(); ++d) {
+                    const auto file = StanceFile(*prefix, static_cast<LadderDirection>(d));
+                    if (file.empty()) continue;
+                    const auto is = [&](const std::string& f) { return same(f, file); };
+                    if (std::any_of(out.begin(), out.end(), is) || std::any_of(found.begin(), found.end(), is))
+                        continue;
+                    (FileExists(file) ? found : missing).push_back(file);
+                }
+            std::string list;
+            for (const auto& f : missing) list += (list.empty() ? "" : ", ") + f;
+            logger::info("[Stance] {}: {} files found, {} not found (those directions keep their own walk or run){}{}",
+                kStanceSideNames[s], found.size(), missing.size(), missing.empty() ? "" : ": ", list);
+            out.insert(out.end(), found.begin(), found.end());
+        }
         return out;
     }();
     return files;
+}
+
+bool Listed(const std::string& file) {
+    if (file.empty()) return false;
+    for (const auto& f : Files())
+        if (_stricmp(f.c_str(), file.c_str()) == 0) return true;
+    return false;
 }
 
 namespace {

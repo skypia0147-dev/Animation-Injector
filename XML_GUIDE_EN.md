@@ -290,6 +290,12 @@ With `body` an `<Action>` plays on the upper body or one arm only; the legs keep
 - `body`: `upper` (the spine and everything above it), `rightArm` (the right clavicle to the fingers, the right hand's weapon and AnimObjectR), `leftArm` (the left one, the shield and AnimObjectL). Left out, the action is a full-body action as before.
 - With `upper`, **standing plays the whole HKX** (legs and hips too: the HKX's legs carry its leaning upper body), and **moving, the legs are the locomotion's** while the upper body keeps the HKX's pose. Starting to move, the legs go over to the locomotion as the speed rises; stopping, they come back. Sneaking always keeps the locomotion's legs.
   - While moving the upper body takes none of the locomotion's sway, only its turn toward the way it goes (side steps). A lean the HKX makes by tilting COM was held up by its own legs, so it is left out while moving; the spine's own bend stays.
+  - The turn between the upper body and the pelvis (a bladed stance) is spread evenly over the three joints pelvis -> Spine -> Spine1 -> Spine2 instead of bending at the waist alone. The chest keeps its heading. Standing, the HKX plays whole.
+  - `facing="camera"` (upper body only): the upper body points **where the camera looks**, for actions that aim (a bow, a crossbow, a spell).
+    - While it plays the player's body turns toward the camera's heading (about 340 degrees a second). What the body has not caught up yet, and the legs' turn in side or back steps, the upper body takes back (up to 90 degrees).
+    - The upper body bends forward or back by the camera's pitch (up to 69 degrees either way).
+    - Both are shared by the spine's three bones (Spine, Spine1, Spine2). Make the HKX aim at the player's front (+Y).
+    - The default, `facing="legs"`, is the legs' turn above (actions that carry a pose: a charge, a drink, an umbrella). An NPC follows its legs even with `camera`.
   - An arm (`rightArm`, `leftArm`) follows the locomotion's torso: a hand at the mouth moves with the head while walking.
 - The upper body and each arm can play at once (crossed arms with `upper` and a wave with `rightArm`: the right arm is the wave's). A new action on a busy part (a start or a transition) crosses over from the running one at once, over the new action's `enter`.
 - End: a clip played once ends at its end (`<Exit at>`); with `loop="true"`, by an end transition (`<Transition key end="true">`), another transition or `maxHold`. A part loop has a `maxHold` only when written, or its default 3 s when it has a charge release (`on="release"`). Blend in and out with `enter` and `<Exit blend>` (0.3 s by default).
@@ -495,6 +501,26 @@ Vanilla movement blends the walk and run animations by speed. So walking at a st
 - One file in the whole game declares it: `SKSE\Plugins\AnimationInjector\Locomotion\Locomotion.xml` (names ignoring case). That file holds the `<Locomotion>` and nothing else (with an action or an event registration in it the whole file is skipped). A `<Locomotion>` in any other XML is not read, and the log says so.
 - When two mods ship one, the files share a path, so the mod manager's (MO2 and others) higher-priority mod's file is used whole. An own tree's HKX files follow the same priority. Put the mod's name in the `AnimationSet`'s `id` (the log names whose file it is).
 - Comparing with vanilla: set a key at `[Debug] iLadderToggleKey` in `AnimationInjector.ini` to switch it on and off in game. Off, the own trees (`<Tree use="own">`) go back to the vanilla trees too, so their files do not play.
+
+### Stance sets (Stance)
+
+A part action that turns the upper body aside (`body="upper"`: aiming a bow, a charge) bends at the waist over the forward walk and run. `<Stance>` moves the legs onto a walk and run made for that stance while such an action plays.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="WalkRunSplit">
+  <Locomotion>
+    <Stance side="right" from="25" full="45" walk="Animations\MyBow\Walk" run="Animations\MyBow\Run"/>
+  </Locomotion>
+</AnimationSet>
+```
+
+- When: while an upper-body part action plays, by how far its HKX turns the chest from the front toward `side` (measured every frame): from `from` degrees it starts to mix in, at `full` degrees the legs are wholly the stance's (25 and 45 by default). It blends in and out with the action. Not for arm part actions, full-body actions, sneaking or moving while blocking.
+- `side`: `right` or `left`, one each.
+- Files: `walk` and `run` are paths up to the direction, which is appended with `.hkx`: `Forward` `ForwardLeft` `ForwardRight` `Left` `Right` `Backward` `BackwardLeft` `BackwardRight` (`Animations\MyBow\WalkForward.hkx`). A missing direction keeps that direction's own walk or run. Either may be left out.
+- One set for every weapon (the own trees of `<Tree use="own">` too).
+- Making the HKX (as an own tree's files): **one cycle** (each foot once), one `FootLeft` and one `FootRight` annotation, and the travel (`animmotion`) annotations. Make the travel the speed a planted foot slides back at (a body that travels farther than the feet makes them slide). A file holding its cycle twice does not sync with the ladder and jumps every step.
+- A vanilla file takes the foot triggers and ground speed of the vanilla clip that plays it (not every vanilla file's speed matches its feet: `bowdrawn_walk*` does not).
 
 ### Turning to the opposite way
 

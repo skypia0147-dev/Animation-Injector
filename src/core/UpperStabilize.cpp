@@ -42,6 +42,51 @@ Quat SpineLocal(const Quat& parent, const Quat& rest, const Quat& clipParent, co
     return Slerp(outputLocal, Normalize(Mul(Conjugate(p), model)), w);
 }
 
+Quat Multiply(const Quat& a, const Quat& b) { return Normalize(Mul(a, b)); }
+
+Quat AimTurn(const Quat& clipSpine, const Quat& spineModel, const Quat& spineRest, float yaw, float pitch) {
+    const Quat rest = Normalize(spineRest);
+    const Quat clipHeading = TwistZ(Mul(Normalize(clipSpine), Conjugate(rest)));
+    const Quat nowHeading = TwistZ(Mul(Normalize(spineModel), Conjugate(rest)));
+    const Quat aimYaw{0.0f, 0.0f, std::sin(yaw * 0.5f), std::cos(yaw * 0.5f)};
+    // Heading: from the spine's to the clip's own, turned by the camera's.
+    const Quat heading = Mul(aimYaw, Mul(clipHeading, Conjugate(nowHeading)));
+    // Pitch about the aim's side axis: the model's +X turned by the camera's heading.
+    const Quat raise{std::sin(pitch * 0.5f), 0.0f, 0.0f, std::cos(pitch * 0.5f)};
+    const Quat pitchTurn = Mul(aimYaw, Mul(raise, Conjugate(aimYaw)));
+    return Normalize(Mul(pitchTurn, heading));
+}
+
+Quat TurnLocal(const Quat& parentModel, const Quat& d, const Quat& local) {
+    const Quat p = Normalize(parentModel);
+    return Normalize(Mul(Conjugate(p), Mul(Normalize(d), Mul(p, Normalize(local)))));
+}
+
+std::array<Quat, 3> SpreadWaist(const Quat& parentModel, const Quat& pelvisLocal, const std::array<Quat, 3>& locals,
+    const std::array<Quat, 4>& rests, float amount) {
+    if (!(amount > 0.0f)) return locals;
+    const auto heading = [&](const Quat& model, int bone) {
+        const Quat t = TwistZ(Mul(Normalize(model), Conjugate(Normalize(rests[bone]))));
+        return 2.0f * std::atan2(t[2], t[3]);
+    };
+    const auto wrap = [](float a) { return std::remainder(a, 6.2831853f); };
+    const Quat p = Normalize(parentModel);
+    const Quat m0 = Mul(p, Normalize(locals[0])), m1 = Mul(m0, Normalize(locals[1])),
+               m2 = Mul(m1, Normalize(locals[2]));
+    const float h[4] = {heading(Mul(p, Normalize(pelvisLocal)), 0), heading(m0, 1), heading(m1, 2), heading(m2, 3)};
+    const float joint[3] = {wrap(h[1] - h[0]), wrap(h[2] - h[1]), wrap(h[3] - h[2])};
+    const float share = (joint[0] + joint[1] + joint[2]) / 3.0f;
+    std::array<Quat, 3> out = locals;
+    Quat parent = p;
+    for (int i = 0; i < 3; ++i) {
+        const float c = (share - joint[i]) * std::min(amount, 1.0f);
+        const Quat turn{0.0f, 0.0f, std::sin(c * 0.5f), std::cos(c * 0.5f)};
+        out[i] = TurnLocal(parent, turn, locals[i]);
+        parent = Mul(parent, out[i]);
+    }
+    return out;
+}
+
 Quat Slerp(const Quat& a, const Quat& target, float w) {
     const Quat from = Normalize(a);
     if (!(w > 0.0f)) return from;

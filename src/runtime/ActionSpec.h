@@ -155,6 +155,10 @@ struct ActionSpec {
     // The part of the body it plays on (runtime/BodyPart.h): kWhole, a state of the root machine, or a part layer
     // over the locomotion (core/UpperLayer.h), run by runtime/PartRunner.h instead of an ActionRunner.
     BodyPart body = BodyPart::kWhole;
+    // body="upper" facing="camera" (11-23): while it plays the player turns toward the camera's heading and the
+    // upper body points where the camera looks, left-right and up-down (core/UpperLayer.h SetAim). Default "legs": the
+    // upper body follows the legs' heading.
+    bool faceCamera = false;
     // Whose graph plays it (11-05): character, or a creature of runtime/PairedRigCatalog.h. A creature action's
     // clip is relative to that creature's actor folder and it is injected into that creature's root machine.
     PairedRig::Kind rig = PairedRig::Kind::kCharacter;

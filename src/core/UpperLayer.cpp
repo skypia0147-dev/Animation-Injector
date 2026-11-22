@@ -83,6 +83,40 @@ float StandOf(const void* character) {
     return 0.0f;
 }
 int g_spine = -1;
+// facing="camera" (SetAim): the spine's three bones that share the aim's turn, and the first one's model rotation in
+// the reference pose (headings are measured from it). -1: no aim (the skeleton has no Spine1 > Spine2 under Spine).
+int g_spine1 = -1, g_spine2 = -1;
+Quat g_spineRest{0, 0, 0, 1};
+// The waist spread (UpperStabilize::SpreadWaist): the pelvis, and the reference model rotations of pelvis, Spine,
+// Spine1, Spine2. -1: no spread.
+int g_pelvis = -1;
+std::array<Quat, 4> g_waistRests{};
+struct AimValue {
+    float yaw = 0.0f, pitch = 0.0f;
+};
+std::mutex g_aimLock;
+std::vector<std::pair<const void*, AimValue>> g_aim;
+// <Stance>: the upper layer clip's own chest turn from the front by character (StanceTurn), degrees, left positive.
+std::mutex g_turnLock;
+std::vector<std::pair<const void*, float>> g_turn;
+void NoteTurn(const void* character, float degrees) {
+    std::scoped_lock guard(g_turnLock);
+    for (auto& [c, t] : g_turn)
+        if (c == character) {
+            t = degrees;
+            return;
+        }
+    g_turn.emplace_back(character, degrees);
+}
+bool AimOf(const void* character, AimValue& out) {
+    std::scoped_lock guard(g_aimLock);
+    for (const auto& [c, a] : g_aim)
+        if (c == character) {
+            out = a;
+            return true;
+        }
+    return false;
+}
 
 // ── Bone classes ───────────────────────────────────────────────────────────────────────────────────────────────
 enum Mask : unsigned { kUpperBit = 1, kRightBit = 2, kLeftBit = 4 };
@@ -349,6 +383,10 @@ struct BlenderGenerate {
             if (!g_spineChain.empty() && ChainRotation(output, g_spineChain, spine)) {
                 ChainRotation(output, g_parentChain, parent);
                 t_kept = {context.character, spine, parent};
+                // The clip's chest heading from the spine's reference pose: how far the clip turns the upper body.
+                const Quat twist = UpperStabilize::TwistZ(UpperStabilize::Multiply(
+                    spine, {-g_spineRest[0], -g_spineRest[1], -g_spineRest[2], g_spineRest[3]}));
+                NoteTurn(context.character, 2.0f * std::atan2(twist[2], twist[3]) * 57.29578f);
             }
             return;
         }
@@ -369,6 +407,36 @@ struct BlenderGenerate {
         if (Quat own; stand > 0.0f && ReadRotation(*clip, g_spine, own))
             target = UpperStabilize::Slerp(target, own, stand);
         WriteRotation(output, g_spine, UpperStabilize::Slerp(local, target, w));
+        // facing="camera": the upper body turned where the camera looks, the turn shared by the spine's three bones
+        // (one bone alone bent the body over at a side step's 90 degrees, 11-21).
+        if (AimValue aim; g_spine2 >= 0 && AimOf(context.character, aim)) {
+            Quat l0, l1, l2;
+            if (!ReadRotation(output, g_spine, l0) || !ReadRotation(output, g_spine1, l1) ||
+                !ReadRotation(output, g_spine2, l2))
+                return;
+            constexpr Quat identity{0, 0, 0, 1};
+            const Quat m0 = UpperStabilize::Multiply(parent, l0);
+            const Quat turn = UpperStabilize::Slerp(
+                identity, UpperStabilize::AimTurn(kept.spine, m0, g_spineRest, aim.yaw, aim.pitch), w);
+            const Quat share = UpperStabilize::Slerp(identity, turn, 1.0f / 3.0f);
+            const Quat m1 = UpperStabilize::Multiply(m0, l1);
+            WriteRotation(output, g_spine, UpperStabilize::TurnLocal(parent, share, l0));
+            WriteRotation(output, g_spine1, UpperStabilize::TurnLocal(m0, share, l1));
+            WriteRotation(output, g_spine2, UpperStabilize::TurnLocal(m1, share, l2));
+        }
+        // The waist: the upper body's turn from the locomotion's pelvis spread over the spine's three joints, the
+        // chest's heading kept (standing, the clip's own legs and spine are the clip's).
+        if (const float spread = w * (1.0f - stand); g_pelvis >= 0 && spread > 0.0f) {
+            std::array<Quat, 3> locals;
+            Quat pelvis;
+            if (ReadRotation(output, g_pelvis, pelvis) && ReadRotation(output, g_spine, locals[0]) &&
+                ReadRotation(output, g_spine1, locals[1]) && ReadRotation(output, g_spine2, locals[2])) {
+                const auto spread3 = UpperStabilize::SpreadWaist(parent, pelvis, locals, g_waistRests, spread);
+                WriteRotation(output, g_spine, spread3[0]);
+                WriteRotation(output, g_spine1, spread3[1]);
+                WriteRotation(output, g_spine2, spread3[2]);
+            }
+        }
     }
     static inline REL::Relocation<decltype(thunk)> original;
 };
@@ -437,6 +505,39 @@ Summary Apply(RE::hkbBehaviorGraph* master, const RE::BSScrapArray<RE::hkbBehavi
             rest.push_back(q);
         }
         g_parentRest = UpperStabilize::ChainRotation(rest);
+        {
+            Quat own{0, 0, 0, 1};
+            if (g_spine < static_cast<int>(skeleton->referencePose.size()))
+                std::memcpy(own.data(), &skeleton->referencePose[g_spine].rotation.vec, sizeof(own));
+            const std::array<Quat, 2> spineRest{g_parentRest, own};
+            g_spineRest = UpperStabilize::ChainRotation(spineRest);
+            int top = -1;
+            const auto upper = Chain(skeleton, "NPC Spine2 [Spn2]", top);
+            if (upper.size() == g_spineChain.size() + 2 && upper[g_spineChain.size() - 1] == g_spine) {
+                g_spine1 = upper[g_spineChain.size()];
+                g_spine2 = top;
+                // The pelvis beside the spine, under the same parent (NPC COM): the waist spread.
+                int pelvis = -1;
+                const auto hips = Chain(skeleton, "NPC Pelvis [Pelv]", pelvis);
+                const auto rest = [&](int b) {
+                    Quat q{0, 0, 0, 1};
+                    if (b >= 0 && b < static_cast<int>(skeleton->referencePose.size()))
+                        std::memcpy(q.data(), &skeleton->referencePose[b].rotation.vec, sizeof(q));
+                    return q;
+                };
+                if (pelvis >= 0 && hips.size() == g_spineChain.size() &&
+                    hips[hips.size() - 2] == g_parentChain.back()) {
+                    g_pelvis = pelvis;
+                    const Quat spine1 = UpperStabilize::Multiply(g_spineRest, rest(g_spine1));
+                    g_waistRests = {UpperStabilize::Multiply(g_parentRest, rest(pelvis)), g_spineRest, spine1,
+                        UpperStabilize::Multiply(spine1, rest(g_spine2))};
+                } else
+                    logger::warn(
+                        "[UpperLayer] NPC Pelvis [Pelv] is not beside NPC Spine: the waist turn is not spread");
+            } else
+                logger::warn(
+                    "[UpperLayer] no NPC Spine1 > NPC Spine2 under NPC Spine: facing=\"camera\" keeps the legs' heading");
+        }
         // Standing's bones: under the spine's parent, outside the spine's branch.
         g_lowerBones.clear();
         const int com = g_parentChain.back();
@@ -635,8 +736,37 @@ void SetStand(const RE::hkbCharacter* character, float stand) {
 }
 
 void ClearStand() {
-    std::scoped_lock guard(g_standLock);
-    g_stand.clear();
+    {
+        std::scoped_lock guard(g_standLock);
+        g_stand.clear();
+    }
+    {
+        std::scoped_lock guard(g_aimLock);
+        g_aim.clear();
+    }
+    std::scoped_lock guard(g_turnLock);
+    g_turn.clear();
+}
+
+bool StanceTurn(const RE::hkbCharacter* character, float& degrees) {
+    std::scoped_lock guard(g_turnLock);
+    for (const auto& [c, t] : g_turn)
+        if (c == character) {
+            degrees = t > 180.0f ? t - 360.0f : t < -180.0f ? t + 360.0f : t;
+            return true;
+        }
+    return false;
+}
+
+void SetAim(const RE::hkbCharacter* character, bool on, float yaw, float pitch) {
+    std::scoped_lock guard(g_aimLock);
+    const auto it = std::find_if(g_aim.begin(), g_aim.end(), [&](const auto& e) { return e.first == character; });
+    if (!on) {
+        if (it != g_aim.end()) g_aim.erase(it);
+    } else if (it != g_aim.end())
+        it->second = {yaw, pitch};
+    else
+        g_aim.emplace_back(character, AimValue{yaw, pitch});
 }
 
 bool LayerReady(int layer) {

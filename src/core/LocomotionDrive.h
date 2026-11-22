@@ -71,6 +71,9 @@ inline constexpr float kMinRate = 0.1f, kMaxRate = 10.0f;
 bool Rebind(RE::hkbBehaviorGraph* graph, RE::hkbNode* blender);
 // The same, at kWalkOnlyVariable.
 bool RebindWalk(RE::hkbBehaviorGraph* graph, RE::hkbNode* blender);
+// The same, at kStanceVariable (runtime/LadderSpec.h <Stance>): a stance blender made from a direction blender, which
+// still holds that blender's SpeedSampled binding set (core/LocomotionSplit.cpp StanceBlend).
+bool RebindStance(RE::hkbBehaviorGraph* graph, RE::hkbNode* blender);
 // Graph pass. Points a BSCyclicBlendTransitionGenerator's fBlendParameter binding (a Direction binding; the direction
 // blend under it has no binding of its own and takes the value from it) at kDirectionVariable. False, quietly, when it
 // is not bound to Direction.

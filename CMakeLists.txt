@@ -480,7 +480,7 @@ add_test(NAME XmlCheck COMMAND AnimationInjectorXmlCheck --json "${AI_DDS_PORT}"
 # The XML guides' examples are files the runtime reads: a grammar change that breaks one fails here.
 foreach(guide XML_GUIDE XML_GUIDE_EN)
     add_test(NAME Doc_${guide} COMMAND ${CMAKE_COMMAND} -D "DOC=${CMAKE_SOURCE_DIR}/${guide}.md"
-        -D "CHECKER=$<TARGET_FILE:AnimationInjectorXmlCheck>" -D "OUT=${CMAKE_BINARY_DIR}/doc-examples" -D EXPECT=14
+        -D "CHECKER=$<TARGET_FILE:AnimationInjectorXmlCheck>" -D "OUT=${CMAKE_BINARY_DIR}/doc-examples" -D EXPECT=15
         -P "${CMAKE_SOURCE_DIR}/tests/DocExamples.cmake")
 endforeach()
 # --compare on cards: an empty False (format 5's Stop) equals none, and to="X" with common conditions equals the

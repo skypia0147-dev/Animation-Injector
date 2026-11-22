@@ -84,6 +84,18 @@ int main() {
             Check(a->links.size() == 2 && a->links[0].end && a->links[1].onRelease, "end transitions");
         }
 
+        // facing (11-23): camera on the upper body; legs is the default.
+        {
+            const auto p = Parse(Part("body='upper' facing='camera'"));
+            Check(p.ok && p.Find("Drink")->faceCamera, "facing camera read");
+            const auto q = Parse(Part("body='upper' facing='legs'"));
+            Check(q.ok && !q.Find("Drink")->faceCamera, "facing legs read");
+            Check(!Parse(Part("body='upper'")).Find("Drink")->faceCamera, "facing defaults to the legs");
+            Check(Rejected(Part("body='rightArm' facing='camera'"), "facing"), "facing on an arm");
+            Check(Rejected(Part("facing='camera'"), "facing"), "facing on a full-body action");
+            Check(Rejected(Part("body='upper' facing='screen'"), "facing"), "an unknown facing");
+        }
+
         // Refused.
         Check(Rejected(Part("body='legs'"), "body는 upper"), "unknown part");
         Check(Rejected(kStart + "<Pair id='Drink' clip='Animations\\Drink.hkx' body='upper'/>"), "a pair");

@@ -57,6 +57,8 @@ namespace AnimationInjector::OwnLocomotion {
 // share the graphs and so the clips' binding indices, give each file the same index. (11-14: indexing only the
 // project that ran the graph pass made the other project's clips play another mod's animations at those indices.)
 const std::vector<std::string>& Files();
+// Whether `file` is one of Files() (found on disk), ignoring case: a <Stance> file the ladders may play.
+bool Listed(const std::string& file);
 
 struct Built {
     std::vector<RE::hkbNode*> directionBlenders;  // the eight <prefix>_<Direction>Blend, for the ladder pass

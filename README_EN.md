@@ -44,9 +44,9 @@ Action mods combine these features into actions.
 | Carrying | Lift someone, carry them and put them down. How a target swinging under physics moves is set per lift action by a ragdoll file beside the XML (vanilla without one) |
 | QTE | Six kinds: timing, rapid presses, hold and release, key sequences and more. Each result can lead to a different action |
 | View | Third- and first-person actions and pairs; switching from first to third person to play one |
-| Body parts | Play on the upper body or one arm while moving. The upper body keeps the clip's pose whatever the legs' tilt and sway, and the whole clip plays while standing. Works with charges and transitions |
+| Body parts | Play on the upper body or one arm while moving. The upper body keeps the clip's pose whatever the legs' tilt and sway, and the whole clip plays while standing. The upper body can face where the camera looks (aiming). Works with charges and transitions |
 | Grip hold | Keep the weapon in a hand where it is at that moment after the action ends (right, left or both hands; third or first person). Sheathing or changing equipment lets go |
-| Walk and run | One file, `Locomotion\Locomotion.xml`: each direction plays its walk or its run alone, at the actor's real speed (less foot sliding). Two-handed axes and hammers and unarmed get locomotion trees of their own. Switching to the opposite way while running sends a turn event (`AI_Turn_RightToLeft`, `AI_Turn_LeftToRight`, and `AI_Turn_ForwardToBack`, `AI_Turn_BackToForward` forward and back) to play a turn action |
+| Walk and run | One file, `Locomotion\Locomotion.xml`: each direction plays its walk or its run alone, at the actor's real speed (less foot sliding). Two-handed axes and hammers and unarmed get locomotion trees of their own. Switching to the opposite way while running sends a turn event (`AI_Turn_RightToLeft`, `AI_Turn_LeftToRight`, and `AI_Turn_ForwardToBack`, `AI_Turn_BackToForward` forward and back) to play a turn action. While a part action turns the upper body aside, the legs can use a walk and run of their own (stance sets) |
 
 Pairs and carrying work in third person only.
 

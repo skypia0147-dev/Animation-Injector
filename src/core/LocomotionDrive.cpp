@@ -1,5 +1,6 @@
 #include "core/LocomotionDrive.h"
 #include "core/NodeFactory.h"
+#include "runtime/LadderSpec.h"
 #include "runtime/TdmMovement.h"
 
 #include <atomic>
@@ -469,6 +470,9 @@ bool RebindWalk(RE::hkbBehaviorGraph* graph, RE::hkbNode* blender) {
         RebindParameter(graph, blender, "blendParameter", "SpeedSampled", kWalkOnlyVariable, true, kMinAxis);
     if (done) g_anySplit.store(true);
     return done;
+}
+bool RebindStance(RE::hkbBehaviorGraph* graph, RE::hkbNode* blender) {
+    return RebindParameter(graph, blender, "blendParameter", "SpeedSampled", kStanceVariable, true, 0.0f);
 }
 bool RebindDirection(RE::hkbBehaviorGraph* graph, RE::hkbNode* cyclic) {
     const bool done = RebindParameter(graph, cyclic, "fBlendParameter", "Direction", kDirectionVariable, false);

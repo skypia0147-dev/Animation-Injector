@@ -42,8 +42,9 @@ public:
 };
 struct Hit {
     int layer = -1;
-    float z = 0, w = 0;
+    float z = 0, w = 0, height = 0;
     bool participant = false;
+    RE::FormID owner = 0;  // the reference the body belongs to, 0 when none (11-23: what an unknown contact is)
 };
 class Collector final : public RE::hkpCdPointCollector {
 public:
@@ -70,6 +71,7 @@ public:
             const auto* root = static_cast<const RE::hkpCollidable*>(body);
             hit.layer = static_cast<int>(root->GetCollisionLayer());
             hit.participant = root == participants[0] || root == participants[1];
+            if (auto* ref = RE::TESHavokUtilities::FindCollidableRef(*root)) hit.owner = ref->GetFormID();
         }
         if (hit.participant)
             ++participantCount;
@@ -91,10 +93,18 @@ public:
             case RE::COL_LAYER::kSpell:
             case RE::COL_LAYER::kSpellExplosion:
             case RE::COL_LAYER::kTrigger:
-            case RE::COL_LAYER::kNonCollidable: kind = Surface::kNonPhysical; break;
+            case RE::COL_LAYER::kNonCollidable:
+            // Volumes nothing stands on or runs into (11-23: an actor zone of a mod's cell, 127 below the feet, made
+            // every grapple space check there unavailable, so the Pounding and Giant Swing branches never played).
+            case RE::COL_LAYER::kActorZone:
+            case RE::COL_LAYER::kAcousticSpace:
+            case RE::COL_LAYER::kProjectileZone:
+            case RE::COL_LAYER::kCloudTrap:
+            case RE::COL_LAYER::kGasTrap: kind = Surface::kNonPhysical; break;
             default: break;
             }
         const float height = point.contact.position.quad.m128_f32[2] * inverseScale - footZ;
+        hit.height = height;
         policy.Add(kind, hit.z, height);
         if (count < hits.size()) hits[count] = hit;
         ++count;
@@ -205,7 +215,9 @@ ConditionFlow::Value Read(std::uint64_t id, int role, RE::Actor* actor, RE::Acto
     logger::debug(
         "[SpaceProbe] #{} role={} phase=before-native-move actor={:08X} origin=({:.2f},{:.2f},{:.2f}) liveTransformUnchanged={} diagnosticOnly={}",
         id, role, actor->GetFormID(), pos[0] / scale, pos[1] / scale, pos[2] / scale, unchanged, diagnostic);
-    if (diagnostic)
+    // Every contact when the verdict is not clear-cut: what made it unavailable (11-23: every grapple space check of
+    // a sprint read unavailable and took the other branch).
+    if (diagnostic || combined.unknown)
         for (const auto* collector : {&start, &sweep}) {
             const auto* kind = collector == &start ? "start" : "sweep";
             logger::debug(
@@ -214,8 +226,10 @@ ConditionFlow::Value Read(std::uint64_t id, int role, RE::Actor* actor, RE::Acto
                 collector->otherStatic, collector->other);
             for (unsigned i = 0; i < std::min<unsigned>(collector->count, 16); ++i) {
                 const auto& hit = collector->hits[i];
-                logger::debug("[SpaceProbe] #{} role={} {} hit={} layer={} participant={} normalZ={:.3f} rawW={:.5f}",
-                    id, role, kind, i, hit.layer, hit.participant, hit.z, hit.w);
+                logger::debug(
+                    "[SpaceProbe] #{} role={} {} hit={} layer={} owner={:08X} participant={} normalZ={:.3f} height={:.1f} "
+                    "rawW={:.5f}",
+                    id, role, kind, i, hit.layer, hit.owner, hit.participant, hit.z, hit.height, hit.w);
             }
         }
     return verdict;

@@ -1024,7 +1024,7 @@ struct Compiler {
         const bool pair = std::string_view(n.name()) == "Pair";
         shape(n,
             {"id", "clip", "view", "otherView", "air", "attack", "enter", "block", "safety", "lostBlend", "reorient",
-                "interruptOnHit", "loop", "maxHold", "rig", "body"},
+                "interruptOnHit", "loop", "maxHold", "rig", "body", "facing"},
             {"Exit", "Rotate", "IFrame", "HyperArmor", "TimeScale", "Cost", "MoveCancel", "Transition", "FindPartner",
                 "Carry", "QTE", "CarryRelease", "EventValues", "Do", "Camera"});
         if (!pair) {
@@ -1035,6 +1035,11 @@ struct Compiler {
         // Only the putdown Action a Carry names; the Carry checks that it has this slot.
         // A part action (body=, runtime/BodyPart.h): the upper body or one arm over the locomotion, third person,
         // never a state of the root machine. What it may declare is listed in BodyPart.h.
+        if (n.attribute("facing")) {
+            if (get(n, "facing") != "legs" && get(n, "facing") != "camera")
+                fail(n, "facing은 legs 또는 camera입니다: " + get(n, "facing"));
+            if (get(n, "body") != "upper") fail(n, "facing은 상체 부위 동작(body=\"upper\")에만 씁니다");
+        }
         if (n.attribute("body")) {
             const auto part = ParseBodyPart(get(n, "body"));
             if (!part) fail(n, "body는 upper, rightArm, leftArm 중 하나입니다: " + get(n, "body"));
@@ -1119,6 +1124,7 @@ struct Compiler {
         if (n.attribute("body")) {
             s.body = *ParseBodyPart(get(n, "body"));
             s.view.view = View::kThird;
+            s.faceCamera = get(n, "facing") == "camera";
         }
         {
             auto f = required(n, "clip");
@@ -1684,7 +1690,7 @@ std::string triggerName(Node st) {
 // <Locomotion><Tree weapon use/><Except set/></Locomotion> (docs/설계-이동사다리-완충칸.md, section 7). One <Tree>
 // per weapon kind, one <Except> per set. An empty <Locomotion/> is every set.
 LocomotionSpec Locomotion(Node locomotion, const std::string& sourceName) {
-    shape(locomotion, {}, {"Tree", "Except"});
+    shape(locomotion, {}, {"Tree", "Except", "Stance"});
     LocomotionSpec spec;
     spec.declared = true;
     spec.sourceName = sourceName;
@@ -1711,6 +1717,25 @@ LocomotionSpec Locomotion(Node locomotion, const std::string& sourceName) {
         auto& excepted = spec.except[static_cast<std::size_t>(*set)];
         if (excepted) fail(e, "같은 set을 두 번 뺐습니다: " + get(e, "set"));
         excepted = true;
+    }
+    // <Stance side from full walk run> (11-23): the legs while an upper-body part action's chest is turned that way.
+    for (auto s : locomotion.children("Stance")) {
+        shape(s, {"side", "from", "full", "walk", "run"});
+        const auto side = ParseStanceSide(required(s, "side"));
+        if (!side) fail(s, "side는 right 또는 left입니다: " + get(s, "side"));
+        auto& stance = spec.stances[static_cast<std::size_t>(*side)];
+        if (stance.declared) fail(s, "같은 side를 두 번 지정했습니다: " + get(s, "side"));
+        stance.declared = true;
+        stance.sourceName = sourceName;
+        stance.from = static_cast<float>(numeric(s, s.attribute("from") ? get(s, "from") : "25", 180));
+        stance.full = static_cast<float>(numeric(s, s.attribute("full") ? get(s, "full") : "45", 180));
+        if (!(stance.full > stance.from)) fail(s, "full은 from보다 커야 합니다");
+        stance.walk = get(s, "walk");
+        stance.run = get(s, "run");
+        if (stance.walk.empty() && stance.run.empty()) fail(s, "walk나 run 중 하나는 지정해야 합니다");
+        for (const auto* prefix : {&stance.walk, &stance.run})
+            if (!prefix->empty() && (prefix->ends_with(".hkx") || prefix->ends_with(".HKX")))
+                fail(s, "walk·run은 방향 이름 앞까지의 경로입니다(예: Animations\\bowdrawn_walk): " + *prefix);
     }
     return spec;
 }

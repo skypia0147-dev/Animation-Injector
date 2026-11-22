@@ -22,6 +22,11 @@ constexpr float kAskedGrace = 1.0f;
 // amount follows the speed as it rises from a stand, so the legs leave with the locomotion's start.
 constexpr float kStandSpeed = 60.0f;
 constexpr float kStandBlend = 0.25f;  // seconds for the whole way, at most (smooths the speed's steps)
+// facing="camera" (11-23): the player's body turns toward the camera's heading this fast (radians/s); the upper
+// body takes what is left, at most a quarter turn, and the camera's pitch up to this.
+constexpr float kAimTurnRate = 6.0f;
+constexpr float kAimYawLimit = 1.5708f;
+constexpr float kAimPitchLimit = 1.2f;
 
 enum class Phase : std::uint8_t { kIdle, kIn, kPlay, kOut };
 struct Layer {
@@ -45,6 +50,10 @@ struct Entry {
     bool player = false;
     bool wasSprinting = false;
     float stand = 0.0f, standWritten = -1.0f;  // the upper layer's standing amount (UpperLayer::SetStand)
+    bool aimWritten = false;                   // UpperLayer::SetAim given (facing="camera")
+    float stanceWritten = 0.0f;                // kStanceVariable as last written (<Stance>)
+    float stanceLogged = 0.0f;
+    float aimLogged = 0.0f;
     std::array<Layer, kBodyLayers> layers;
     std::unordered_map<int, float> cooldowns;  // action -> seconds left
 };
@@ -110,6 +119,77 @@ void UpdateStand(RE::Actor* actor, Entry& e, float delta) {
     const float step = delta / kStandBlend;
     e.stand = std::clamp(target, e.stand - step, e.stand + step);
     WriteStand(actor, e);
+}
+// facing="camera": while the upper layer's action has it, the player turns toward the camera's heading and the upper
+// body is aimed at the camera's direction (UpperLayer::SetAim); otherwise the aim is forgotten.
+void UpdateAim(RE::Actor* actor, Entry& e, float delta) {
+    const auto& l = e.layers[0];
+    const bool want = e.player && l.action >= 0 && l.phase != Phase::kIdle && Actions::Spec(l.action).faceCamera;
+    auto* camera = want ? RE::Main::WorldRootCamera() : nullptr;
+    if (!camera) {
+        if (e.aimWritten)
+            ForGraphs(actor, [&](RE::BShkbAnimationGraph& g) { UpperLayer::SetAim(&g.characterInstance, false); });
+        e.aimWritten = false;
+        return;
+    }
+    const auto wrap = [](float a) { return std::remainder(a, 6.2831853f); };
+    // The camera looks along its local +X: its pitch (up positive). Its heading is not read from it: the third-person
+    // camera follows the body, so chasing the camera's own heading turned the body round and round (11-23).
+    const auto& r = camera->world.rotate;
+    const float pitch = std::asin(std::clamp(r.entry[2][0], -1.0f, 1.0f));
+    // The camera's turn from the body: the third-person camera's free rotation (its heading is the body's plus that).
+    // The body takes it over at kAimTurnRate and the free rotation gives the same back, so the camera stays put.
+    auto* playerCamera = RE::PlayerCamera::GetSingleton();
+    RE::ThirdPersonState* third = nullptr;
+    if (playerCamera && playerCamera->currentState &&
+        playerCamera->IsCurrentState(RE::CameraStates::kThirdPerson, RE::CameraStates::kVRThirdPerson))
+        third = static_cast<RE::ThirdPersonState*>(playerCamera->currentState.get());
+    float away = third && third->freeRotationEnabled ? wrap(third->freeRotation.x) : 0.0f;
+    const float step = kAimTurnRate * delta;
+    if (const float turn = std::clamp(away, -step, step); turn != 0.0f) {
+        actor->SetHeading(actor->GetAngleZ() + turn);
+        third->freeRotation.x -= turn;
+        away -= turn;
+    }
+    // The model's yaw is counterclockwise from above: the opposite of a heading's.
+    const float yaw = -std::clamp(away, -kAimYawLimit, kAimYawLimit);
+    const float up = std::clamp(pitch, -kAimPitchLimit, kAimPitchLimit);
+    ForGraphs(actor, [&](RE::BShkbAnimationGraph& g) { UpperLayer::SetAim(&g.characterInstance, true, yaw, up); });
+    e.aimWritten = true;
+    e.aimLogged -= delta;
+    if (e.aimLogged <= 0.0f) {
+        e.aimLogged = 1.0f;
+        logger::debug("[PartAim] cameraYaw={:.3f} heading={:.3f} free={} yaw={:.3f} pitch={:.3f}",
+            playerCamera ? playerCamera->GetRuntimeData2().yaw : 0.0f, actor->GetAngleZ(), third != nullptr, yaw, up);
+    }
+}
+// <Stance> (runtime/LadderSpec.h): while an upper-body part action plays, the legs move onto the stance files by how
+// far its clip turns the chest (UpperLayer::StanceTurn), times the layer's weight: kStanceVariable -1 (left) .. 1
+// (right). 0 otherwise.
+void UpdateStance(RE::Actor* actor, Entry& e, float delta) {
+    static const RE::BSFixedString name{kStanceVariable};
+    const auto& locomotion = Actions::Locomotion();
+    const auto& l = e.layers[0];
+    float value = 0.0f, turn = 0.0f;
+    bool measured = false;
+    if (locomotion.AnyStance() && l.phase != Phase::kIdle && l.w > 0.0f) {
+        ForGraphs(actor, [&](RE::BShkbAnimationGraph& g) {
+            if (!measured) measured = UpperLayer::StanceTurn(&g.characterInstance, turn);
+        });
+        if (measured)
+            value = (StanceShare(locomotion.Stance(StanceSide::kRight), -turn) -
+                        StanceShare(locomotion.Stance(StanceSide::kLeft), turn)) *
+                    std::min(l.w, 1.0f);
+    }
+    if (value != e.stanceWritten) {
+        ForGraphs(actor, [&](RE::BShkbAnimationGraph& g) { g.SetGraphVariableFloat(name, value); });
+        e.stanceWritten = value;
+    }
+    if (measured && (e.stanceLogged -= delta) <= 0.0f) {
+        e.stanceLogged = 1.0f;
+        logger::debug("[Stance] {:08X} '{}' chest turn {:.1f} (right negative) -> {} {:.3f}", actor->GetFormID(),
+            Actions::Spec(l.action).id, turn, kStanceVariable, value);
+    }
 }
 void WriteMix(RE::Actor* actor, std::size_t layer, Layer& l) {
     if (l.mixWritten == l.mix) return;
@@ -395,6 +475,10 @@ void Update(float delta) {
                 e.stand = 0.0f;
                 WriteStand(actor, e);
             }
+            if (actor) {
+                UpdateAim(actor, e, delta);  // forgets the aim: no action plays
+                UpdateStance(actor, e, delta);
+            }
             it = e.cooldowns.empty() ? g_entries.erase(it) : std::next(it);
             continue;
         }
@@ -496,6 +580,8 @@ void Update(float delta) {
             WriteWeight(actor, i, l);
         }
         UpdateStand(actor, e, delta);
+        UpdateAim(actor, e, delta);
+        UpdateStance(actor, e, delta);
         ++it;
     }
 }

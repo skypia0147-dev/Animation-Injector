@@ -10,6 +10,8 @@
 //   body omitted     the whole body, as every action before: a state of the root machine, the actor stops moving
 //   body="upper"     the spine and everything above it; the legs keep the locomotion and the actor moves freely.
 //                    The upper body keeps the clip's own rotation whatever the legs do (core/UpperLayer.h, stabilizer)
+//   facing="camera"  (body="upper" only, 11-23) the upper body points where the camera looks; the player turns toward
+//                    the camera (runtime/PartRunner UpdateAim, core/UpperLayer SetAim). "legs", the default: the legs' heading
 //   body="rightArm"  the right clavicle to the fingers, the right hand's attachment nodes and twist bones; the arm
 //   body="leftArm"   (or the left one) rides on the locomotion's torso, so a hand to the mouth stays at the mouth
 //
