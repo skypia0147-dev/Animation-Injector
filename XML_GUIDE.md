@@ -79,9 +79,18 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `<Cost stamina magicka health measure at>` | 자원 소모: 스태미나·매지카·체력(체력은 마지막 1은 남김). `measure="percent"`면 각 최대치의 %(0~100), 쓰지 않으면 수치 그대로 |
 | `<Exit at blend>` | 언제 끝내고 몇 초 동안 섞을지. `at`을 쓰지 않으면 클립 끝 0.05초 전 |
 
-`<Action>`의 속성: `enter`(들어갈 때 블렌드 초), `air="both"`(땅·공중 모두) / `"only"`(공중에서만, 쓰지 않으면 땅에서만), `view="first"`·`"both"`(1인칭 동작, 1인칭 HKX는 `_1stPerson` 아래 같은 경로), `otherView="switch"`(시점 전환, 1.0.8 이상: 3인칭 동작을 1인칭에서, 1인칭 동작을 3인칭에서 시작하면 동작의 인칭으로 카메라를 바꿔 재생하고 끝나면 원래 인칭으로 돌아옵니다. 쓰지 않으면 다른 인칭에서는 시작하지 않습니다. `view="both"`와 1인칭 페어에는 쓸 수 없습니다. 1.0.7까지의 `firstPerson`은 읽지 않습니다), `loop="true" maxHold="3"`(반복 재생: 클립을 끝없이 이어 재생하고, `maxHold`초(기본 3)가 지나면 키를 뗀 것으로 봅니다(차지를 시작한 키를 아직 누르고 있으면 그 키를 누른 순간부터 세어, 방향별 반복 동작을 오가도 시계는 하나). 키를 떼면 전환이 없으면 그때 끝냅니다. 일반 동작만, `<Exit at>`·끝나면 전환은 쓸 수 없습니다. 무적·회전 같은 기능 시각은 동작 시작부터 세고 `end-…`를 쓸 수 없습니다. 전환의 감지 구간(`from`·`until`)은 **바퀴마다** 다시 열리고 닫히며 `until="end"`·`end-…`는 그 바퀴의 끝입니다. HKX 주석 이벤트는 바퀴마다 다시 옵니다).
+`<Action>`의 속성: `enter`(들어갈 때 블렌드 초), `attack="attackStart"`(공격 데이터: 종족의 그 이름의 공격 데이터를 동작 동안 캐릭터의 공격 데이터로 둡니다. 엔진은 피해 배율·경직·파워어택 여부를, Precision은 충돌 범위를 여기서 읽습니다. 아래 「공격 동작과 파워어택」), `air="both"`(땅·공중 모두) / `"only"`(공중에서만, 쓰지 않으면 땅에서만), `view="first"`·`"both"`(1인칭 동작, 1인칭 HKX는 `_1stPerson` 아래 같은 경로), `otherView="switch"`(시점 전환, 1.0.8 이상: 3인칭 동작을 1인칭에서, 1인칭 동작을 3인칭에서 시작하면 동작의 인칭으로 카메라를 바꿔 재생하고 끝나면 원래 인칭으로 돌아옵니다. 쓰지 않으면 다른 인칭에서는 시작하지 않습니다. `view="both"`와 1인칭 페어에는 쓸 수 없습니다. 1.0.7까지의 `firstPerson`은 읽지 않습니다), `loop="true" maxHold="3"`(반복 재생: 클립을 끝없이 이어 재생하고, `maxHold`초(기본 3)가 지나면 키를 뗀 것으로 봅니다(차지를 시작한 키를 아직 누르고 있으면 그 키를 누른 순간부터 세어, 방향별 반복 동작을 오가도 시계는 하나). 키를 떼면 전환이 없으면 그때 끝냅니다. 일반 동작만, `<Exit at>`·끝나면 전환은 쓸 수 없습니다. 무적·회전 같은 기능 시각은 동작 시작부터 세고 `end-…`를 쓸 수 없습니다. 전환의 감지 구간(`from`·`until`)은 **바퀴마다** 다시 열리고 닫히며 `until="end"`·`end-…`는 그 바퀴의 끝입니다. HKX 주석 이벤트는 바퀴마다 다시 옵니다).
 
 **차지 예시**: `<Start control="rightAttack" press="hold" to="ChargeStart"/>` → ChargeStart의 `<Transition to="ChargeLoop" on="end"/>`와 `<Transition condition="ChargeLevel" on="release" from="0.2"/>` → `<Action id="ChargeLoop" loop="true" maxHold="3">`의 `<Transition condition="ChargeLevel" on="release"/>` → 조건 카드 ChargeLevel에서 `<Check kind="heldTime" compare="ge" value="1.5"/>`로 강·약 발동.
+
+**공격 동작과 파워어택** (1.0.9에서 실측):
+
+- 파워어택 동작은 `attack`에 파워어택 데이터를 씁니다: `attackPowerStartInPlace`(제자리), `attackPowerStartForward`, `attackPowerStartBackward`, `attackPowerStartLeft`, `attackPowerStartRight`, `attackPowerStartSprint`(질주) 등. 그러면 바닐라 파워어택과 같이 피해가 종족 데이터의 배율(기본 2배)이 되고, 타격이 파워어택으로 처리됩니다(`IsPowerAttacking`).
+- 스태미나는 엔진이 깎습니다: 타격 순간(HKX의 `HitFrame` 주석)마다 바닐라 파워어택과 같은 양이 빠집니다. `HitFrame`이 둘인 다단 파워어택은 두 번 빠집니다(바닐라 비헤이비어로 재생해도 같습니다). 그래서 **파워어택 동작에는 `<Cost>`(또는 `cost` 기능)로 스태미나를 쓰지 않습니다.** 쓰면 둘 다 빠집니다. 약공격 데이터(`attackStart`)는 엔진이 스태미나를 깎지 않으므로, 약공격에 비용을 두려면 `<Cost>`를 씁니다.
+- 런타임은 바닐라처럼 스태미나가 없을 때 파워어택을 막지 않습니다. 막으려면 그리로 가는 시작·전환 안에 조건을 넣습니다: `<Transition to="Power" control="rightAttack" press="hold"><Check kind="resource" option="stamina" measure="current" compare="gt" value="0"/></Transition>`.
+- 공격 키로 넘어가는 전환은 동작 중 누른 키(선입력 포함)를 게임에 넘기지 않으므로, 선입력만으로는 스태미나가 빠지지 않습니다. 동작이 실제로 시작되어 타격 순간에 빠집니다.
+- 파워어택 특전은 공격 데이터의 종류를 봅니다. 예: Savage Strike(한손)·Devastating Blow(양손)는 제자리 파워어택(`attackPowerStartInPlace`)에만, Critical Charge는 질주 파워어택(`attackPowerStartSprint`)에만 붙습니다. 바닐라와 같은 특전을 받으려면 그 공격에 맞는 방향의 데이터를 고릅니다.
+- 클립에는 `HitFrame` 주석이 있어야 엔진이 타격(과 파워어택 스태미나)을 처리합니다. `weaponSwing`은 휘두르는 소리 등에 쓰입니다.
 
 **시각 쓰는 법**: `0.4`(클립 시작부터 초), `end`(클립 끝), `end-0.1`(끝 0.1초 전), `event:이름`(HKX 주석 이벤트가 오는 순간).
 
