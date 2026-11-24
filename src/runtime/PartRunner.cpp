@@ -6,6 +6,7 @@
 #include "runtime/HeldKeys.h"
 #include "runtime/InputSink.h"
 #include "runtime/PairedSession.h"
+#include "runtime/Signals.h"
 
 #include <array>
 #include <unordered_map>
@@ -290,6 +291,7 @@ void Begin(RE::Actor* actor, Entry& e, std::size_t layer, int action) {
     // The clip index first: the clip child activates (from its start) on the first frame w is above 0.
     WriteClip(actor, layer, l.slot, UpperLayer::ClipIndex(action));
     ActionLinks::Begin(e.handle, action, false, e.player);
+    if (Signals::SignalOf(action) >= 0) Signals::Touch(actor);
     const auto& spec = Actions::Spec(action);
     logger::info("[Part] {:08X} {} '{}' begins (enter {:.2f}s, exit {:.2f}s{})", actor->GetFormID(),
         BodyPartName(spec.body), spec.id, l.blendIn, l.blendOut, spec.loop.enabled ? ", loop" : "");
@@ -308,6 +310,7 @@ void Handover(RE::Actor* actor, Entry& e, std::size_t layer, int action, const c
     l.phase = Phase::kIn;  // w goes on up (it was 1, or a leave turned back)
     WriteClip(actor, layer, l.slot, UpperLayer::ClipIndex(action));
     ActionLinks::Begin(e.handle, action, false, e.player);
+    if (Signals::SignalOf(action) >= 0) Signals::Touch(actor);
     const auto& spec = Actions::Spec(action);
     logger::info("[Part] {:08X} {} '{}' takes over from '{}' ({}, crossing {:.2f}s{})", actor->GetFormID(),
         BodyPartName(spec.body), spec.id, from >= 0 ? Actions::Spec(from).id : "?", why, l.handBlend,
@@ -609,6 +612,19 @@ bool Running(RE::Actor* actor, int layer) {
     for (std::size_t i = 0; i < kBodyLayers; ++i)
         if ((layer < 0 || layer == static_cast<int>(i)) && it->second.layers[i].phase != Phase::kIdle) return true;
     return false;
+}
+
+int Playing(RE::Actor* actor, int layer) {
+    if (!actor || layer < 0 || layer >= static_cast<int>(kBodyLayers)) return -1;
+    const auto it = g_entries.find(actor->GetFormID());
+    if (it == g_entries.end()) return -1;
+    const auto& l = it->second.layers[static_cast<std::size_t>(layer)];
+    return Active(l) ? l.action : -1;
+}
+int Queued(RE::Actor* actor, int layer) {
+    if (!actor || layer < 0 || layer >= static_cast<int>(kBodyLayers)) return -1;
+    const auto it = g_entries.find(actor->GetFormID());
+    return it != g_entries.end() ? it->second.layers[static_cast<std::size_t>(layer)].queued : -1;
 }
 
 void Install() {

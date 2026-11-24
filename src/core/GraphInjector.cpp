@@ -20,6 +20,7 @@
 #include <atomic>
 #include <bit>
 #include <format>
+#include "runtime/Signals.h"
 #include <functional>
 #include <map>
 #include <tuple>
@@ -1333,6 +1334,23 @@ int EnsureVariable(RE::hkbBehaviorGraph* graph, const char* name, RE::hkbVariabl
     const int index = add(*data);
     return index == count && names._size == count + 1 && data->variableInfos._size == count + 1 ? index : -1;
 }
+// The OAR signal variables (runtime/Signals.h), false, into a third-person character master graph. One that cannot be
+// added (a variable of that name with another type) is logged and left out; the rest still go in.
+void AddSignalVariables(RE::hkbBehaviorGraph* graph) {
+    const auto& variables = Signals::Variables();
+    if (variables.empty()) return;
+    int added = 0;
+    for (const auto& name : variables) {
+        const int index = EnsureVariable(graph, name.c_str(), RE::hkbVariableInfo::VariableType::VARIABLE_TYPE_BOOL,
+            [&](RE::hkbBehaviorGraphData& data) { return data.AddBoolVariable(RE::hkStringPtr(name.c_str()), false); });
+        if (index < 0)
+            logger::error(
+                "[Signal] graph variable '{}' could not be added (a variable of that name has another type)", name);
+        else
+            ++added;
+    }
+    logger::info("[Signal] {} of {} signal variables in the character graph", added, variables.size());
+}
 // Builds the two shared root entries of a character graph (see core/FullBodyEntry.h). On any
 // mismatch the reason is returned and the graph gets no full-body action.
 const char* PrepareSharedEntry(
@@ -2175,6 +2193,7 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
     // Events go into this graph right before its first action (a validated target that no action
     // enters gets none).
     const bool rootTarget = std::strcmp(tgt->smName, "RootBehaviorGraph") == 0;
+    if (rootTarget && !g_currentFirstPerson) AddSignalVariables(a_graph);
     // The node id budget: the graph's own nodes now, then every node an action makes. An action that might not fit
     // is left out whole, and the graph keeps working (see "Node id budget" above).
     const char* viewLabel = g_currentFirstPerson ? "first-person" : "third-person";

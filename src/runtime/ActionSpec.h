@@ -159,6 +159,9 @@ struct ActionSpec {
     // upper body points where the camera looks, left-right and up-down (core/UpperLayer.h SetAim). Default "legs": the
     // upper body follows the legs' heading.
     bool faceCamera = false;
+    // signal="Charge" (1.0.9, runtime/Signals.h): the bool graph variable bAI_<AnimationSet id>_Charge kept true while
+    // this action plays, for an OAR condition. Empty: none.
+    std::string signal;
     // Whose graph plays it (11-05): character, or a creature of runtime/PairedRigCatalog.h. A creature action's
     // clip is relative to that creature's actor folder and it is injected into that creature's root machine.
     PairedRig::Kind rig = PairedRig::Kind::kCharacter;

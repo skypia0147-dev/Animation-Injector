@@ -339,6 +339,55 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 - `maxHold`는 시작 키를 누른 때부터 셉니다(전신 차지와 같음). 지나면 키를 뗀 것으로 보고 릴리즈합니다.
 - 차지 중에 공격·막기·점프 등이 오면 부위 동작은 그대로 끝나고 릴리즈하지 않습니다.
 
+### 동작 중 이동 애니메이션 바꾸기 (OAR 신호)
+
+`signal`을 쓴 동작이 재생되는 동안 그 액터의 그래프 변수 `bAI_<AnimationSet id>_<신호 이름>`이 true가 됩니다. Open Animation Replacer(OAR) 하위 모드가 이 변수를 조건으로 걷기·달리기 파일을 바꾸면, 차지하는 동안 차지 걸음으로 걷는 식의 **동작 전용 이동 세트**를 그래프를 늘리지 않고 쓸 수 있습니다.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="MyBow">
+  <Start key="G" press="hold" to="ChargeStart"/>
+  <Action id="ChargeStart" clip="Animations\MyBow\ChargeStart.hkx" body="upper" signal="Charge">
+    <Transition to="ChargeHold" on="end"/>
+  </Action>
+  <Action id="ChargeHold" clip="Animations\MyBow\ChargeHold.hkx" body="upper" loop="true" maxHold="4" signal="Charge">
+    <Transition to="ChargeRelease" on="release"/>
+  </Action>
+  <Action id="ChargeRelease" clip="Animations\MyBow\ChargeRelease.hkx" body="upper" signal="Charge"/>
+</AnimationSet>
+```
+
+- 이 예에서는 세 동작이 모두 `bAI_MyBow_Charge`를 켭니다. 같은 신호의 동작끼리 이어지는 동안은 끊기지 않고 true이고, 마지막 동작이 끝나면 false입니다.
+- 이름: 영문·숫자·`_` 1~32자. 일반 동작(`<Action>`, 전신·부위)에 씁니다. 페어와 크리처 동작에는 쓸 수 없습니다.
+- 켜지는 때: 전신 동작은 재생 중(빠지는 블렌드에 들어가면 꺼짐), 부위 동작은 들어오는 중·재생 중·같은 부위에서 다음 차례를 기다리는 중.
+- 꺼지는 때: 끝나는 길이 무엇이든(끝·키 떼기·다른 동작으로 전환·피격·경직·래그돌·죽음, 위의 「저절로 끝나는 경우」 등) 그 프레임에 꺼집니다. 불러오기는 모든 신호를 false로 시작합니다.
+- 단계마다 다른 이동 세트를 쓰려면 이름을 나눕니다(예: 시작·차지 중은 `Charge`, 릴리즈는 `ChargeShot`).
+- 같은 `id`의 AnimationSet 파일이 둘 설치되면 뒤 파일은 `<id>_2`가 되어 변수도 `bAI_<id>_2_<이름>`입니다(로그에 경고).
+- 비용: 신호 하나가 캐릭터 그래프에 Bool 변수 하나입니다. 런타임은 신호 동작이 시작한 액터만 보고, 값이 바뀔 때만 씁니다.
+- 막기·질주처럼 바닐라 상태는 신호가 필요 없습니다. OAR의 자체 조건(IsBlocking 등)을 쓰세요.
+
+OAR 하위 모드 `config.json`(그 폴더에 바꿀 이동 HKX를 같은 이름으로 넣습니다):
+
+```json
+{
+  "name": "MyBow Charge Walk",
+  "priority": 2000000001,
+  "interruptible": true,
+  "hasCustomBlendTimeOnInterrupt": true,
+  "blendTimeOnInterrupt": 0.2,
+  "conditions": [
+    {
+      "condition": "CompareValues",
+      "Value A": { "graphVariable": "bAI_MyBow_Charge", "graphVariableType": "Bool" },
+      "Comparison": "==",
+      "Value B": { "value": 1.0 }
+    }
+  ]
+}
+```
+
+- `interruptible`을 켜야 걷던 중에 신호가 바뀌어도 바로 바뀝니다(OAR이 재생 중인 클립의 조건을 매 프레임 다시 봅니다). `blendTimeOnInterrupt`가 바뀌는 시간입니다.
+
 ## 크리처 동작
 
 `<Action>`에 `rig`를 쓰면 그 크리처가 혼자 재생하는 동작이 됩니다. 예: `<Action id="Howl" rig="wolf" clip="animations\MyMod\howl.hkx">`.

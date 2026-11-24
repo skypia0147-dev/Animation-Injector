@@ -6,6 +6,8 @@
 #include "core/NameIndex.h"
 #include "core/FullBodyEntryNames.h"
 #include "core/PairEntryNames.h"
+#include "runtime/Signals.h"
+#include <span>
 #include <unordered_set>
 
 namespace AnimationInjector::EventMaps {
@@ -46,7 +48,7 @@ int FindEventName(RE::hkArray<RE::hkStringPtr>& a_names, const char* a_name) {
 // SetGraphVariable*/GetGraphVariable*. Each is added when missing, with its index in the master
 // graph; the reverse name array is extended only when it is the unchanged sequence. false when the
 // lookup's key mode cannot be told or a name is not a master variable.
-bool EnsureVariableLookup(RE::BShkbAnimationGraph* graph, std::initializer_list<const char*> names) {
+bool EnsureVariableLookup(RE::BShkbAnimationGraph* graph, std::span<const char* const> names) {
     auto* db = graph ? graph->projectDBData : nullptr;
     auto* data = graph && graph->behaviorGraph ? graph->behaviorGraph->data.get() : nullptr;
     if (!db || !data || !data->stringData) return false;
@@ -82,6 +84,10 @@ bool EnsureVariableLookup(RE::BShkbAnimationGraph* graph, std::initializer_list<
         logger::info("[EventMap] variable lookup added '{}'={} reverseExtended={}", name, index, reverseMatches);
     }
     return true;
+}
+
+bool EnsureVariableLookup(RE::BShkbAnimationGraph* graph, std::initializer_list<const char*> names) {
+    return EnsureVariableLookup(graph, std::span<const char* const>(names.begin(), names.size()));
 }
 
 bool EnsureCreatureVariables(RE::BShkbAnimationGraph* graph, const PairedRig::Profile& profile) {
@@ -223,6 +229,16 @@ void Ensure(RE::Actor* p, const std::vector<std::string>& a_names) {
         logger::error("[PairEntry] project '{}' variable lookup could not be extended; shared pair entries will not "
                       "select the pair",
             projectName);
+    // The OAR signal variables (runtime/Signals.h): those the master graph got (third-person character graphs).
+    if (rig == PairedRig::Kind::kCharacter && !Signals::Variables().empty()) {
+        std::vector<const char*> signals;
+        for (const auto& v : Signals::Variables())
+            if (FindEventName(data->stringData->variableNames, v.c_str()) >= 0) signals.push_back(v.c_str());
+        if (!signals.empty() && !EnsureVariableLookup(g.get(), signals))
+            logger::error("[Signal] project '{}' variable lookup could not be extended; OAR conditions will not read "
+                          "the signals",
+                projectName);
+    }
 
     // The engine builds a project's map from its master graph's events. When the map already covers
     // every master event (ours included, registered there at load), nothing can be added: checking

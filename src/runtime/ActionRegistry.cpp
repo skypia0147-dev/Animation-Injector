@@ -9,6 +9,7 @@
 #include "runtime/EventHistory.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/PartRunner.h"
+#include "runtime/Signals.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/ClipIndex.h"
 #include "core/EventMaps.h"
@@ -715,6 +716,7 @@ struct
             g_player->ForEach([&](int, ActionRunner& r) { r.Update(a_delta); });
         UpdateNpcRunners(a_delta);
         PartRunner::Update(a_delta);      // part actions (body=): the layer weights, clocks and interruptions
+        Signals::Update();                // OAR signals of the actions now playing (after every runner moved on)
         static float ensureTimer = 0.0f;  // NPC 프로젝트 DB 에 이벤트 이름 등록 (외부 진입 이벤트가 오기 전에)
         Qte::Update(a_delta);
         QteMenu::Sync();  // the QTE menu is open only while a QTE is on screen
@@ -1061,6 +1063,7 @@ void BeforeGameLoad() {
     NativePairEnd::Reset();
     ResetEventTriggers();
     PartRunner::Reset();
+    Signals::Reset();
     g_callbacks.Clear();
     for (auto& [id, entry] : NpcSnapshot()) entry->runners.ForEach([](int, ActionRunner& r) { r.ResetOnLoad(); });
     if (g_playerBound.load(std::memory_order_acquire)) g_player->ForEach([](int, ActionRunner& r) { r.ResetOnLoad(); });
@@ -1083,6 +1086,7 @@ void OnGameLoad() {
     AirControl::ResetOnLoad();
     PairedSession::ResetOnLoad();
     PartRunner::Reset();
+    Signals::Reset();
     static int n = 0;
     BindPlayer();
     g_callbacks.Clear();

@@ -27,6 +27,7 @@
 #include "runtime/EventEffects.h"
 #include "runtime/LifecyclePolicy.h"
 #include "runtime/ViewGuard.h"
+#include "runtime/Signals.h"
 
 namespace AnimationInjector {
 namespace {
@@ -274,6 +275,7 @@ bool ActionRunner::RequestImpl(const RE::BSFixedString* ground, const RE::BSFixe
     const int atk = p->AsActorState() ? static_cast<int>(p->AsActorState()->GetAttackState()) : -1;
     _state = State::
         kActive;  // 동기 전이: notify 안에서 클립 활성 훅이 온다 — 그 전에 Active 여야 외부 진입 채택(Adopt)으로 오인하지 않는다
+    if (Signals::SignalOf(_idx) >= 0) Signals::Touch(p);
     BeginAirPhysics(airRoute);
     LogAirPhysics(AirPhase::kBeforeEntry);
     logger::debug("[{}] EntryRoute={} event='{}'", spec.id, airRoute ? "air" : "ground", enterEvent);
@@ -539,6 +541,7 @@ void ActionRunner::Adopt(int a_variant) {
     ResetPlaybackFlags();
     _postCancelTimer = 0.0f;
     _state = State::kActive;
+    if (Signals::SignalOf(_idx) >= 0) Signals::Touch(p);
     auto* controller = p->GetCharController();
     BeginAirPhysics(Spec().condition.inAir != 0 && controller &&
                     controller->context.currentState == RE::hkpCharacterStateType::kInAir);

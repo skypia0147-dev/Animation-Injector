@@ -54,6 +54,10 @@ void End(RE::Actor* actor, int layer, const char* why);
 void Reset();
 // Whether `actor` has a part action running on `layer` (-1: any layer).
 bool Running(RE::Actor* actor, int layer = -1);
+// The action `actor` plays on `layer` coming in or playing (not blending out), or -1 (runtime/Signals.h).
+int Playing(RE::Actor* actor, int layer);
+// The action waiting on `layer` for its crossing to end, or -1: it plays next.
+int Queued(RE::Actor* actor, int layer);
 // The sprint button hook (the gate above). Plugin load.
 void Install();
 
