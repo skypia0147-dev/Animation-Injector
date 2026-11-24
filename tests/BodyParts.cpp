@@ -96,24 +96,24 @@ int main() {
             Check(Rejected(Part("body='upper' facing='screen'"), "facing"), "an unknown facing");
         }
 
-        // OAR signals (runtime/Signals.h): the variable bAI_<set>_<name>, on a full-body or a part action.
+        // OAR signals (runtime/Signals.h): the variable bAI_<name>, on a full-body or a part action.
         {
             const auto p = Parse(Part("signal='Charge'"));
-            Check(p.ok && p.Find("Drink")->signal == "bAI_Test_Charge", "a full-body action's signal");
-            const auto q = Parse(Part("body='upper' signal='Aim_2'"));
-            Check(q.ok && q.Find("Drink")->signal == "bAI_Test_Aim_2", "a part action's signal");
+            Check(p.ok && p.Find("Drink")->signal == "bAI_Charge", "a full-body action's signal");
+            const auto q = Parse(Part("body='upper' signal='MyBow_Aim_2'"));
+            Check(q.ok && q.Find("Drink")->signal == "bAI_MyBow_Aim_2", "a part action's signal");
             Check(Parse(Part("")).Find("Drink")->signal.empty(), "no signal by default");
             Check(Rejected(Part("signal=''"), "signal name"), "an empty signal");
             Check(Rejected(Part("signal='Charge-1'"), "signal name"), "a signal with a dash");
             Check(Rejected(Part("signal='" + std::string(33, 'a') + "'"), "signal name"), "a 33-letter signal");
             Check(!Rejected(Part("signal='" + std::string(32, 'a') + "'")), "a 32-letter signal");
-            Check(Rejected("<Start key='G' to='Throw'/><Pair id='Throw' clip='Animations\Throw.hkx' signal='Charge'/>",
+            Check(Rejected("<Start key='G' to='Throw'/><Pair id='Throw' clip='Animations\\Throw.hkx' signal='Charge'/>",
                       "signal is for ordinary actions"),
                 "a pair's signal");
-            Check(Rejected(kStart + "<Action id='Drink' rig='wolf' clip='animations\Howl.hkx' signal='Charge'/>",
+            Check(Rejected(kStart + "<Action id='Drink' rig='wolf' clip='animations\\Howl.hkx' signal='Charge'/>",
                       "signal is only for human"),
                 "a creature action's signal");
-            // The loader's qualifier (a second file of the same set id) names the variable.
+            // The loader's qualifier (a second file of the same set id) does not change the variable.
             const std::string xml =
                 "<AnimationSet version='6' id='Test'>" + Part("signal='Charge'") + "</AnimationSet>";
             pugi::xml_document doc;
@@ -123,7 +123,7 @@ int main() {
             std::string mod, error;
             Check(
                 XmlV2::Compile(doc, "test.xml", actions, events, mod, error, Declarations::ResolveKeyName, "Test_2") &&
-                    actions.size() == 1 && actions[0].signal == "bAI_Test_2_Charge",
+                    actions.size() == 1 && actions[0].signal == "bAI_Charge",
                 "the qualified set's variable");
         }
 

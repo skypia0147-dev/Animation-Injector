@@ -341,28 +341,28 @@ Each of a charge's three actions (start, hold, release) has its own part. With t
 
 ### Other locomotion while an action plays (OAR signals)
 
-While an action with `signal` plays, its actor's graph variable `bAI_<AnimationSet id>_<signal name>` is true. An Open Animation Replacer (OAR) submod that swaps the walk and run files on that variable gives an action **its own locomotion set** (walking with a charge walk while charging, say) without growing the behavior graph.
+While an action with `signal` plays, its actor's graph variable `bAI_<signal name>` is true. An Open Animation Replacer (OAR) submod that swaps the walk and run files on that variable gives an action **its own locomotion set** (walking with a charge walk while charging, say) without growing the behavior graph.
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <AnimationSet version="6" id="MyBow">
   <Start key="G" press="hold" to="ChargeStart"/>
-  <Action id="ChargeStart" clip="Animations\MyBow\ChargeStart.hkx" body="upper" signal="Charge">
+  <Action id="ChargeStart" clip="Animations\MyBow\ChargeStart.hkx" body="upper" signal="MyBow_Charge">
     <Transition to="ChargeHold" on="end"/>
   </Action>
-  <Action id="ChargeHold" clip="Animations\MyBow\ChargeHold.hkx" body="upper" loop="true" maxHold="4" signal="Charge">
+  <Action id="ChargeHold" clip="Animations\MyBow\ChargeHold.hkx" body="upper" loop="true" maxHold="4" signal="MyBow_Charge">
     <Transition to="ChargeRelease" on="release"/>
   </Action>
-  <Action id="ChargeRelease" clip="Animations\MyBow\ChargeRelease.hkx" body="upper" signal="Charge"/>
+  <Action id="ChargeRelease" clip="Animations\MyBow\ChargeRelease.hkx" body="upper" signal="MyBow_Charge"/>
 </AnimationSet>
 ```
 
 - Here all three actions turn on `bAI_MyBow_Charge`. It stays true without a break while actions of the same signal follow one another, and is false once the last one ends.
 - Names: 1–32 letters, digits or `_`. On ordinary actions (`<Action>`, whole body or part); not on pairs or creature actions.
+- Every mod shares the names: another mod's action of the same name is the same variable and turns it on too. Put your mod's name in front (`MyBow_Charge`).
 - On: a full-body action while it plays (off once it starts blending out), a part action while it blends in, plays, or waits on its part for its turn.
 - Off: in the frame the action ends, whichever way (its end, a key release, a transition to another action, a hit, a stagger, a ragdoll, death, the ways a part action ends by itself above). A load starts every signal false.
-- For a different locomotion set per stage, split the names (the start and the hold `Charge`, the release `ChargeShot`).
-- With two AnimationSet files of the same `id` installed, the later one becomes `<id>_2`, and so do its variables: `bAI_<id>_2_<name>` (a warning in the log).
+- For a different locomotion set per stage, split the names (the start and the hold `MyBow_Charge`, the release `MyBow_Shot`).
 - Cost: one bool variable in the character graph per signal. The runtime looks only at actors a signal action started on, and writes only when a value changes.
 - Vanilla states such as blocking or sprinting need no signal: use OAR's own conditions (IsBlocking and so on).
 
@@ -387,6 +387,7 @@ The OAR submod's `config.json` (the locomotion HKX files it replaces go in its f
 ```
 
 - `interruptible` makes the swap happen mid-walk when the signal changes (OAR checks a playing clip's conditions every frame); `blendTimeOnInterrupt` is how long the swap takes.
+- Female characters' unarmed locomotion plays the files in the `female\` folder (`female\mt_walkforward.hkx` and so on). To swap theirs too, put a `female\` folder in the submod folder with the files under the same names.
 
 ## Creature actions
 

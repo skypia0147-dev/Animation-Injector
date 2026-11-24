@@ -600,8 +600,6 @@ struct Compiler {
     // The file's place among the loaded files (its AnimationSet's id, Settings.cpp): the runtime names an action
     // "<qualifier>_<id>", so two files' actions never meet whatever ids their authors chose. Empty: the ids as written.
     std::string qualifier;
-    // The set's name in the runtime (the qualifier, or the AnimationSet id as written): OAR signal variables carry it.
-    std::string setName;
     std::string global(const std::string& id) const {
         return qualifier.empty() || id.empty() ? id : qualifier + "_" + id;
     }
@@ -1095,7 +1093,7 @@ struct Compiler {
             if (pair) fail(n, "signal is for ordinary actions (Action) only");
             if (creature) fail(n, "signal is only for human (character) actions");
             if (!Signals::ValidName(name)) fail(n, "A signal name uses 1–32 letters, digits or underscores: " + name);
-            s.signal = Signals::VariableName(setName, name);
+            s.signal = Signals::VariableName(name);
         }
         if (creature && pair) {
             if (n.child("Carry")) fail(n.child("Carry"), "Carry is only for pairs a human starts");
@@ -1782,7 +1780,6 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
         identifier(root, required(root, "id"));
         Compiler c{resolveKey};
         c.qualifier = std::string(qualifier);
-        c.setName = qualifier.empty() ? get(root, "id") : std::string(qualifier);
         if (root.attribute("view")) {
             const auto view = ParseView(get(root, "view"));
             if (!view) fail(root, "view is one of third, first and both");

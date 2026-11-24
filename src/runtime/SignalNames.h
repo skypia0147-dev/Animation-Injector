@@ -13,10 +13,11 @@ inline bool ValidName(std::string_view name) {
     return true;
 }
 
-// The graph variable an OAR condition reads: "bAI_" + the file's AnimationSet id + "_" + the signal name.
-inline std::string VariableName(std::string_view set, std::string_view name) {
+// The graph variable an OAR condition reads: "bAI_" + the signal name (user decision 11-24: short, without the set's
+// id). One name is one variable for every mod: authors keep theirs apart by a prefix of their own (MyBow_Charge).
+inline std::string VariableName(std::string_view name) {
     std::string out = "bAI_";
-    out.append(set).append("_").append(name);
+    out.append(name);
     return out;
 }
 

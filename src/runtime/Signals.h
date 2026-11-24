@@ -4,10 +4,11 @@
 #include <string>
 #include <vector>
 
-// OAR signals (1.0.9, user design 11-24): `<Action signal="Charge">` keeps the bool graph variable
-// bAI_<AnimationSet id>_Charge true on an actor while an action carrying that signal plays on it (full-body or part,
-// through transitions between actions of the same signal), and false otherwise. An Open Animation Replacer submod swaps
-// the locomotion files on it (condition CompareValues, graphVariable "bAI_<set>_<name>" of type Bool == 1, with
+// OAR signals (1.0.9, user design 11-24): `<Action signal="MyBow_Charge">` keeps the bool graph variable
+// bAI_MyBow_Charge true on an actor while an action carrying that signal plays on it (full-body or part, through
+// transitions between actions of the same signal), and false otherwise. The name is the whole variable after "bAI_",
+// shared by every file (runtime/SignalNames.h). An Open Animation Replacer submod swaps the locomotion files on it
+// (condition CompareValues, graphVariable "bAI_<name>" of type Bool == 1, with
 // "interruptible": true and a blend time), so a charge or an aim walks with its own animations at no graph cost beyond
 // one bool per signal. Blocking and the other vanilla states need no signal: OAR has conditions for them.
 //

@@ -23,7 +23,7 @@ const Table& Built() {
         Table t;
         const int count = Actions::Count();
         t.ofAction.assign(static_cast<std::size_t>(count), -1);
-        // Graph variable names compare without case: Charge and charge of one set are one variable.
+        // Graph variable names compare without case: MyBow_Charge and mybow_charge are one variable.
         std::unordered_map<std::string, int> byName;
         for (int a = 0; a < count; ++a) {
             const auto& name = Actions::Spec(a).signal;
