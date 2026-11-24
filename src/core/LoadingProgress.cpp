@@ -9,7 +9,9 @@ std::mutex mutex;
 std::atomic_bool observesNativeRequests = true;
 std::atomic_bool active = true;
 bool enabled = true;
+std::atomic<StallReporter> stallReporter = nullptr;
 }
+void SetStallReporter(StallReporter reporter) { stallReporter.store(reporter, std::memory_order_relaxed); }
 void SetEnabled(bool value) {
     std::lock_guard lock(mutex);
     enabled = value;
@@ -49,10 +51,18 @@ void ReportAnimations(std::size_t used, std::size_t limit, bool shortfall) {
     model.ReportAnimations(used, limit, shortfall);
 }
 Snapshot Advance(float delta, bool canComplete) {
-    std::lock_guard lock(mutex);
-    const auto state = model.Advance(delta, canComplete);
-    observesNativeRequests.store(enabled && model.ObservesNativeRequests(), std::memory_order_relaxed);
-    active.store(enabled && model.IsOpen(), std::memory_order_relaxed);
+    Snapshot state;
+    std::size_t stalled = 0;
+    {
+        std::lock_guard lock(mutex);
+        state = model.Advance(delta, canComplete);
+        stalled = model.TakeStall();
+        observesNativeRequests.store(enabled && model.ObservesNativeRequests(), std::memory_order_relaxed);
+        active.store(enabled && model.IsOpen(), std::memory_order_relaxed);
+    }
+    // Outside the lock: the reporter reads the producers' state under their own locks, which call Finish under them.
+    if (stalled)
+        if (const auto reporter = stallReporter.load(std::memory_order_relaxed)) reporter(stalled);
     return state;
 }
 void Reset(bool waitingForGameLoad) {

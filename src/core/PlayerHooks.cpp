@@ -51,11 +51,11 @@ struct Notify {
         if (spdlog::should_log(spdlog::level::debug) && a_event.c_str() &&
             (std::strncmp(a_event.c_str(), "pa_", 3) == 0 || std::strstr(a_event.c_str(), "Paired") ||
                 std::strstr(a_event.c_str(), "AI_") || std::strstr(a_event.c_str(), "Hug")))
-            logger::debug("[Notify] 액터 {:08X} ← '{}'", actor->GetFormID(), a_event.c_str());
+            logger::debug("[Notify] actor {:08X} ← '{}'", actor->GetFormID(), a_event.c_str());
         if (a_event.c_str() && (Actions::HyperArmorFor(actor) || EventEffects::HyperArmorFor(actor->GetHandle()))) {
             static RE::BSFixedString stagger{"staggerStart"}, recoilLarge{"recoilLargeStart"}, recoil{"recoilStart"};
             if (a_event == stagger || a_event == recoilLarge || a_event == recoil) {
-                logger::debug("[HyperArmor] '{}' 차단 (액터 {:08X})", a_event.c_str(), actor->GetFormID());
+                logger::debug("[HyperArmor] '{}' blocked (actor {:08X})", a_event.c_str(), actor->GetFormID());
                 return true;
             }
         }

@@ -9,6 +9,7 @@
 #include "runtime/ActionRegistry.h"
 #include "runtime/PairedRig.h"
 #include "Settings.h"
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <mutex>
@@ -64,14 +65,19 @@ bool EngineQueueMoved(EngineQueueView& last, const RE::AnimationFileManagerSingl
     last = now;
     return moved;
 }
+using Clock = std::chrono::steady_clock;
 struct CharacterJobs {
     std::uintptr_t graph = 0, bindings = 0;
+    std::string project;  // for ReportPending
     std::uint64_t rig = 0;
     bool player = false;
     bool mismatchReported = false;
     bool built = false;  // jobs made while this character holds its binding set
     bool followerReported = false;
-    std::uint64_t updates = 0;        // this character's graph updates seen here
+    std::uint64_t updates = 0;       // this character's graph updates seen here
+    Clock::time_point lastUpdate{};  // ReportPending: when the last of them came
+    std::uint64_t idleUpdates = 0;   // ReportPending: graph updates without time while a loading session is open
+    Clock::time_point lastIdle{};
     std::uint64_t holderUpdates = 0;  // follower: the holder's count at its last change
     unsigned holderSilent = 0;        // follower: own updates since that change
     std::vector<Job> jobs;
@@ -151,10 +157,24 @@ void Release(Job& job, const RE::hkbContext& ctx, RE::AnimationFileManagerSingle
     job.retryDelay = 0;
 }
 
+// A graph update without time (delta 0): counted for ReportPending while a loading session waits, so a holder whose
+// graph is updated without time shows apart from one that is not updated at all.
+void NoteIdle(std::uintptr_t key) {
+    std::lock_guard lock(mutex);
+    if (const auto found = characters.find(key); found != characters.end()) {
+        ++found->second.idleUpdates;
+        found->second.lastIdle = Clock::now();
+    }
+}
+
 void Prepare(RE::hkbBehaviorGraph* graph, const RE::hkbContext& ctx, float delta) {
     if (auto* ui = RE::UI::GetSingleton(); ui && ui->GameIsPaused()) return;
     auto* ch = ctx.character;
-    if (!ch || graph != ch->behaviorGraph.get() || !std::isfinite(delta) || delta <= 0.0f) return;
+    if (!ch || graph != ch->behaviorGraph.get()) return;
+    if (!std::isfinite(delta) || delta <= 0.0f) {
+        if (LoadingProgress::IsActive()) NoteIdle(reinterpret_cast<std::uintptr_t>(ch));
+        return;
+    }
     auto* setup = ch->setup.get();
     auto* data = setup ? setup->data.get() : nullptr;
     auto* strings = data ? data->stringData.get() : nullptr;
@@ -173,6 +193,7 @@ void Prepare(RE::hkbBehaviorGraph* graph, const RE::hkbContext& ctx, float delta
         state.bindings = reinterpret_cast<std::uintptr_t>(set);
         state.rig = rig;
         state.player = IsPlayer(ctx);
+        state.project = project ? project : "";
         found = characters.emplace(key, std::move(state)).first;
     }
     auto& state = found->second;
@@ -189,6 +210,7 @@ void Prepare(RE::hkbBehaviorGraph* graph, const RE::hkbContext& ctx, float delta
         return;
     }
     ++state.updates;
+    state.lastUpdate = Clock::now();
     auto& holder = holders[state.bindings];
     if (holder != key) {
         // A holder whose graph stopped updating (its teardown not observed) is replaced after this
@@ -468,6 +490,49 @@ void RecoverFailedMark(const RE::hkbContext& ctx, RE::hkbClipGenerator* clip) {
         state.settled = false;
         return;
     }
+}
+void ReportPending() {
+    std::lock_guard lock(mutex);
+    const auto now = Clock::now();
+    const auto ago = [&](Clock::time_point at) {
+        return at == Clock::time_point{} ? std::string("never")
+                                         : std::format("{:.1f} s ago", std::chrono::duration<double>(now - at).count());
+    };
+    // The jobs the session waited on still hold their token here (the session dropped its side of it).
+    const auto waited = [](const std::vector<Job>& jobs) {
+        return std::count_if(jobs.begin(), jobs.end(), [](const Job& job) { return job.progress != 0; });
+    };
+    std::size_t sets = 0;
+    for (const auto& [key, state] : characters) {
+        const auto waiting = waited(state.jobs);
+        if (!waiting) continue;
+        ++sets;
+        const auto queued = std::count_if(
+            state.jobs.begin(), state.jobs.end(), [](const Job& job) { return job.queued && !job.finished; });
+        const auto retrying =
+            std::count_if(state.jobs.begin(), state.jobs.end(), [](const Job& job) { return job.retryPending; });
+        const auto holder = holders.find(state.bindings);
+        logger::warn("[Preload] waiting on character={:X}{} project='{}' set={:X}{}: {} of {} files ({} queued, {} "
+                     "retrying), {} updates (last {}), {} updates without time (last {})",
+            key, state.player ? " (player)" : "", state.project, state.bindings,
+            holder != holders.end() && holder->second == key ? "" : " (no longer its holder)", waiting,
+            state.jobs.size(), queued, retrying, state.updates, ago(state.lastUpdate), state.idleUpdates,
+            ago(state.lastIdle));
+        for (const auto& [other, follower] : characters)
+            if (other != key && follower.bindings == state.bindings)
+                logger::warn("[Preload]   same set: character={:X}{} {} updates (last {}), {} without time, holder "
+                             "silent for {} of them",
+                    other, follower.player ? " (player)" : "", follower.updates, ago(follower.lastUpdate),
+                    follower.idleUpdates, follower.holderSilent);
+    }
+    for (const auto& [set, kept] : parked)
+        if (const auto waiting = waited(kept.jobs)) {
+            ++sets;
+            logger::warn("[Preload] waiting on set={:X} project='{}': {} of {} files parked since its holder's graph "
+                         "was torn down; no character of the set has updated since",
+                set, kept.project, waiting, kept.jobs.size());
+        }
+    if (!sets) logger::warn("[Preload] no preload job was among them (the engine's own requests: see [Loading])");
 }
 void ResetProgress() {
     std::lock_guard lock(mutex);

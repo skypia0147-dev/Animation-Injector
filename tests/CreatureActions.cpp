@@ -111,22 +111,23 @@ int main() {
         }
         // What a creature-started pair may not have.
         {
-            Check(
-                Refused(Parse("<Pair id='P' rig='wolf' clip='p.hkx'><FindPartner rig='bear'/></Pair>"), "상대는 사람"),
+            Check(Refused(Parse("<Pair id='P' rig='wolf' clip='p.hkx'><FindPartner rig='bear'/></Pair>"),
+                      "can only be a human"),
                 "a creature's pair partners a character only");
-            Check(Refused(Parse("<Pair id='P' rig='wolf' clip='p.hkx'><Carry target='physics'/></Pair>"), "운반"),
+            Check(Refused(Parse("<Pair id='P' rig='wolf' clip='p.hkx'><Carry target='physics'/></Pair>"),
+                      "Carry is only for pairs a human starts"),
                 "a creature does not carry");
             Check(Refused(Parse("<Pair id='P' rig='wolf' clip='p.hkx'><Camera reset='x'/></Pair>"),
-                      "사람(character) 동작에만"),
+                      "only for human (character) actions"),
                 "a camera on a creature's pair");
             Check(Refused(Parse("<Pair id='P' rig='wolf' clip='p.hkx'><Transition to='B' event='e'/></Pair>"
                                 "<Action id='B' clip='b.hkx'/>"),
-                      "다른 스켈레톤"),
+                      "another skeleton"),
                 "a wolf's pair into a character action");
             Check(Refused(
                       Parse("<Pair id='P' rig='wolf' clip='p.hkx'><Transition to='A' partnerTo='B' event='e'/>"
                             "</Pair><Action id='A' rig='wolf' clip='a.hkx'/><Action id='B' rig='wolf' clip='b.hkx'/>"),
-                      "partnerTo는 상대"),
+                      "partnerTo must be an action of the partner's"),
                 "the partner's next action is the partner's rig");
             Check(Parse("<Pair id='P' rig='wolf' clip='p.hkx'><Transition to='A' partnerTo='B' event='e'/></Pair>"
                         "<Action id='A' rig='wolf' clip='a.hkx'/><Action id='B' clip='b.hkx'/>")
@@ -141,24 +142,24 @@ int main() {
         {
             for (const char* attribute : {"view='first'", "otherView='switch'", "air='both'", "attack='x'"})
                 Check(Refused(Parse(std::string("<Action id='A' rig='bear' clip='a.hkx' ") + attribute + "/>"),
-                          "사람(character) 동작에만"),
+                          "only for human (character) actions"),
                     "a character-only attribute on a creature action");
             Check(Refused(Parse("<Action id='A' rig='bear' clip='a.hkx'><Camera reset='x'/></Action>"),
-                      "사람(character) 동작에만"),
+                      "only for human (character) actions"),
                 "a camera on a creature action");
             Check(Refused(Parse("<Action id='A' rig='bear' clip='a.hkx'><Do at='0.1' op='hide'/></Action>"),
-                      "사람(character) 동작에만"),
+                      "only for human (character) actions"),
                 "hiding weapons on a creature action");
         }
         // A transition stays within one skeleton, either way.
         {
             Check(Refused(Parse("<Action id='A' rig='wolf' clip='a.hkx'><Transition to='B' event='e'/></Action>"
                                 "<Action id='B' clip='b.hkx'/>"),
-                      "다른 스켈레톤"),
+                      "another skeleton"),
                 "a wolf action into a character action");
             Check(Refused(Parse("<Action id='A' clip='a.hkx'><Transition to='B' event='e'/></Action>"
                                 "<Action id='B' rig='wolf' clip='b.hkx'/>"),
-                      "다른 스켈레톤"),
+                      "another skeleton"),
                 "a character action into a wolf action");
         }
         std::cout << "Creature action checks passed: " << checks << "\n";

@@ -34,6 +34,9 @@ namespace AnimationInjector::AnimationPreloader {
 // Does not activate a clip, issue an animation event, or retain an actor pointer.
 void Install();
 void ResetProgress();
+// The loading session stopped waiting (core/LoadingProgressModel.h kStallLimit): logs each binding set whose jobs it
+// waited on, with its holder's and the set's other characters' graph updates.
+void ReportPending();
 // Defer all engine work to the next valid graph update.
 void RequestCheck();
 // A clip that failed to start on a file this set holds: prepare that file again.

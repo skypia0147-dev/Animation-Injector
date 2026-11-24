@@ -128,39 +128,39 @@ bool ActionRunner::Conditions(RE::Actor* p, bool a_linkPreflight) const {
     if (Spec().Part()) return !a_linkPreflight && PartRunner::CanStart(p, _idx);
     const auto& c = Spec().condition;
     auto deny = [&](const char* a_why) {
-        logger::debug("[{}] 거부: {}", Spec().id, a_why);
+        logger::debug("[{}] refused: {}", Spec().id, a_why);
         return false;
     };
-    if (!p || !p->Is3DLoaded() || p->IsDead()) return deny("액터 없음/사망");
-    if (!MatchesRig(p)) return deny("다른 스켈레톤(rig)");
+    if (!p || !p->Is3DLoaded() || p->IsDead()) return deny("no actor, or dead");
+    if (!MatchesRig(p)) return deny("another skeleton (rig)");
     if (Carry::BlocksAction(p, _idx)) return deny("carry owns actor");
     PairedSession::Ticket pairTicket;
     if (!a_linkPreflight && PairedSession::TryGetTicket(p->GetHandle(), pairTicket) &&
         !PairedSession::CanEnterHandoff(p->GetHandle(), _idx))
-        return deny("페어 진행 중");
-    if (_state != State::kIdle) return deny("이미 실행 중");
-    if (_cooldown > 0.0f) return deny("쿨다운");
+        return deny("pair in progress");
+    if (_state != State::kIdle) return deny("already running");
+    if (_cooldown > 0.0f) return deny("cooldown");
     // A selecting action is never injected (0.12.244): only the action its Flow picks needs a graph (CanStart). Until
     // 0.12.269 this refused every single selecting action's start (a pair skipped the check).
     if (!Spec().paired.enabled && !Spec().SelectsOnly() && !GraphInjector::AnyInjected(_idx))
-        return deny("삽입된 그래프 없음");
+        return deny("no injected graph");
     auto* as = p->AsActorState();
     if (!as) return false;
-    if (as->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) return deny("넉다운/스태거");
-    if (as->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal) return deny("앉음/수면");
+    if (as->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) return deny("knocked down or staggered");
+    if (as->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal) return deny("sitting or sleeping");
     if (as->IsSwimming() || p->IsOnMount() || p->IsInKillMove() || p->IsInRagdollState())
-        return deny("수영/탑승/킬무브/래그돌");
+        return deny("swimming, mounted, in a kill move or ragdoll");
     {
         auto* cc = p->GetCharController();
         const bool air = cc && cc->context.currentState == RE::hkpCharacterStateType::kInAir;
         logger::debug("[{}] AirCheck policy={} controller={} state={} inAir={}", Spec().id, c.inAir, cc != nullptr,
             cc ? static_cast<int>(cc->context.currentState) : -1, air);
-        if (air && c.inAir == 0) return deny("공중");
-        if (!air && c.inAir == 2) return deny("공중 아님 (inAir=only)");
+        if (air && c.inAir == 0) return deny("in the air");
+        if (!air && c.inAir == 2) return deny("not in the air (inAir=only)");
     }
     if (_isPlayer)
-        if (!ViewGuard::AllowStart(_idx)) return deny("시점");
-    if (!_isPlayer && Spec().view.view == View::kFirst) return deny("1인칭 전용");
+        if (!ViewGuard::AllowStart(_idx)) return deny("view");
+    if (!_isPlayer && Spec().view.view == View::kFirst) return deny("first person only");
     return true;
 }
 
@@ -254,7 +254,7 @@ bool ActionRunner::RequestImpl(const RE::BSFixedString* ground, const RE::BSFixe
     const bool airRoute = spec.condition.inAir != 0 && controller &&
                           controller->context.currentState == RE::hkpCharacterStateType::kInAir;
     if (airRoute && !GraphInjector::HasAirRoute(_idx)) {
-        logger::warn("[{}] 공중 진입 경로가 삽입되지 않아 요청 거부", spec.id);
+        logger::warn("[{}] request refused: the in-air entry path is not injected", spec.id);
         return false;
     }
     const auto& enterEvent = airRoute ? spec.clips[variant].airEnterEvent : spec.clips[variant].enterEvent;
@@ -279,7 +279,7 @@ bool ActionRunner::RequestImpl(const RE::BSFixedString* ground, const RE::BSFixe
     logger::debug("[{}] EntryRoute={} event='{}'", spec.id, airRoute ? "air" : "ground", enterEvent);
     const bool ok = p->NotifyAnimationGraph(ground ? (airRoute ? *air : *ground) : Fixed(enterEvent));
     LogAirPhysics(AirPhase::kAfterEntry);
-    logger::debug("[{}] 요청 변형 {}('{}') notify={} attackState={} 액터 {:08X}", spec.id, variant,
+    logger::debug("[{}] request variant {}('{}') notify={} attackState={} actor {:08X}", spec.id, variant,
         spec.clips[variant].tag, ok, atk, p->GetFormID());
     if (!ok || _state == State::kIdle) {
         _state = State::kIdle;
@@ -334,7 +334,7 @@ RE::Actor* FindPairedTarget(RE::Actor* a_self, float a_range, float a_angleDeg, 
         const float ang = PairTargetMath::AbsoluteHeading(a_self->GetHeadingAngle(a->GetPosition(), false));
         if (ang > a_angleDeg * 0.5f) {
             if (FrameworkSettings::Get().debug)
-                rejected += fmt::format(" [{} {:.0f}u 각 {:.0f}°]", a->GetDisplayFullName(), d, ang);
+                rejected += fmt::format(" [{} {:.0f}u, angle {:.0f}°]", a->GetDisplayFullName(), d, ang);
             continue;
         }
         if (d < bestD) {
@@ -354,7 +354,7 @@ RE::Actor* FindPairedTarget(RE::Actor* a_self, float a_range, float a_angleDeg, 
             bestD = distance;
         }
     }
-    if (!best) logger::debug("페어 대상 없음. 거른 것:{}", rejected);
+    if (!best) logger::debug("no pair target. Filtered out:{}", rejected);
     return best;
 }
 }
@@ -457,14 +457,14 @@ bool ActionRunner::RequestPaired(RE::ActorHandle boundTarget) {
     auto* data = RE::TESDataHandler::GetSingleton();
     auto* idle = data ? data->LookupForm<RE::TESIdleForm>(0xBDE2, "Dawnguard.esm") : nullptr;
     if (!target) {
-        logger::warn("[PairB] 대상 없음: 캐릭터 몸 기준 전방 각도 ±{:.0f}도, 거리 {:.0f} 이내 필요",
+        logger::warn("[PairB] no target: one must be within ±{:.0f}° of the body's forward direction and {:.0f} units",
             Spec().paired.angle * 0.5f, Spec().paired.range);
         return false;
     }
     if (Carry::BlocksAction(target)) return false;
     if (Spec().carry.enabled && !Carry::CanBegin(_idx, actor, target)) return false;
     if (!idle) {
-        logger::warn("[PairB] Dawnguard 전방 페어 IDLE 없음");
+        logger::warn("[PairB] no Dawnguard front pair IDLE");
         return false;
     }
     if (!GraphInjector::HasPairedRoutes(_idx)) {
@@ -547,7 +547,7 @@ void ActionRunner::Adopt(int a_variant) {
     ApplyAttackData();
     ApplyRotate(false);
     SlotUpdate();
-    logger::debug("[{}] 외부 진입 채택: 액터 {:08X} 변형 {}('{}')", Spec().id, p->GetFormID(), a_variant,
+    logger::debug("[{}] outside entry taken: actor {:08X} variant {}('{}')", Spec().id, p->GetFormID(), a_variant,
         Spec().clips[a_variant].tag);
 }
 
@@ -614,7 +614,7 @@ void ActionRunner::ApplyAttackData() {
     auto* high = proc ? proc->high : nullptr;
     auto* race = p->GetRace();
     if (!high || !race || !race->attackDataMap) {
-        logger::warn("[{}] Attack: high/race/attackDataMap 없음", spec.id);
+        logger::warn("[{}] Attack: no high process, race or attackDataMap", spec.id);
         return;
     }
     auto& map = race->attackDataMap->attackDataMap;
@@ -625,8 +625,8 @@ void ActionRunner::ApplyAttackData() {
             if (!keys.empty()) keys += ", ";
             keys += e.first.c_str() ? e.first.c_str() : "?";
         }
-        logger::warn("[{}] Attack: 종족 '{}' 에 공격 데이터 '{}' 없음. 있는 이름: {}", spec.id, race->GetFormEditorID(),
-            name, keys);
+        logger::warn("[{}] Attack: race '{}' has no attack data '{}'. Names it has: {}", spec.id,
+            race->GetFormEditorID(), name, keys);
         return;
     }
     if (high->attackData != _attackSet || !_attackSet)
@@ -648,7 +648,7 @@ void ActionRunner::RestoreAttackData() {
     if (high && high->attackData == _attackSet) {  // 아직 우리 것이면 되돌린다 (캔슬 아웃으로 엔진이 바꿨으면 그대로)
         high->attackData = _attackPrev;
         logger::debug(
-            "[{}] Attack: attackData 복원 → '{}'", Spec().id, _attackPrev ? _attackPrev->event.c_str() : "(없음)");
+            "[{}] Attack: attackData restored to '{}'", Spec().id, _attackPrev ? _attackPrev->event.c_str() : "(none)");
     }
     _attackSet.reset();
     _attackPrev.reset();
@@ -731,7 +731,7 @@ void ActionRunner::RestoreSlots() {
     if (_timeOn) ApplyTimeScale(false);
     if (_hyperOn) {
         _hyperOn = false;
-        logger::debug("[{}] HyperArmor OFF (종료)", Spec().id);
+        logger::debug("[{}] HyperArmor OFF (end)", Spec().id);
     }
 }
 
@@ -848,7 +848,7 @@ void ActionRunner::SlotEvent(const RE::BSFixedString& a_tag) {
         case 1: ApplyIFrame(on); break;
         case 2:
             _hyperOn = on;
-            logger::debug("[{}] HyperArmor {} (주석) at {:.2f}s", spec.id, on ? "ON" : "OFF", _elapsed);
+            logger::debug("[{}] HyperArmor {} (annotation) at {:.2f}s", spec.id, on ? "ON" : "OFF", _elapsed);
             break;
         case 3: ApplyTimeScale(on); break;
         }
@@ -993,7 +993,8 @@ void ActionRunner::OnClipActivated(int a_variant, float a_duration, bool a_moves
     _idleSettled = false;  // the idle safety net ends this QTE again once the runner is idle
     Qte::Begin(_owner, _idx, {}, _elapsed);
     if (_isPlayer) PairFeatures::BeginActionCamera(_owner, _idx);
-    logger::debug("[{}] 클립 활성 변형 {} 길이 {:.3f}s → 보험 {:.2f}s", Spec().id, _variant, a_duration, SafetyTime());
+    logger::debug("[{}] clip activated: variant {}, length {:.3f}s, safety exit at {:.2f}s", Spec().id, _variant,
+        a_duration, SafetyTime());
 }
 
 float ActionRunner::SafetyTime() const noexcept {
@@ -1011,11 +1012,12 @@ void ActionRunner::OnClipDeactivated(int a_variant) {
     }
     if (_state == State::kIdle) return;
     if (a_variant != _variant) {  // another role's clip (a pair): this runner's own clip goes on
-        logger::debug("[{}] 다른 변형의 클립 비활성 (변형 {}, 현재 {})", Spec().id, a_variant, _variant);
+        logger::debug(
+            "[{}] another variant's clip deactivated (variant {}, current {})", Spec().id, a_variant, _variant);
         return;
     }
-    logger::debug("[{}] 클립 비활성 at {:.2f}s — {} 경로", Spec().id, _elapsed,
-        _exitSent ? "Exit" : "다른 전이(캔슬 아웃/스태거)");
+    logger::debug("[{}] clip deactivated at {:.2f}s — {} path", Spec().id, _elapsed,
+        _exitSent ? "Exit" : "another transition (cancel out or stagger)");
     if (!_exitSent && _animDrivenSet) {
         _postCancelTimer = PostCancelTime::kWatch;
         _postCancelTick = 0.0f;
@@ -1066,7 +1068,7 @@ void ActionRunner::PostCancelWatch(float a_delta) {
     }
     if (attackState == 0 && anim) {
         p->SetGraphVariableBool(VarAnimDriven(), false);
-        logger::debug("[{}] 캔슬아웃 후 복구: 공격 종료 시 bAnimationDriven 이 켜져 있어 끔", Spec().id);
+        logger::debug("[{}] after a cancel out: bAnimationDriven was on at the attack's end; turned off", Spec().id);
         _postCancelTimer = 0.0f;
     }
 }
@@ -1104,9 +1106,9 @@ void ActionRunner::OpenRecovery(const char* a_why) {
     _recoveryOpen = true;
     const auto& r = Spec().recovery;
     const bool held = r.move && InputSink::Get()->AnyMoveInput();
-    logger::debug("[{}] Recovery 열림 ({}) at {:.2f}s — 이동키 {}", Spec().id, a_why, _elapsed,
-        held ? "누르고 있음 → 즉시" : "대기");
-    if (held) Recover("이미 누른 이동키");
+    logger::debug("[{}] Recovery open ({}) at {:.2f}s, movement key {}", Spec().id, a_why, _elapsed,
+        held ? "held: now" : "waiting");
+    if (held) Recover("movement key already held");
 }
 
 void ActionRunner::Recover(const char* a_why) {
@@ -1129,7 +1131,7 @@ void ActionRunner::Recover(const char* a_why) {
                 _state = State::kActive;
                 _exitSent = false;
             });
-    logger::debug("[{}] Recovery → 이동 ({}) at {:.2f}s notify={}", Spec().id, a_why, _elapsed, ok);
+    logger::debug("[{}] Recovery to movement ({}) at {:.2f}s notify={}", Spec().id, a_why, _elapsed, ok);
 }
 
 bool ActionRunner::BeginNormalExitMovement(std::uint64_t serial) {
@@ -1193,14 +1195,14 @@ void ActionRunner::OnMoveInput(int a_kind) {
     if (!_isPlayer || _state != State::kActive || !_recoveryOpen) return;
     const auto& r = Spec().recovery;
     if ((a_kind == 0 && r.move) || (a_kind == 1 && r.sprint) || (a_kind == 2 && r.jump))
-        Recover(a_kind == 0 ? "이동 입력" : a_kind == 1 ? "스프린트" : "점프");
+        Recover(a_kind == 0 ? "movement input" : a_kind == 1 ? "sprint" : "jump");
 }
 
 // Recovery declared at a clip time opens on the runner's timer (an event one waits for its annotation only).
 void ActionRunner::RecoveryClock() {
     if (_state != State::kActive) return;
     const auto& r = Spec().recovery;
-    if (r.enabled && r.at >= 0.0f && !_recoveryOpen && _elapsed >= r.at) OpenRecovery("시각");
+    if (r.enabled && r.at >= 0.0f && !_recoveryOpen && _elapsed >= r.at) OpenRecovery("time");
 }
 
 void ActionRunner::Update(float a_delta) {
@@ -1219,7 +1221,7 @@ void ActionRunner::Update(float a_delta) {
     // back), and an AI request heard since ends the action.
     if (_npcHandoff && _state == State::kActive) {
         if (auto* actor = Owner()) actor->SetGraphVariableBool(VarAnimDriven(), false);
-        if (_npcHandoffExit.exchange(false)) Recover("AI 요청");
+        if (_npcHandoffExit.exchange(false)) Recover("AI request");
     }
     if (_state != State::kActive && !Spec().qtes.empty()) Qte::End(_owner, _idx);
     // The destination graph owns rotation once exit blending starts.
@@ -1268,7 +1270,7 @@ void ActionRunner::Update(float a_delta) {
     if (_state == State::kExiting) {
         _exitingTime += a_delta;
         if (_exitingTime > _exitTimeout) {
-            logger::warn("[{}] Exit watchdog: 클립 비활성이 없음 — 강제 종료", Spec().id);
+            logger::warn("[{}] Exit watchdog: the clip was never deactivated; ending it", Spec().id);
             Finish();
             return;
         }
@@ -1299,7 +1301,7 @@ void ActionRunner::Update(float a_delta) {
         PrepareExit(Spec().exitBlend);
         if (auto* p = Owner()) p->NotifyAnimationGraph(Fixed(Spec().events.exit));
         if (_state == State::kExiting) SetAnimationDriven(false);
-        logger::debug("[{}] 보험 Exit at {:.2f}s", Spec().id, _elapsed);
+        logger::debug("[{}] safety Exit at {:.2f}s", Spec().id, _elapsed);
     }
 }
 
@@ -1338,12 +1340,12 @@ void ActionRunner::OnAnimEvent(const RE::BSFixedString& a_tag) {
     const auto& spec = Spec();
     if (FrameworkSettings::Get().debug && _seenTags.size() < 40 && !_seenTags.count(a_tag.c_str())) {
         _seenTags.insert(a_tag.c_str());
-        logger::debug("[{}] 이벤트 '{}' at {:.2f}s", spec.id, a_tag.c_str(), _elapsed);
+        logger::debug("[{}] event '{}' at {:.2f}s", spec.id, a_tag.c_str(), _elapsed);
     }
     const auto& tags = Tags();
     if (spec.recovery.enabled && _variant >= 0 && static_cast<std::size_t>(_variant) < tags.recovery.size() &&
         a_tag == tags.recovery[_variant])
-        OpenRecovery("주석 이벤트");
+        OpenRecovery("annotation event");
     SlotEvent(a_tag);
     if (a_tag == tags.exit) {
         _exitSeen = true;
@@ -1453,7 +1455,7 @@ void ActionRunner::Finish() {
         auto* cc = p ? p->GetCharController() : nullptr;
         if (cc && cc->context.currentState == RE::hkpCharacterStateType::kInAir) {
             const bool ok = AirControl::ResumeFalling(p);
-            logger::debug("[{}] 공중에서 종료 → JumpFall 재개 notify={}", Spec().id, ok);
+            logger::debug("[{}] ended in the air: JumpFall resumed notify={}", Spec().id, ok);
         }
     }
     if (_exitSent) {

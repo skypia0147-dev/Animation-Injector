@@ -126,6 +126,15 @@ void EndSession() {
     if (const auto left = ActorImmunity::ResetOnLoad())
         logger::warn("[Immunity] {} leases were still held at the session end; released", left);
 }
+// The loading panel stopped waiting for jobs that stopped finishing (core/LoadingProgressModel.h kStallLimit): what
+// they were waiting for goes to the log, so a report shows why without a test build (11-24).
+void ReportStall(std::size_t jobs) {
+    using namespace AnimationInjector;
+    logger::warn("[LoadingUI] stopped waiting: {} jobs had not finished and none finished for {:.0f} s", jobs,
+        LoadingProgress::Model::kStallLimit);
+    AnimationPreloader::ReportPending();
+    AnimationLoadObserver::ReportPending();
+}
 // Other plugins clear what they learned of event ownership when a game starts (FH_Grapple_Plugin in
 // its own load handler): announce the registered events again once every handler has run.
 void AnnounceEventsNextFrame() {
@@ -200,6 +209,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
             Actions::OnDataLoaded();
             TdmMovement::Load();  // Optional: movement conditions and the Rotate-window turn follow TDM's settings.
             PairedClipBinding::Install();
+            LoadingProgress::SetStallReporter(ReportStall);
             LoadingMenu::Register();
             QteMenu::Register();
             logger::info("[PairB] coexistence: OAR={} Grapple={}",

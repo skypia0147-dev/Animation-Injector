@@ -203,7 +203,7 @@ void Finish(EndReason a_reason) {
     if (lossBlendRequested)
         logger::debug("[PairLossBlend] #{} cleanup ended reason={} stopElapsed={:.3f} requestedBlend={:.3f}",
             status.ticket.request, static_cast<int>(a_reason), status.phaseElapsed, lossBlend);
-    logger::info("[PairB] #{} 종료 reason={} 양쪽진입={}/{} 양쪽종료={}/{} 그래프복귀={}/{} graphUnavailable={}/{}",
+    logger::info("[PairB] #{} end reason={} entered={}/{} exited={}/{} graphRestored={}/{} graphUnavailable={}/{}",
         status.ticket.request, static_cast<int>(a_reason), status.initiator.entered, status.target.entered,
         status.initiator.exited, status.target.exited, status.initiator.graphStateRestored,
         status.target.graphStateRestored, status.initiator.graphUnavailable, status.target.graphUnavailable);
@@ -236,8 +236,8 @@ void BeginStop(EndReason a_reason) {
         activeNodes = {observed[0] && !deactivated[0], observed[1] && !deactivated[1]};
     }
     PairFeatures::Suspend(copy.ticket);
-    logger::debug("[PairB] #{} 정리 시작: 최초사유={} 활성노드={}/{}", copy.ticket.request, static_cast<int>(a_reason),
-        activeNodes[0], activeNodes[1]);
+    logger::debug("[PairB] #{} cleanup start: first reason={} activeNodes={}/{}", copy.ticket.request,
+        static_cast<int>(a_reason), activeNodes[0], activeNodes[1]);
     logger::debug(
         "[PairTrace] #{} order={} AI-BeginStop reason={}", copy.ticket.request, order, static_cast<int>(a_reason));
     auto self = copy.initiator.actor.get(), target = copy.target.actor.get();
@@ -294,7 +294,8 @@ void BeginStop(EndReason a_reason) {
                     "[PairLossBlend] #{} long exit rejected; standard exit fallback={}", copy.ticket.request, fallback);
             }
         }
-        logger::debug("[PairB] #{} 정리요청 actor={:08X} notify={}", copy.ticket.request, actor->GetFormID(), sent);
+        logger::debug(
+            "[PairB] #{} cleanup request actor={:08X} notify={}", copy.ticket.request, actor->GetFormID(), sent);
     }
     if (recoveredPlayer && PairFeatures::BeginMovementRecovery(copy.ticket, recoveredPlayer))
         Carry::ReleaseMovementControl(copy.ticket, recoveredPlayer);
@@ -319,7 +320,7 @@ bool Submit(const Request& a_request, Ticket& a_ticket) {
             auto* package = actor->GetCurrentPackage();
             const auto& b = before[i];
             logger::debug(
-                "[PairB] 시작조건 role={} actor={:08X} name='{}' sex={} attack={} sit={} knock={} package={:08X} graphValid={} synced/pitch/driven={}/{}/{}",
+                "[PairB] start conditions role={} actor={:08X} name='{}' sex={} attack={} sit={} knock={} package={:08X} graphValid={} synced/pitch/driven={}/{}/{}",
                 i, actor->GetFormID(), actor->GetDisplayFullName(), base ? static_cast<int>(base->GetSex()) : -1,
                 state ? static_cast<int>(state->GetAttackState()) : -1,
                 state ? static_cast<int>(state->GetSitSleepState()) : -1,
@@ -327,7 +328,7 @@ bool Submit(const Request& a_request, Ticket& a_ticket) {
                 b.synced, b.pitch, b.driven);
         }
     if (!before[0].valid || !before[1].valid || before[0].synced || before[1].synced) {
-        logger::warn("[PairB] 거부: 그래프 상태를 읽을 수 없거나 이미 페어 실행 중");
+        logger::warn("[PairB] refused: the graph state cannot be read, or a pair is already running");
         return false;
     }
     std::array<std::array<std::uintptr_t, 8>, 2> ids{};
@@ -343,7 +344,7 @@ bool Submit(const Request& a_request, Ticket& a_ticket) {
                 auto* setup = graph->characterInstance.setup.get();
                 auto* data = setup ? setup->data.get() : nullptr;
                 auto* strings = data ? data->stringData.get() : nullptr;
-                logger::debug("[PairB] 그래프 role={} slot={} active={} character={:X} project='{}' behavior='{}'", i,
+                logger::debug("[PairB] graph role={} slot={} active={} character={:X} project='{}' behavior='{}'", i,
                     j - 1, manager->GetRuntimeData().activeGraph, ids[i][j - 1],
                     strings && strings->name.c_str() ? strings->name.c_str() : "?",
                     strings && strings->behaviorFilename.c_str() ? strings->behaviorFilename.c_str() : "?");
@@ -414,7 +415,7 @@ bool Submit(const Request& a_request, Ticket& a_ticket) {
         }
     }
     PairFeatures::Begin(a_ticket, a_request.actionIndex, a_request.initiator, a_request.target);
-    logger::debug("[PairB] #{} 예약: action='{}' player={:08X} target={:08X} idle={:08X} OAR={}, injected-front",
+    logger::debug("[PairB] #{} reserved: action='{}' player={:08X} target={:08X} idle={:08X} OAR={}, injected-front",
         a_ticket.request, Actions::Spec(a_request.actionIndex).id, self->GetFormID(), target->GetFormID(),
         a_request.idleForm, REX::W32::GetModuleHandleW(L"OpenAnimationReplacer.dll") ? "on" : "off");
     logger::debug("[PairTrace] #{} Grapple={} partnerLossBlend={:.3f}; order is callback/poll observation order",
@@ -819,7 +820,7 @@ void Update(float a_gameDelta) {
         if (status.phase == Phase::kAwaitingBoth && status.initiator.entered && status.target.entered) {
             status.phase = Phase::kPlaying;
             status.phaseElapsed = 0.0f;
-            logger::debug("[PairB] #{} 양쪽 로드된 클립 진입 확인", status.ticket.request);
+            logger::debug("[PairB] #{} both entered their loaded clips", status.ticket.request);
         }
     }
     if (lost) BeginStop(EndReason::kCancelled);
@@ -887,7 +888,7 @@ void Update(float a_gameDelta) {
             Finish(copy.lastEnd);
         } else if (copy.phaseElapsed >= request.stopTimeout) {
             logger::warn(
-                "[PairB] 정리 제한 초과: 최초사유={} valid={}/{} self synced/pitch/driven={}/{}/{} target={}/{}/{} (강제 bool 변경 안 함)",
+                "[PairB] cleanup limit passed: first reason={} valid={}/{} self synced/pitch/driven={}/{}/{} target={}/{}/{} (no bool is forced)",
                 static_cast<int>(copy.lastEnd), gs.valid, gt.valid, gs.synced, gs.pitch, gs.driven, gt.synced, gt.pitch,
                 gt.driven);
             Finish(EndReason::kStopTimeout);

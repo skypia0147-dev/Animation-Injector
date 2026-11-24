@@ -15,6 +15,10 @@ void ReportAnimations(std::size_t used, std::size_t limit, bool shortfall);
 Snapshot Advance(float delta, bool canComplete = true);
 void Reset(bool waitingForGameLoad = false);
 void GameLoaded();
+// Called once when a session stops waiting for jobs that stopped finishing (Model::kStallLimit), outside the progress
+// lock: it logs what they were waiting for (core/AnimationPreloader, core/AnimationLoadObserver ReportPending).
+using StallReporter = void (*)(std::size_t jobs);
+void SetStallReporter(StallReporter reporter);
 
 class Registration {
 public:

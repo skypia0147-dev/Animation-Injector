@@ -19,7 +19,7 @@ std::vector<Node> elements(Node n) {
     std::vector<Node> out;
     for (auto c : n.children()) {
         if (c.type() == pugi::node_pcdata || c.type() == pugi::node_cdata)
-            fail(n, "요소 안의 텍스트는 허용하지 않습니다");
+            fail(n, "Text inside the element is not allowed");
         if (c.type() == pugi::node_element) out.push_back(c);
     }
     return out;
@@ -27,7 +27,7 @@ std::vector<Node> elements(Node n) {
 void attributes(Node n, std::initializer_list<std::string_view> names) {
     for (auto a : n.attributes())
         if (std::find(names.begin(), names.end(), a.name()) == names.end())
-            fail(n, "알 수 없는 속성 '" + std::string(a.name()) + "'");
+            fail(n, "Unknown attribute '" + std::string(a.name()) + "'");
 }
 
 // One compilation: a card and the shared cards it reaches, into one program.
@@ -41,14 +41,15 @@ struct Builder {
     std::vector<std::string> visiting;       // shared cards being compiled, for loops
 
     int add(Node from, ConditionFlow::Node node) {
-        if (program.nodes.size() >= ConditionFlow::limit) fail(from, "조건 카드가 너무 큽니다(노드 256개까지)");
+        if (program.nodes.size() >= ConditionFlow::limit)
+            fail(from, "The condition card is too large (up to 256 nodes)");
         program.nodes.push_back(std::move(node));
         program.nodeIds.push_back(std::string(from.name()) + std::to_string(program.nodes.size()));
         return static_cast<int>(program.nodes.size() - 1);
     }
     int actionIndex(Node at, const std::string& name) {
         const auto it = std::find(actions.begin(), actions.end(), name);
-        if (it == actions.end()) fail(at, "정의되지 않은 액션: " + name);
+        if (it == actions.end()) fail(at, "Undefined action: " + name);
         return static_cast<int>(it - actions.begin());
     }
     int play(Node at, const std::string& name) {
@@ -62,9 +63,9 @@ struct Builder {
     // it sits among conditions of which one is enough (an OR row's); `inGroup`: it is a group's member.
     int condition(Node g, bool inAny, bool inGroup) {
         const std::string_view kind = g.name();
-        if (!guard(kind)) fail(g, "조건은 <Check>·<And>·<Or>로 씁니다");
+        if (!guard(kind)) fail(g, "Conditions are written as <Check>, <And>, <Or>");
         if (g.attribute("not") && get(g, "not") != "true" && get(g, "not") != "false")
-            fail(g, "not은 true 또는 false여야 합니다");
+            fail(g, "not must be true or false");
         int id;
         if (kind == "Check") {
             std::vector<ConditionFlowXml::Predicate> predicates;
@@ -89,15 +90,15 @@ struct Builder {
         } else {
             // A group is one level, the opposite of what holds it (0.12.301): <Or> among AND conditions, <And> in an
             // OR row.
-            if (inGroup) fail(g, "묶음 안에는 묶음을 넣지 않습니다(한 단계까지)");
+            if (inGroup) fail(g, "A group holds no group (one level only)");
             if ((kind == "And") != inAny)
-                fail(g, inAny ? "OR 행 안의 묶음은 <And>로 씁니다(같은 연산자는 묶지 않습니다)"
-                              : "AND 조건 사이의 묶음은 <Or>로 씁니다(같은 연산자는 묶지 않습니다)");
+                fail(g, inAny ? "A group in an OR row is written <And> (the same operator is not grouped)"
+                              : "A group among AND conditions is written <Or> (the same operator is not grouped)");
             attributes(g, {"not"});
             ConditionFlow::Node n;
             n.kind = kind == "And" ? ConditionFlow::Kind::kAll : ConditionFlow::Kind::kAny;
             for (auto c : elements(g)) n.operands.push_back(condition(c, !inAny, true));
-            if (n.operands.size() < 2) fail(g, std::string(kind) + " 묶음에는 조건이 둘 이상 필요합니다");
+            if (n.operands.size() < 2) fail(g, std::string(kind) + " group needs two or more conditions");
             id = add(g, std::move(n));
         }
         if (get(g, "not") != "true") return id;
@@ -129,11 +130,11 @@ struct Builder {
     int sharedCard(Node at, const std::string& name) {
         if (auto it = sharedEntry.find(name); it != sharedEntry.end()) return it->second;
         const auto it = shared.find(name);
-        if (it == shared.end()) fail(at, "정의되지 않은 조건 카드: " + name);
+        if (it == shared.end()) fail(at, "Undefined condition card: " + name);
         if (std::find(visiting.begin(), visiting.end(), name) != visiting.end()) {
             std::string loop;
             for (const auto& c : visiting) loop += c + " → ";
-            fail(at, "조건 카드가 서로를 가리켜 순환합니다: " + loop + name);
+            fail(at, "Condition cards point at each other in a loop: " + loop + name);
         }
         visiting.push_back(name);
         const int entry = card(it->second);
@@ -143,10 +144,10 @@ struct Builder {
     }
     // Where a <True>/<False> goes: to, condition or the card it holds.
     int destination(Node d) {
-        if (d.attribute("to") && d.attribute("condition")) fail(d, "to와 condition 중 하나만 씁니다");
+        if (d.attribute("to") && d.attribute("condition")) fail(d, "Write either to or condition, not both");
         if (d.attribute("to") || d.attribute("condition")) {
             attributes(d, {"to", "condition"});
-            if (!elements(d).empty()) fail(d, "to·condition을 쓴 곳에는 카드 내용을 쓰지 않습니다");
+            if (!elements(d).empty()) fail(d, "Where to or condition is written, no card content is written");
             return d.attribute("to") ? play(d, get(d, "to")) : sharedCard(d, get(d, "condition"));
         }
         attributes(d, {});
@@ -158,22 +159,26 @@ struct Builder {
         Node yes, no;
         for (auto c : elements(owner)) {
             const std::string_view kind = c.name();
-            if (no) fail(c, "<False>는 카드의 맨 끝에 씁니다");
+            if (no) fail(c, "<False> goes at the end of a card");
             if (guard(kind)) {
-                if (!rows.empty() || yes) fail(c, "공통 조건은 행·True보다 앞에 씁니다");
+                if (!rows.empty() || yes) fail(c, "Common conditions go before rows and True");
                 guards.push_back(c);
             } else if (kind == "Row") {
-                if (yes) fail(c, "True는 공통 조건만 쓴 카드의 유일한 행입니다: 다른 행과 함께 쓰지 않습니다");
+                if (yes)
+                    fail(c,
+                        "True is the only row of a card with common conditions only: it is not used with other rows");
                 rows.push_back(c);
             } else if (kind == "True") {
-                if (yes) fail(c, "True는 카드에 하나만 씁니다");
+                if (yes) fail(c, "A card has at most one True");
                 if (!rows.empty())
-                    fail(c, "True는 공통 조건만 쓴 카드의 유일한 행입니다: 다른 행과 함께 쓰지 않습니다");
+                    fail(c,
+                        "True is the only row of a card with common conditions only: it is not used with other rows");
                 yes = c;
             } else if (kind == "False")
                 no = c;
             else
-                fail(c, "조건 카드에 쓸 수 없는 요소입니다(공통 조건 <Check>·<And>·<Or>, <Row>, <True>, <False>)");
+                fail(c,
+                    "Element not allowed in a condition card (common conditions <Check>, <And>, <Or>, <Row>, <True>, <False>)");
         }
         const int falseEntry = no ? destination(no) : absent;
         int body = falseEntry;
@@ -189,23 +194,24 @@ struct Builder {
     // One row (K4): its conditions pass to its destination; a failure tries `next`.
     int row(Node r, int next) {
         attributes(r, {"to", "condition", "match"});
-        if (r.attribute("match") && get(r, "match") != "any") fail(r, "match는 any만 씁니다(없으면 모든 조건)");
-        if (r.attribute("to") && r.attribute("condition")) fail(r, "to와 condition 중 하나만 씁니다");
+        if (r.attribute("match") && get(r, "match") != "any") fail(r, "match takes only any (absent: every condition)");
+        if (r.attribute("to") && r.attribute("condition")) fail(r, "Write either to or condition, not both");
         std::vector<Node> conditions;
         Node inner;
         for (auto c : elements(r)) {
-            if (inner) fail(c, "<Condition>은 행의 맨 끝에 씁니다");
+            if (inner) fail(c, "<Condition> goes at the end of a row");
             if (guard(c.name()))
                 conditions.push_back(c);
             else if (std::string_view(c.name()) == "Condition")
                 inner = c;
             else
-                fail(c, "행에 쓸 수 없는 요소입니다(조건 <Check>·<And>·<Or>와 이어지는 <Condition>)");
+                fail(c, "Element not allowed in a row (conditions <Check>, <And>, <Or> and a following <Condition>)");
         }
         if (conditions.empty())
-            fail(r, "조건 없는 행은 쓰지 않습니다: 공통 조건만으로 정하면 <True>, 나머지는 <False>로 씁니다");
+            fail(r,
+                "A row without conditions is not written: if the common conditions alone decide, use <True>; the rest is <False>");
         const int ways = (r.attribute("to") ? 1 : 0) + (r.attribute("condition") ? 1 : 0) + (inner ? 1 : 0);
-        if (ways != 1) fail(r, "행에는 to, condition, 이어지는 <Condition> 중 하나가 필요합니다");
+        if (ways != 1) fail(r, "A row needs one of to, condition or a following <Condition>");
         int target;
         if (r.attribute("to"))
             target = play(r, get(r, "to"));
@@ -213,7 +219,7 @@ struct Builder {
             target = sharedCard(r, get(r, "condition"));
         else {
             if (inner.attribute("id"))
-                fail(inner, "행 안의 <Condition>에는 id를 쓰지 않습니다(함께 쓰는 카드는 루트에)");
+                fail(inner, "A <Condition> inside a row takes no id (shared cards go at the root)");
             attributes(inner, {});
             target = card(inner);
         }
@@ -235,29 +241,32 @@ bool Compile(pugi::xml_node owner, const std::vector<std::string>& actions, cons
     try {
         Builder b{actions, pairs, shared};
         int entry;
-        if (owner.attribute("to") && owner.attribute("condition")) fail(owner, "to와 condition 중 하나만 씁니다");
+        if (owner.attribute("to") && owner.attribute("condition"))
+            fail(owner, "Write either to or condition, not both");
         if (owner.attribute("condition")) {
             for (auto c : elements(owner))
-                if (cardPart(c.name())) fail(c, "condition을 쓴 곳에는 카드 내용을 쓰지 않습니다");
+                if (cardPart(c.name())) fail(c, "Where condition is written, no card content is written");
             entry = b.sharedCard(owner, get(owner, "condition"));
         } else if (owner.attribute("to")) {
             // to="X" with guards: a card whose True is X.
             std::vector<Node> guards;
             for (auto c : elements(owner)) {
                 if (!cardPart(c.name())) continue;
-                if (!guard(c.name())) fail(c, "to를 쓴 곳에는 공통 조건(<Check>·<And>·<Or>)만 붙입니다");
+                if (!guard(c.name()))
+                    fail(c, "Where to is written, only common conditions (<Check>, <And>, <Or>) go with it");
                 guards.push_back(c);
             }
             const int target = b.play(owner, get(owner, "to"));
             entry = b.chain(guards, target, absent);
         } else
             entry = b.card(owner);
-        if (entry == absent) fail(owner, "조건 카드에 재생할 곳이 없습니다(행·True·False가 비었습니다)");
+        if (entry == absent) fail(owner, "The condition card has nothing to play (its rows, True and False are empty)");
         b.program.entry = entry;
         const auto valid =
             ConditionFlow::Validate(b.program.nodes, b.program.entry, b.program.predicates.size(), actions.size());
         if (valid != ConditionFlow::Error::kNone)
-            fail(owner, "조건 카드를 실행 흐름으로 만들 수 없습니다(" + std::to_string(static_cast<int>(valid)) + ")");
+            fail(owner, "The condition card cannot be made into an execution flow (" +
+                            std::to_string(static_cast<int>(valid)) + ")");
         out = std::move(b.flags);
         out.program = std::move(b.program);
         return true;

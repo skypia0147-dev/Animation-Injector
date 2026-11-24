@@ -97,9 +97,9 @@ int main() {
     Reset();
     queueResult = 0;
     RequestAnimation();
-    // A false Load result means pending, not an invented failure timeout.
+    // A false Load result means pending, not an invented failure timeout (under the session's stall limit).
     loadResult = false;
-    for (int i = 0; i < 210; ++i) {
+    for (int i = 0; i < 190; ++i) {
         assert(!Complete());
         LoadingProgress::Advance(.1f);
     }

@@ -133,7 +133,7 @@ Singleton* FindSingleton() {
             break;
         }
     if (!g_singleton)
-        logger::error("[AnimData] AnimationClipDataSingleton 을 .data 에서 못 찾음 — 루트 모션 경로가 열리지 않는다");
+        logger::error("[AnimData] AnimationClipDataSingleton not found in .data; the root motion path stays closed");
     return g_singleton;
 }
 
@@ -164,8 +164,8 @@ bool ValidateLayout(AnimationData* ad) {
         }
         if (++checked >= 400) break;
     }
-    logger::info(
-        "[AnimData]   배치 검증: 검사 {} 모션 있음 {} → {}", checked, withMotion, withMotion > 0 ? "통과" : "탈락");
+    logger::info("[AnimData]   layout check: checked {} with motion {} → {}", checked, withMotion,
+        withMotion > 0 ? "passed" : "failed");
     return withMotion > 0;
 }
 
@@ -207,7 +207,7 @@ bool RegisterClip(AnimationData* ad, const char* a_project, const ActionSpec&, c
     ad->clips.insert(RE::BSTTuple<RE::BSFixedString, ClipData*>{key, cd});
     g_elemsByClip[clip.clipName].push_back(g_ourElems.size());
     g_ourElems.push_back({ad, clip.clipName, idx});
-    logger::debug("[AnimData] {}: '{}' 등록 (boundIdx {})", a_project, clip.clipName, idx);
+    logger::debug("[AnimData] {}: '{}' registered (boundIdx {})", a_project, clip.clipName, idx);
     return true;
 }
 }
@@ -350,7 +350,7 @@ bool TryRegister(const char* a_reason) {
     auto* s = FindSingleton();
     if (!s) return false;
     if (s->animDatas.size() == 0) {
-        logger::info("[AnimData] ({}) 아직 프로젝트가 없음 — 나중에 다시", a_reason);
+        logger::info("[AnimData] ({}) no project yet; trying again later", a_reason);
         return false;
     }
     int targets = 0, done = 0;
@@ -370,10 +370,10 @@ bool TryRegister(const char* a_reason) {
             ++done;
             continue;
         }
-        logger::info("[AnimData] ({}) 프로젝트 '{}': clips={} bound_datas={}/{}", a_reason, name, ad->clips.size(),
+        logger::info("[AnimData] ({}) project '{}': clips={} bound_datas={}/{}", a_reason, name, ad->clips.size(),
             ad->boundDatas.size, ad->boundDatas.cap);
         if (!ValidateLayout(ad)) {
-            logger::warn("[AnimData] 배치 검증 실패 — 등록 안 함");
+            logger::warn("[AnimData] layout check failed; nothing registered");
             // A creature project that does not read as expected loses its own actions' root motion only; the
             // character's projects (and other creatures) still register.
             // It is not tried again (once logged): it would otherwise run on every request.
@@ -397,7 +397,7 @@ bool TryRegister(const char* a_reason) {
         if (ok) {
             g_doneProjects.insert(ad);
             ++done;
-            logger::info("[AnimData] {}: 클립 {}개 등록 완료 (clips={} bound_datas={}/{})", name, count,
+            logger::info("[AnimData] {}: {} clips registered (clips={} bound_datas={}/{})", name, count,
                 ad->clips.size(), ad->boundDatas.size, ad->boundDatas.cap);
         }
     }

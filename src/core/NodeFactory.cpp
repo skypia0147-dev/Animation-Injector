@@ -134,7 +134,7 @@ int InjectEvent(RE::hkbBehaviorGraph* a_graph, const char* a_name) {
     if (existing >= 0) return existing;
     auto& infos = *reinterpret_cast<RE::hkArray<HkbEventInfo>*>(&data->eventInfos);
     if (static_cast<int>(infos.size()) != names._size) {
-        logger::warn("[Node] eventInfos({}) != eventNames({}) — '{}' 건너뜀", infos.size(), names._size, a_name);
+        logger::warn("[Node] eventInfos({}) != eventNames({}) — '{}' skipped", infos.size(), names._size, a_name);
         return -1;
     }
     infos.push_back(HkbEventInfo{0});
@@ -364,7 +364,7 @@ RE::hkReferencedObject* MakeBlendEffect(
                       tEvent = static_cast<std::int8_t>(src[kEventMode]);
     if (!(tDur >= 0.0f && tDur <= 5.0f) || tSelf < 0 || tSelf > 3 || tEvent < 0 || tEvent > 3) {
         logger::warn(
-            "[Node] 블렌드 효과 배치 자가검증 실패 (template '{}' duration={} self={} event={}) — 기존 효과 재사용",
+            "[Node] blend effect layout self-check failed (template '{}' duration={} self={} event={}); reusing the existing effect",
             NodeName(a_template), tDur, tSelf, tEvent);
         return nullptr;
     }
@@ -386,7 +386,7 @@ RE::hkReferencedObject* MakeBlendEffect(
     auto* arr = reinterpret_cast<RE::hkArray<RE::hkRefVariant>*>(e + kPoseArray);
     EmptyArray(*arr);
     NoteCreatedNode();
-    logger::debug("[Node] 블렌드 효과 '{}' 생성 (template '{}' {:.2f}s → {:.2f}s, self {} eventMode {}→{})", a_name,
+    logger::debug("[Node] blend effect '{}' created (template '{}' {:.2f}s → {:.2f}s, self {} eventMode {}→{})", a_name,
         NodeName(a_template), tDur, a_duration, tSelf, tEvent, a_eventMode >= 0 ? a_eventMode : tEvent);
     return reinterpret_cast<RE::hkReferencedObject*>(e);
 }

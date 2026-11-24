@@ -70,7 +70,7 @@ int main() {
         Check(Rejected("<EventRegistry/>") && Rejected(""), "a file needs an action or an event");
         for (const char* old : {"2", "3", "5"}) {
             const auto p = Parse(kAction, old);
-            Check(!p.ok && p.error.find("형식 6") != std::string::npos, "only format 6 is read");
+            Check(!p.ok && p.error.find("Only format 6") != std::string::npos, "only format 6 is read");
         }
         Check(Rejected("<EventRegistry><Event name='Same'/><Event name='same'/></EventRegistry>"),
             "one name twice in a file, ignoring case");

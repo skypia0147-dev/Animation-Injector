@@ -97,16 +97,17 @@ int main() {
         }
 
         // Refused.
-        Check(Rejected(Part("body='legs'"), "body는 upper"), "unknown part");
+        Check(Rejected(Part("body='legs'"), "body is one of upper"), "unknown part");
         Check(Rejected(kStart + "<Pair id='Drink' clip='Animations\\Drink.hkx' body='upper'/>"), "a pair");
-        Check(Rejected(Part("body='upper' view='first'"), "3인칭"), "first person");
-        Check(Rejected(Part("body='upper' view='both'"), "3인칭"), "both views");
+        Check(Rejected(Part("body='upper' view='first'"), "third person"), "first person");
+        Check(Rejected(Part("body='upper' view='both'"), "third person"), "both views");
         for (const char* attr : {"otherView='block'", "air='both'", "attack='attackStart'", "block='attackStart'"})
-            Check(Rejected(Part(std::string("body='upper' ") + attr), "부위 동작"), "a state's attribute");
+            Check(Rejected(Part(std::string("body='upper' ") + attr), "part action"), "a state's attribute");
         for (const char* child : {"<Rotate/>", "<IFrame/>", "<HyperArmor/>", "<Cost stamina='5'/>",
                  "<TimeScale factor='0.5'/>", "<MoveCancel/>"})
-            Check(Rejected(Part("body='upper'", child), "부위 동작"), "a state's feature");
-        Check(Rejected(Part("body='upper'", "<Transition key='H' end='true' on='move'/>"), "이동 전환"), "on move");
+            Check(Rejected(Part("body='upper'", child), "part action"), "a state's feature");
+        Check(Rejected(Part("body='upper'", "<Transition key='H' end='true' on='move'/>"), "movement transition"),
+            "on move");
         Check(Rejected(Part("body='upper'", "<Transition key='H' to='Other' blend='0.2'/>") +
                            "<Action id='Other' clip='Animations\\Other.hkx'/>",
                   "blend"),
@@ -148,12 +149,12 @@ int main() {
         Check(Rejected(kStart + "<Action id='Drink' clip='Animations\\Drink.hkx' body='upper'>"
                                 "<Transition key='H' to='Throw'/></Action>"
                                 "<Pair id='Throw' clip='Animations\\Throw.hkx'/>",
-                  "페어로는"),
+                  "cannot transition to a pair"),
             "a part action to a pair");
         Check(Rejected(kStart + "<Action id='Drink' clip='Animations\\Drink.hkx' body='upper'/>"
                                 "<Start key='K' to='Throw'/><Pair id='Throw' clip='Animations\\Throw.hkx'>"
                                 "<Transition key='H' to='Drink'/></Pair>",
-                  "페어에서"),
+                  "A pair cannot transition to a part action"),
             "a pair to a part action");
         std::cout << "BodyParts: " << checks << " checks passed\n";
         return 0;

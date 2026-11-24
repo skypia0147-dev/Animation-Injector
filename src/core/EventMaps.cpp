@@ -255,7 +255,7 @@ void Ensure(RE::Actor* p, const std::vector<std::string>& a_names) {
         const int id = masterNames.Find(nm.c_str());
         if (id < 0) {
             // Projects the actions are not injected into do not have their events (0.12.209).
-            if (++missing <= 3) logger::debug("[EventMap] '{}' 가 마스터 eventNames 에 없음", nm);
+            if (++missing <= 3) logger::debug("[EventMap] '{}' is not in the master's eventNames", nm);
             continue;
         }
         auto it = g_fixed.find(nm);
@@ -275,11 +275,12 @@ void Ensure(RE::Actor* p, const std::vector<std::string>& a_names) {
         if (static_cast<int>(n) == id)
             db->unkD0.push_back(key);
         else if (id > static_cast<int>(n))
-            logger::warn("[EventMap] unkD0 크기 {} < id {} — 태그 배열에 빈칸", n, id);
+            logger::warn("[EventMap] unkD0 size {} < id {}; the tag array has a gap", n, id);
     }
-    logger::info("[EventMap] project='{}' 이벤트 {}개 등록 (추가 {}, 기존 {}, 그래프에 없음 {}) 키방식={}",
+    logger::info(
+        "[EventMap] project='{}' events {} registered (added {}, existing {}, not in the graph {}) key mode={}",
         g->projectName.c_str() ? g->projectName.c_str() : "", a_names.size(), added, existed, missing,
-        ptrMode ? "포인터" : "문자열");
+        ptrMode ? "pointer" : "string");
     g_done[db] = {firstAdded, ptrMode, projectName};
 }
 

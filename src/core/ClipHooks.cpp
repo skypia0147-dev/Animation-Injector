@@ -45,8 +45,8 @@ void DumpAnnotations(RE::hkbClipGenerator* a_this, const char* a_when) {
         if (!dumped.insert(nm).second) return;
     }
     const int nTrig = a_this->triggers.get() ? a_this->triggers->triggers._size : -1;
-    logger::debug("[Clip] '{}' ({}) 길이 {:.3f}s 트리거 {}개 주석 트랙 {}개", nm, a_when, anim->duration, nTrig,
-        anim->annotationTracks._size);
+    logger::debug("[Clip] '{}' ({}) length {:.3f}s, triggers {}, annotation tracks {}", nm, a_when, anim->duration,
+        nTrig, anim->annotationTracks._size);
     for (int t = 0; t < anim->annotationTracks._size; ++t) {
         const auto& tr = anim->annotationTracks._data[t];
         std::string list;
@@ -54,7 +54,7 @@ void DumpAnnotations(RE::hkbClipGenerator* a_this, const char* a_when) {
             const auto& an = tr.annotations._data[k];
             list += fmt::format(" [{:.3f} '{}']", an.time, an.text.c_str() ? an.text.c_str() : "");
         }
-        logger::debug("[Clip]   track '{}' {}개:{}", tr.trackName.c_str() ? tr.trackName.c_str() : "",
+        logger::debug("[Clip]   track '{}' {} annotations:{}", tr.trackName.c_str() ? tr.trackName.c_str() : "",
             tr.annotations._size, list);
     }
 }
@@ -94,7 +94,7 @@ struct Activate {
                     "[Clip] '{}' bindingIndex {} → {}", a_this->name.c_str(), a_this->animationBindingIndex, idx);
                 a_this->animationBindingIndex = static_cast<std::uint16_t>(idx);
             } else if (idx < 0)
-                logger::warn("[Clip] '{}' 애니 이름을 animationNames 에 못 넣음", a_this->name.c_str());
+                logger::warn("[Clip] '{}' animation name could not be added to animationNames", a_this->name.c_str());
         }
         func(a_this, a_ctx);
         // Any clip that sends a registered window's on and off events owns that window (11-02).
@@ -194,7 +194,7 @@ struct Deactivate {
         int action = -1, variant = -1;
         if (!Actions::FindClip(a_this->name.c_str(), action, variant)) return;
         if (Actions::Spec(action).paired.enabled) return;
-        DumpAnnotations(a_this, "비활성");
+        DumpAnnotations(a_this, "deactivate");
         Actions::ClipDeactivated(ActorForContext(a_ctx), action, variant);
     }
     static inline REL::Relocation<decltype(thunk)> func;

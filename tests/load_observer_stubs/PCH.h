@@ -14,6 +14,8 @@ template<class... T>
 void info(const char*, T&&...) {}
 template<class... T>
 void debug(const char*, T&&...) {}
+template<class... T>
+void warn(const char*, T&&...) {}
 }
 namespace REL {
 inline std::array<std::uintptr_t, 4> testVtable{};

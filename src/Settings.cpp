@@ -67,9 +67,8 @@ void FrameworkSettings::Load() {
         spdlog::set_level(spdlog::level::debug);
         spdlog::flush_on(spdlog::level::debug);
     }
-    logger::info(
-        "[Settings] 프레임워크: inject={} stateIdBase={} priority={} convertAnnotations={} debug={} nativePairAlignment={} "
-        "pairEndPosition={}",
+    logger::info("[Settings] framework: inject={} stateIdBase={} priority={} convertAnnotations={} debug={} "
+                 "nativePairAlignment={} pairEndPosition={}",
         injectState, stateIdBase, wildcardPriority, convertAnnotations, debug, nativePairAlignment, pairEndPosition);
 }
 
@@ -213,7 +212,7 @@ bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out
     pugi::xml_document doc;
     const auto res = doc.load_file(a_file.c_str());
     if (!res) {
-        logger::warn("[Decl] {}: XML 파싱 실패 — {} (offset {})", file, res.description(), res.offset);
+        logger::warn("[Decl] {}: XML parsing failed — {} (offset {})", file, res.description(), res.offset);
         return false;
     }
     if (!doc.child("AnimationSet")) {
@@ -234,8 +233,9 @@ bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out
         const auto base = qualifier;
         for (int i = 2; a_names->sets.contains(Lower(qualifier)); ++i) qualifier = base + "_" + std::to_string(i);
         if (qualifier != base)
-            logger::warn("[Decl] {}: AnimationSet id '{}'를 쓰는 파일이 {}에도 있습니다 — 이 파일의 동작은 '{}'로 따로 "
-                         "다룹니다",
+            logger::warn(
+                "[Decl] {}: AnimationSet id '{}' is used by the file {} too — this file's action is '{}' and kept "
+                "apart",
                 file, base, a_names->sets.at(Lower(base)), qualifier);
     }
     if (!XmlV2::Compile(doc, file, parsed, events, locomotion, mod, error, ResolveKeyName, qualifier)) {
@@ -246,14 +246,16 @@ bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out
     // file's <Locomotion> is used.
     const bool declaresLocomotion = !locomotion.Empty();
     if (a_locomotion && a_locomotionFile && declaresLocomotion && (!parsed.empty() || !events.empty())) {
-        logger::error("[Decl] {}: 이동 사다리 파일(Locomotion\\Locomotion.xml)에는 <Locomotion>만 둡니다 — entire file "
-                      "skipped",
+        logger::error(
+            "[Decl] {}: the locomotion file (Locomotion\\Locomotion.xml) holds <Locomotion> alone — entire file "
+            "skipped",
             file);
         return false;
     }
     if (a_locomotion && !a_locomotionFile && declaresLocomotion) {
-        logger::warn("[Decl] {}: 이동 사다리는 Locomotion\\Locomotion.xml 한 파일에서만 읽습니다 — 이 파일의 "
-                     "<Locomotion>은 쓰지 않습니다",
+        logger::warn(
+            "[Decl] {}: the locomotion is read from Locomotion\\Locomotion.xml alone — this file's <Locomotion> is "
+            "not used",
             file);
         locomotion = {};
     }
@@ -262,7 +264,8 @@ bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out
         // loaded, so no file's action is replaced by another's.
         for (const auto& spec : parsed)
             if (a_names->actions.contains(Lower(spec.id))) {
-                logger::error("[Decl] {}: 동작 '{}'가 앞서 불러온 파일의 동작과 같은 이름입니다 — entire file skipped",
+                logger::error(
+                    "[Decl] {}: action '{}' has the same name as an action of a file loaded before — entire file skipped",
                     file, spec.id);
                 return false;
             }
@@ -270,14 +273,14 @@ bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out
         for (const auto& spec : parsed) a_names->actions.insert(Lower(spec.id));
     }
     logger::info("[Decl:v2] {}: validated", file);
-    logger::info("[Decl] {} (mod '{}'): 액션 {}개, 이벤트 등록 {}개, 이동 선언 {}", file, mod, parsed.size(),
-        events.size(), locomotion.declared ? "있음" : "없음");
+    logger::info("[Decl] {} (mod '{}'): actions {}, event registrations {}, locomotion {}", file, mod, parsed.size(),
+        events.size(), locomotion.declared ? "yes" : "none");
     a_out.insert(a_out.end(), std::make_move_iterator(parsed.begin()), std::make_move_iterator(parsed.end()));
     if (a_events)
         a_events->insert(
             a_events->end(), std::make_move_iterator(events.begin()), std::make_move_iterator(events.end()));
     if (a_locomotion && a_locomotionFile && declaresLocomotion) {
-        logger::info("[Decl] 이동 사다리: {} (mod '{}')", file, mod);
+        logger::info("[Decl] locomotion: {} (mod '{}')", file, mod);
         *a_locomotion = std::move(locomotion);
     }
     return true;
@@ -312,7 +315,7 @@ std::vector<ActionSpec> LoadAllFrom(
     std::vector<ActionSpec> out;
     std::error_code ec;
     if (!std::filesystem::is_directory(root, ec)) {
-        logger::warn("[Decl] 액션 폴더 없음: {}", PathText(root));
+        logger::warn("[Decl] no action folder: {}", PathText(root));
         return out;
     }
     std::vector<std::filesystem::path> xmls;
@@ -336,13 +339,13 @@ std::vector<ActionSpec> LoadAllFrom(
     for (const auto& s : out) {
         if (!FrameworkSettings::Get().debug) break;
         logger::debug(
-            "[Decl] 액션 '{}' ← {} : 클립 {}개, 키 {}, exit='{}' 블렌드 enter {:.2f} exit {:.2f}, recovery {}", s.id,
+            "[Decl] action '{}' ← {} : clips {}, key {}, exit='{}' blend enter {:.2f} exit {:.2f}, recovery {}", s.id,
             s.source, s.clips.size(), s.trigger.key, s.events.exit, s.enterBlend, s.exitBlend,
             s.recovery.enabled
-                ? fmt::format("'{}'{} 입력 {}{}{}", s.recovery.event,
+                ? fmt::format("'{}'{} input {}{}{}", s.recovery.event,
                       s.recovery.at >= 0 ? fmt::format("@{:.2f}", s.recovery.at) : "", s.recovery.move ? "move " : "",
                       s.recovery.sprint ? "sprint " : "", s.recovery.jump ? "jump" : "")
-                : std::string("없음"));
+                : std::string("none"));
         auto slotTxt = [](const SlotWindow& w) {
             return !w.enabled
                        ? std::string("-")
@@ -351,7 +354,7 @@ std::vector<ActionSpec> LoadAllFrom(
                                  ? (w.offRel ? fmt::format("@end-{:.2f}", w.offAt) : fmt::format("@{:.2f}", w.offAt))
                                  : w.offEvent);
         };
-        logger::debug("[Decl]   슬롯: rotate {} | iframe {} | hyperArmor {} | timeScale {} | cost {}",
+        logger::debug("[Decl]   slots: rotate {} | iframe {} | hyperArmor {} | timeScale {} | cost {}",
             slotTxt(s.rotate), slotTxt(s.iframe), slotTxt(s.hyperArmor), slotTxt(s.timeScale),
             s.cost.enabled ? fmt::format("stamina {:.0f} magicka {:.0f} @{}", s.cost.stamina, s.cost.magicka,
                                  s.cost.at >= 0 ? fmt::format("{:.2f}", s.cost.at) : s.cost.event)

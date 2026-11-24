@@ -453,7 +453,7 @@ void Publish() {
     EventRegistry::Build(d.events, g_specs);
     logger::info("[InjectProfile] declaration catalog actions={} files={} events={} distinct={} buildMs={:.3f}",
         g_specs.size(), g_catalog.files.size(), g_catalog.events.size(), g_catalog.uniqueEvents.size(), d.catalogMs);
-    logger::info("[Actions] 액션 {}개 로드 (background loadMs={:.1f}, first reader waited {:.1f} ms on thread {})",
+    logger::info("[Actions] {} actions loaded (background loadMs={:.1f}, first reader waited {:.1f} ms on thread {})",
         g_specs.size(), d.loadMs, waited, MainThread::CurrentId());
     g_loaded.store(true, std::memory_order_release);
 }
@@ -650,7 +650,7 @@ void UpdateNpcRunners(float delta) {
     for (const auto id : stale) {
         const auto it = g_npc.find(id);
         if (it == g_npc.end() || it->second->idle <= 2.0f) continue;
-        logger::debug("[Actions] NPC {:08X} 실행기 정리", id);
+        logger::debug("[Actions] NPC {:08X} runner removed", id);
         g_npc.erase(it);
     }
 }
@@ -779,7 +779,7 @@ ActionRunner* RunnerFor(RE::Actor* a_actor, int a_idx, bool a_create) {
     std::unique_lock lock(g_npcLock);
     const auto [it, inserted] = g_npc.try_emplace(a_actor->GetFormID(), std::move(entry));
     if (inserted)
-        logger::debug("[Actions] NPC {:08X} '{}' 실행기 생성", a_actor->GetFormID(), a_actor->GetDisplayFullName());
+        logger::debug("[Actions] NPC {:08X} '{}' runner created", a_actor->GetFormID(), a_actor->GetDisplayFullName());
     auto& found = *it->second;
     return found.runners.Get(a_idx, MakeRunner(found.handle, false));
 }
@@ -1094,7 +1094,7 @@ void OnGameLoad() {
         g_npc.clear();
     }
     const bool bound = g_playerBound.load(std::memory_order_acquire);
-    logger::info("[Actions] 게임 로드 #{} — 플레이어 실행기 {}개 리셋, NPC 실행기 {}명 폐기", ++n,
+    logger::info("[Actions] game load #{}: player runners reset {}, NPC runners dropped {}", ++n,
         bound ? g_player->Live() : 0, npcCount);  // V6 세이브/로드 반복 추적
     if (bound) g_player->ForEach([](int, ActionRunner& r) { r.ResetOnLoad(); });
     if (auto* p = RE::PlayerCharacter::GetSingleton()) EventMaps::Ensure(p, AllEventNames());

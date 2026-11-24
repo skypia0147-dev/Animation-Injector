@@ -184,9 +184,10 @@ public:
             visible = state.visible;
             uiMovie->SetVisible(visible);
             logger::info(
-                "[LoadingUI] {} ready={} total={} pending={} failed={} cancelled={} nodes={}/{}{}{} animations={}/{}{}",
+                "[LoadingUI] {} ready={} total={} pending={} failed={} cancelled={} stalled={} nodes={}/{}{}{} "
+                "animations={}/{}{}",
                 visible ? "show" : "hide", state.ready, state.total, state.pending, state.failed, state.cancelled,
-                state.nodes.used, state.nodes.limit, state.nodes.shortfall ? " (left out)" : "",
+                state.stalled, state.nodes.used, state.nodes.limit, state.nodes.shortfall ? " (left out)" : "",
                 state.nodes.Extended() ? std::format(" (renumbered: state machines {}/{})", state.nodes.machinesUsed,
                                              state.nodes.machinesLimit)
                                        : std::string(),
@@ -203,8 +204,8 @@ public:
             revision = state.revision;
             Draw(state);
             if (!state.pending)
-                logger::info("[LoadingUI] completed ready={} failed={} cancelled={}", state.ready, state.failed,
-                    state.cancelled);
+                logger::info("[LoadingUI] completed ready={} failed={} cancelled={} stalled={}", state.ready,
+                    state.failed, state.cancelled, state.stalled);
         }
         uiMovie->Advance(std::isfinite(delta) ? std::clamp(delta, 0.0f, 0.1f) : 0.0f);
     }
@@ -226,10 +227,13 @@ private:
     };
     void Draw(const LoadingProgress::Snapshot& state) {
         const auto shown = state.total - state.cancelled;
-        const auto progressText = state.pending  ? std::format("{} / {}", state.ready, shown)
-                                  : state.failed ? std::format("{} failed", state.failed)
-                                                 : std::string("Ready");
-        count.SetTextHTML(Html(progressText.c_str(), 10, state.failed ? "#E9BE7A" : "#D2D7DC", true).c_str());
+        // Stalled: given up on after nothing finished for a while (core/LoadingProgressModel.h kStallLimit).
+        const auto progressText = state.pending   ? std::format("{} / {}", state.ready, shown)
+                                  : state.failed  ? std::format("{} failed", state.failed)
+                                  : state.stalled ? std::format("{} not ready", state.stalled)
+                                                  : std::string("Ready");
+        count.SetTextHTML(
+            Html(progressText.c_str(), 10, state.failed || state.stalled ? "#E9BE7A" : "#D2D7DC", true).c_str());
         Fill(progress.bar, kProgressColor, state.Fraction());
         double y = kTitleHeight;
         const LoadingProgress::Usage* usages[]{&state.nodes, &state.animations};

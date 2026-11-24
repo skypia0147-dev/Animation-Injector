@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <unordered_map>
+#include <utility>
 
 namespace AnimationInjector::LoadingProgress {
 using Token = std::uint64_t;
@@ -30,6 +31,8 @@ struct Usage {
 struct Snapshot {
     std::uint64_t revision = 0;
     std::size_t total = 0, ready = 0, failed = 0, cancelled = 0, pending = 0;
+    // Jobs given up on because nothing finished for Model::kStallLimit seconds (they may still load later).
+    std::size_t stalled = 0;
     Phase phase = Phase::kRegistration;
     bool visible = false;
     float alpha = 0;
@@ -45,6 +48,11 @@ struct Snapshot {
 // frame observes it, then the session closes instead of reappearing in gameplay.
 class Model {
 public:
+    // Seconds of game time that may pass with jobs pending and none of them finishing before the session gives up on
+    // them (11-24: a save load whose second binding set's holder stopped updating kept the panel up until the game was
+    // restarted). A slow disk still finishes a file now and then, which starts the count again.
+    static constexpr float kStallLimit = 20.0f;
+
     Token Begin(Phase phase) {
         if (session == Session::kClosed) return 0;
         if (!snapshot.visible) Clear(snapshot.revision);
@@ -58,6 +66,7 @@ public:
         ++snapshot.revision;
         completionSeen = false;
         elapsed = 0;
+        stalledFor = 0;
         return token;
     }
     bool ObservesNativeRequests() const { return session == Session::kStartup || session == Session::kSaveLoading; }
@@ -73,8 +82,11 @@ public:
         snapshot.pending = jobs.size();
         if (!jobs.empty()) snapshot.phase = jobs.begin()->second;
         ++snapshot.revision;
+        stalledFor = 0;
         return true;
     }
+    // How many jobs the last Advance gave up on, once (0 otherwise): the caller logs what they were waiting for.
+    std::size_t TakeStall() { return std::exchange(stallReport, 0); }
     Snapshot Read() const { return snapshot; }
     // The fuller report wins (third and first person, male and female projects report separately).
     // a_machinesLimit 0: the engine's own numbering; otherwise the graph is renumbered and a_machinesUsed of those
@@ -87,8 +99,20 @@ public:
         Report(snapshot.animations, used, limit, shortfall);
     }
     Snapshot Advance(float delta, bool canComplete = true) {
-        if (session == Session::kClosed || session == Session::kSaveLoading || !canComplete || snapshot.pending)
-            return snapshot;
+        if (session == Session::kClosed || session == Session::kSaveLoading || !canComplete) return snapshot;
+        if (snapshot.pending) {
+            if (std::isfinite(delta) && delta > 0) stalledFor += std::min(delta, 0.1f);
+            if (stalledFor < kStallLimit) return snapshot;
+            // Nothing finished for the limit: the session stops waiting. A job finished later is ignored (its token
+            // is gone), as after a save load.
+            stallReport = jobs.size();
+            snapshot.stalled += jobs.size();
+            jobs.clear();
+            snapshot.pending = 0;
+            stalledFor = 0;
+            ++snapshot.revision;
+            completionSeen = true;  // what is shown already says so; the hold below starts now
+        }
         if (!completionSeen) {
             completionSeen = true;
             return snapshot;
@@ -97,7 +121,7 @@ public:
         // A limit that left something out stays up long enough to be read; one close to full a little longer.
         const bool shortfall = snapshot.nodes.shortfall || snapshot.animations.shortfall;
         const bool warn = snapshot.nodes.Warn() || snapshot.animations.Warn();
-        const float hold = shortfall ? 8.0f : snapshot.failed || warn ? 3.0f : 0.7f;
+        const float hold = shortfall ? 8.0f : snapshot.failed || snapshot.stalled || warn ? 3.0f : 0.7f;
         snapshot.alpha = std::clamp(1.0f - (elapsed - hold) / 0.25f, 0.0f, 1.0f);
         if (snapshot.alpha <= 0) {
             snapshot.visible = false;
@@ -111,6 +135,8 @@ public:
         Clear(snapshot.revision + 1);
         completionSeen = false;
         elapsed = 0;
+        stalledFor = 0;
+        stallReport = 0;
         session = waitingForGameLoad ? Session::kSaveLoading : Session::kStartup;
         // Never reuse a token: late callbacks from an old save must be ignored.
     }
@@ -121,6 +147,7 @@ public:
         session = Session::kInitialGameplay;
         completionSeen = false;
         elapsed = 0;
+        stalledFor = 0;
     }
 
 private:
@@ -154,6 +181,8 @@ private:
     std::unordered_map<Token, Phase> jobs;
     bool completionSeen = false;
     float elapsed = 0;
+    float stalledFor = 0;         // game seconds with jobs pending since one last began or finished
+    std::size_t stallReport = 0;  // TakeStall
     Session session = Session::kStartup;
 };
 }

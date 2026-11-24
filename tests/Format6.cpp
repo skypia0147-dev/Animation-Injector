@@ -80,7 +80,7 @@ int main() {
             Check(none.ok, none.error.c_str());
             Check(Pick(none["S"], {1, 2}).empty() && Pick(none["S"], {2}) == "A" && Pick(none["S"], {}) == "B",
                 "an empty <Condition/> row plays nothing and stops");
-            Check(Refused(Parse("<Start id='S' key='G'><Row>" + G(1) + "</Row></Start>" + kABC), "하나가 필요"),
+            Check(Refused(Parse("<Start id='S' key='G'><Row>" + G(1) + "</Row></Start>" + kABC), "A row needs one of"),
                 "a row with no destination at all is refused");
         }
         {
@@ -106,8 +106,8 @@ int main() {
             const std::pair<std::string, const char*> refused[] = {
                 {"<Row to='A'><And>" + G(1) + G(2) + "</And></Row>", "<Or>"},
                 {"<Row to='A' match='any'><Or>" + G(1) + G(2) + "</Or></Row>", "<And>"},
-                {"<Row to='A'><Or>" + G(1) + "<And>" + G(2) + G(3) + "</And></Or></Row>", "한 단계"},
-                {"<Row to='A'><Or>" + G(1) + "</Or></Row>", "둘 이상"},
+                {"<Row to='A'><Or>" + G(1) + "<And>" + G(2) + G(3) + "</And></Or></Row>", "one level only"},
+                {"<Row to='A'><Or>" + G(1) + "</Or></Row>", "two or more"},
                 {"<Row to='A' match='all'>" + G(1) + "</Row>", "match"},
                 {"<And>" + G(1) + G(2) + "</And><True to='A'/>", "<Or>"},
             };
@@ -202,26 +202,26 @@ int main() {
                 {"<Start key='G'><Row to='A'/></Start>", "<True>"},
                 {"<Start key='G'><True to='A'/><Row to='B'>" + G(1) + "</Row></Start>", "True"},
                 {"<Start key='G'><False to='A'/>" + G(1) + "</Start>", "False"},
-                {"<Start key='G'><Row to='A'>" + G(1) + "</Row>" + G(2) + "</Start>", "공통 조건"},
-                {"<Start key='G'><Row to='A' condition='X'>" + G(1) + "</Row></Start>", "하나만"},
+                {"<Start key='G'><Row to='A'>" + G(1) + "</Row>" + G(2) + "</Start>", "ommon conditions"},
+                {"<Start key='G'><Row to='A' condition='X'>" + G(1) + "</Row></Start>", "not both"},
                 {"<Start key='G'><Row>" + G(1) + "<Condition id='X'><True to='A'/></Condition></Row></Start>", "id"},
                 {"<Start key='G' condition='Nowhere'/>", "Nowhere"},
-                {"<Start key='G' to='A'><Row to='B'>" + G(1) + "</Row></Start>", "공통 조건"},
-                {"<Start key='G' to='A' condition='X'/>", "하나만"},
+                {"<Start key='G' to='A'><Row to='B'>" + G(1) + "</Row></Start>", "ommon conditions"},
+                {"<Start key='G' to='A' condition='X'/>", "not both"},
                 {"<Start key='G'/>", "to"},
-                {"<Start key='G'><Test kind='alive'/></Start>", "지원하지 않는 요소"},
+                {"<Start key='G'><Test kind='alive'/></Start>", "Unsupported element"},
             };
             for (const auto& [body, hint] : bad)
                 Check(Refused(Parse(body + kABC), hint), (body + " refused naming " + hint).c_str());
             Check(Refused(Parse("<Condition id='X'><True condition='Y'/></Condition><Condition id='Y'><True "
                                 "condition='X'/></Condition><Start key='G' condition='X'/>" +
                                 std::string(kABC)),
-                      "순환"),
+                      "in a loop"),
                 "shared cards that go round are refused");
             Check(Refused(Parse("<Condition id='X'><True to='A'/></Condition><Condition id='x'><True to='B'/>"
                                 "</Condition>" +
                                 std::string(kABC)),
-                      "중복"),
+                      "Duplicate"),
                 "shared card ids are unique");
         }
         // Starts (T1-T4, T7): the HKX's own, or a selecting action of its own.
@@ -271,7 +271,7 @@ int main() {
                 "an input with a control and a key is refused");
             Check(Refused(Parse("<Action id='A' clip='a.hkx'><Transition to='B' control='jump'/>"
                                 "<Transition to='B' control='jump'/></Action><Action id='B' clip='b.hkx'/>"),
-                      "중복"),
+                      "Duplicate"),
                 "two transitions on one control are ambiguous");
         }
         // Transitions and QTE results through a card (T5): one selecting action each, after the document's.
@@ -360,7 +360,7 @@ int main() {
             Check(both.ok && both["A"].suppress.when == SuppressSpec::When::kBoth, "the same block both ways");
             Check(Refused(Parse("<Start key='G' to='A' block='sprintStart'/><Action id='A' clip='a.hkx' "
                                 "block='jumpStart'/>"),
-                      "같은 이벤트"),
+                      "same event"),
                 "different blocks on one HKX are refused");
             const auto pair = Parse("<Pair id='P' clip='p.hkx' lostBlend='0.6' reorient='false' interruptOnHit='true'>"
                                     "<FindPartner range='250'/><Do at='0.1' op='hide' target='receiver'/></Pair>");
@@ -368,7 +368,7 @@ int main() {
                       pair["P"].pairFeatures.interruptOnThirdPartyHit && Near(pair["P"].paired.range, 250) &&
                       Near(pair["P"].paired.angle, 60) && Near(pair["P"].safetyDuration, 30),
                 "a pair's attributes and FindPartner");
-            Check(Refused(Parse("<Action id='A' clip='a.hkx' lostBlend='0.5'/>"), "페어 전용"),
+            Check(Refused(Parse("<Action id='A' clip='a.hkx' lostBlend='0.5'/>"), "pair-only"),
                 "pair attributes stay a pair's");
         }
         // Only format 6 is read; an element or attribute it does not have is refused by name.
@@ -378,7 +378,7 @@ int main() {
                 "an element format 6 does not have");
             Check(Refused(Parse("<Action id='A' clip='a.hkx' fallback='1'/>"), "fallback"),
                 "an attribute format 6 does not have");
-            Check(Refused(Parse("<Action id='A' clip='a.hkx'/>", "5"), "형식 6"), "only format 6 is read");
+            Check(Refused(Parse("<Action id='A' clip='a.hkx'/>", "5"), "Only format 6"), "only format 6 is read");
         }
         std::cout << "Format 6 checks passed: " << checks << "\n";
         return 0;

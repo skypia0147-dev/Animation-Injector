@@ -1816,7 +1816,7 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
     res.airRoute = a_airRoute;
     auto fail = [&](std::string a_why) {
         res.reason = std::move(a_why);
-        logger::warn("[Inject] {}/{}: 건너뜀 — {}", spec.id, res.graph, res.reason);
+        logger::warn("[Inject] {}/{}: skipped: {}", spec.id, res.graph, res.reason);
         Publish(res);
     };
 
@@ -1854,11 +1854,11 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
     if (spec.HasRecovery()) {
         InjectEvent(a_graph, spec.recovery.event.c_str());  // 주석이 쏘는 슬롯 이벤트 (등록만)
         res.recoverId = InjectEvent(a_graph, spec.recovery.recoverEvent.c_str());
-        if (res.recoverId < 0) return fail("Recover 이벤트 등록 실패");
+        if (res.recoverId < 0) return fail("the Recover event could not be registered");
     }
     for (int i = 0; i < n; ++i)
-        if (res.enterIds[i] < 0) return fail("진입 이벤트 등록 실패");
-    if (res.exitId < 0) return fail("Exit 이벤트 등록 실패");
+        if (res.enterIds[i] < 0) return fail("an enter event could not be registered");
+    if (res.exitId < 0) return fail("the Exit event could not be registered");
 
     // 애니 이름 (이 캐릭터의 문자열 데이터. 다른 캐릭터 파일은 LoadClips 훅이 채운다)
     std::vector<std::uint16_t> bind(spec.clips.size(), 0);
@@ -1866,7 +1866,7 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
         auto* setup = a_character ? a_character->setup.get() : nullptr;
         auto* cdata = setup ? setup->data.get() : nullptr;
         auto* csd = cdata ? cdata->stringData.get() : nullptr;
-        if (!csd) return fail("hkbCharacterStringData 없음");
+        if (!csd) return fail("no hkbCharacterStringData");
         for (std::size_t i = 0; i < spec.clips.size(); ++i) {
             // As every other route: no name past the table's limit, no index the engine cannot read.
             const int idx = EnsureAnimationName(a_character, spec.clips[i].file.c_str());
@@ -1878,7 +1878,7 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
 
     // 전환 효과: 기존 것 재사용, 블렌드 길이를 지정했으면 복제해서 만든다 (V4)
     const Effects& eff = PassEffects(sm);
-    if (!eff.enter || !eff.exit) return fail("전환 효과를 못 찾음");
+    if (!eff.enter || !eff.exit) return fail("transition effect not found");
     RE::hkReferencedObject* enterEff = eff.enter;
     std::string enterName = eff.enterName;
     RE::hkReferencedObject* exitEff = eff.exit;
@@ -1991,7 +1991,7 @@ void InjectAction(int a_actionIdx, const Target& tgt, RE::hkbBehaviorGraph* a_gr
     if (a_airRoute)
         logger::debug(
             "[AirRoute] '{}' injected in {}: states={} exitState={}", spec.id, tgt.smName, n, tgt.startStateId);
-    logger::debug("[Inject] {}/{}: 삽입 완료 — 상태 {}개 (stateId {}..{}), 효과 enter='{}' exit='{}', exit 이벤트 {}",
+    logger::debug("[Inject] {}/{}: injected {} states (stateId {}..{}), effects enter='{}' exit='{}', exit event {}",
         spec.id, res.graph, n, base, base + n - 1, enterName, exitName, res.exitId);
 }
 
@@ -2128,18 +2128,19 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
         if (smNode)
             for (const auto& t : kTargets)
                 if (_stricmp(t.smName, "RootBehaviorGraph") == 0) tgt = &t;
-        logger::debug("[Inject] 0_master: RootBehaviorGraph {} (방문 {}개)", smNode ? "찾음" : "못 찾음", seen);
+        logger::debug("[Inject] 0_master: RootBehaviorGraph {} (visited {})", smNode ? "found" : "not found", seen);
     }
     if (!tgt || !smNode) return;
     if (!Claim(a_graph)) return;  // another loader thread took this graph first
 
-    auto skip = [&](const std::string& a_why) { logger::warn("[Inject] {}: 건너뜀 — {}", tgt->smName, a_why); };
-    if (!SameVTable(smNode, RE::VTABLE_hkbStateMachine)) return skip("(a) 대상이 hkbStateMachine 이 아님");
+    auto skip = [&](const std::string& a_why) { logger::warn("[Inject] {}: skipped: {}", tgt->smName, a_why); };
+    if (!SameVTable(smNode, RE::VTABLE_hkbStateMachine)) return skip("(a) the target is not an hkbStateMachine");
     auto* sm = static_cast<RE::hkbStateMachine*>(smNode);
     if (sm->startStateID != tgt->startStateId)
         return skip(fmt::format("(a) startStateId {} != {}", sm->startStateID, tgt->startStateId));
     if (sm->states._size < tgt->minStates)
-        return skip(fmt::format("(a) states {} < {} (1인칭 등 다른 그래프)", sm->states._size, tgt->minStates));
+        return skip(
+            fmt::format("(a) states {} < {} (another graph, such as first person)", sm->states._size, tgt->minStates));
 
     StateInfoLayout* startState = nullptr;
     std::unordered_set<std::int32_t> ids;
@@ -2149,25 +2150,25 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
         ids.insert(s->stateId);
         if (s->stateId == tgt->startStateId) startState = s;
     }
-    if (!startState) return skip("(b) 시작 상태를 못 찾음");
+    if (!startState) return skip("(b) start state not found");
     const char* startName = startState->name.c_str();
     if (!startName || _stricmp(startName, tgt->startStateName) != 0)
         return skip(
-            fmt::format("(b) 시작 상태 이름 '{}' != '{}'", startName ? startName : "null", tgt->startStateName));
-    if (!startState->generator) return skip("(b) 시작 상태 generator null");
+            fmt::format("(b) start state name '{}' != '{}'", startName ? startName : "null", tgt->startStateName));
+    if (!startState->generator) return skip("(b) start state generator is null");
 
     auto* wild = reinterpret_cast<TransitionInfoArrayLayout*>(sm->wildcardTransitions.get());
     if (tgt->firstWildcardEvent) {
-        if (!wild || wild->transitions._size < 1) return skip("(c) 와일드카드 배열 없음");
+        if (!wild || wild->transitions._size < 1) return skip("(c) no wildcard array");
         const auto fl0 = static_cast<std::uint16_t>(wild->transitions._data[0].flags);
         if ((fl0 & TransitionInfo::kIsLocalWildcard) == 0 || (fl0 & TransitionInfo::kDisableCondition) == 0)
             return skip(
-                fmt::format("(c) 와일드카드[0] flags=0x{:X} 에 LOCAL_WILDCARD|DISABLE_CONDITION 비트 없음", fl0));
+                fmt::format("(c) wildcard[0] flags=0x{:X} lack the LOCAL_WILDCARD|DISABLE_CONDITION bits", fl0));
         const char* ev0 = EventNameOf(a_graph, wild->transitions._data[0].eventId);
         if (_stricmp(ev0, tgt->firstWildcardEvent) != 0)
-            return skip(fmt::format("(c) 와일드카드[0] 이벤트 '{}' != '{}'", ev0, tgt->firstWildcardEvent));
+            return skip(fmt::format("(c) wildcard[0] event '{}' != '{}'", ev0, tgt->firstWildcardEvent));
     }
-    logger::debug("[Inject] {}: 자가검증 통과 — states={} wildcard={}", tgt->smName, sm->states._size,
+    logger::debug("[Inject] {}: self-check passed, states={} wildcard={}", tgt->smName, sm->states._size,
         wild ? wild->transitions._size : -1);
     if (!FrameworkSettings::Get().injectState) return skip("bInjectState=false");
 

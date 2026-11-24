@@ -6,6 +6,7 @@
 #include "RE/A/AnimationFileManagerSingleton.h"
 #include <atomic>
 #include <mutex>
+#include <unordered_set>
 
 namespace AnimationInjector::AnimationLoadObserver {
 namespace {
@@ -141,6 +142,20 @@ struct Unload {
 };
 }
 
+void ReportPending() {
+    std::lock_guard lock(mutex);
+    std::size_t waiting = 0, queued = 0;
+    std::unordered_set<std::uintptr_t> characters;
+    for (const auto& [key, request] : requests)
+        if (request.progress) {
+            ++waiting;
+            queued += request.queueInFlight;
+            characters.insert(key.character);
+        }
+    if (waiting)
+        logger::warn("[Loading] waiting on {} engine requests for declared clips ({} still queueing) of {} characters",
+            waiting, queued, characters.size());
+}
 void ResetProgress() {
     std::lock_guard lock(mutex);
     for (auto& [key, request] : requests)

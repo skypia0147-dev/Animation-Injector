@@ -45,8 +45,9 @@ int main() {
     const auto fresh = model.Begin(Phase::kAnimation);
     assert(fresh != old && !model.Finish(old, Outcome::kFailed));
     assert(model.Read().pending == 1 && model.Read().failed == 0);
-    for (int i = 0; i < 200; ++i) state = model.Advance(10);
-    assert(state.visible && state.alpha == 1);  // A pending job never fades during I/O or retry delay.
+    for (int i = 0; i < 190; ++i) state = model.Advance(10);
+    // A pending job does not fade during I/O or a retry delay (frames count at most 0.1 s each)...
+    assert(state.visible && state.alpha == 1 && state.pending == 1 && model.TakeStall() == 0);
     model.Finish(fresh, Outcome::kReady);
     model.Advance(0);
     for (int i = 0; i < 8; ++i) model.Advance(.1f);
@@ -77,7 +78,7 @@ int main() {
     assert(model.Read().visible && model.Read().alpha == 1);
     const auto preloaded = model.Begin(Phase::kAnimation);
     assert(preloaded && model.Read().pending == 1);
-    for (int i = 0; i < 600; ++i) model.Advance(.1f);
+    for (int i = 0; i < 190; ++i) model.Advance(.1f);
     assert(model.Read().visible && model.Read().alpha == 1);
     model.Finish(preloaded, Outcome::kReady);
     model.Advance(0);
@@ -113,6 +114,33 @@ int main() {
     model.Advance(0);
     for (int i = 0; i < 11; ++i) model.Advance(.1f);
     assert(!model.Read().visible && model.Read().ready == 1);
+
+    // ...but a session whose jobs stop finishing ends (11-24: a binding set's holder that stopped updating after a
+    // save load kept the panel up until the game was restarted).
+    {
+        Model stall;
+        stall.Reset(true);
+        const auto quick = stall.Begin(Phase::kAnimation);
+        const auto stuck = stall.Begin(Phase::kAnimation);
+        const auto slow = stall.Begin(Phase::kAnimation);
+        stall.GameLoaded();
+        for (int i = 0; i < 1000; ++i) stall.Advance(.1f, false);  // loading screen, pause: not counted
+        assert(stall.Read().pending == 3 && stall.TakeStall() == 0);
+        for (int i = 0; i < 150; ++i) stall.Advance(.1f);
+        stall.Finish(quick, Outcome::kReady);  // a finished job starts the count again
+        for (int i = 0; i < 150; ++i) stall.Advance(.1f);
+        stall.Finish(slow, Outcome::kReady);
+        for (int i = 0; i < 199; ++i) stall.Advance(.1f);
+        assert(stall.Read().visible && stall.Read().pending == 1 && stall.TakeStall() == 0);
+        auto ended = stall.Advance(.1f);
+        assert(ended.pending == 0 && ended.stalled == 1 && ended.ready == 2 && ended.visible);
+        assert(stall.TakeStall() == 1 && stall.TakeStall() == 0);  // reported once
+        assert(!stall.Finish(stuck, Outcome::kReady));             // finishing later changes nothing
+        for (int i = 0; i < 25; ++i) ended = stall.Advance(.1f);
+        assert(ended.visible);  // held long enough to read
+        for (int i = 0; i < 15; ++i) ended = stall.Advance(.1f);
+        assert(!ended.visible && stall.Begin(Phase::kAnimation) == 0);
+    }
 
     // Engine limits: the fuller report wins, a shortfall sticks, both survive new batches and reloads.
     Model usage;

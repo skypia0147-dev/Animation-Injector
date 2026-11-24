@@ -120,9 +120,9 @@ struct SmHandleEvent {
                 if (r.GetState() != ActionRunner::State::kIdle) elapsed = r.Elapsed();
                 return false;
             });
-            logger::debug("[Probe] {} 이벤트 '{}'(id {}) at {:.2f}s: state {} → {}{} (delayed={}{} active={})", smName,
-                en ? en : "?", id, elapsed, before, a_this->currentStateID, moved ? " ★전이" : "",
-                a_this->delayedTransitions._size, a_this->delayedTransitions._size > 0 ? " ★선입력 보관" : "",
+            logger::debug("[Probe] {} event '{}'(id {}) at {:.2f}s: state {} → {}{} (delayed={}{} active={})", smName,
+                en ? en : "?", id, elapsed, before, a_this->currentStateID, moved ? " ★transition" : "",
+                a_this->delayedTransitions._size, a_this->delayedTransitions._size > 0 ? " ★buffered input" : "",
                 a_this->activeTransitions._size);
         }
     }
