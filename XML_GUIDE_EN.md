@@ -222,6 +222,8 @@ A feature applies to the actor that sent the event (the one playing the action).
 | `cancel` | End the pair | |
 | `gripHold` | Grip hold: keep the hand's weapon bone (right: Weapon, left: Shield) at its value at this moment, past the end of the action ([Grip hold](#grip-hold)) | `hand="right\|left\|both"`, `view="third\|first\|both"` (default third) |
 | `gripRelease` | End a grip hold (at once) | `hand`, `view` |
+| `attackDataOn` | Change the attack data (1.1.0): the actor's attack data becomes its race's attack data of that name, over the action's `attack=` ([Attack data by event](#attack-data-by-event)) | `name` (the attack data's event name: `attackStart`, `attackStartLeftHand`, `bashStart` …), `duration` (seconds, then it ends) |
+| `attackDataOff` | End the changed attack data: back to the action's `attack=` (or the value from before) | |
 
 A feature that stays on (hiding, invulnerability and such) ends when its pair (`show`, `iframeOff`, ...) comes or when the actions that follow have all ended. But `iframeOn`, `armorOn`, `rotateOn` and `timeOn` turned on by a registered event, while some event is registered with their pair, stay on until that event comes, even after the animation ends (they end on death, ragdoll or a load). But when the HKX that sent the on event also sends the off event later, it works as a range: it ends when the off event comes or when that HKX ends or is cut short. This holds for our actions and for any other mod's or vanilla HKX alike. A registered on function with a `duration` (seconds, 0~60) ends when that time is up; an off event before then ends it then, and it lasts its time even when the HKX ends or is cut short (real seconds for a time scale, game time for the others).
 
@@ -250,6 +252,8 @@ An HKX annotation `AI.Command|value|value` runs a feature at its time with no re
 | `AI.CancelPair` | End the pair |
 | `AI.GripHold\|hand\|view` | Grip hold (hand right, left, both; view third, first, both) |
 | `AI.GripRelease\|hand\|view` | End a grip hold |
+| `AI.AttackDataOn\|name` | Change the attack data (add `\|seconds` after the name to end it after that time) |
+| `AI.AttackDataOff` | End the changed attack data |
 
 A strike has no command for its many settings; register it on an event. An on command ends by the rules above; an off command can always be sent, so without one it stays on until death, ragdoll or a load. Commands and registered events are one feature (`AI.IFrameOff` also ends invulnerability a registered event turned on).
 
@@ -283,6 +287,20 @@ For an action that changes how the weapon is held, such as switching to a revers
 - `view`: the views it holds in (`third`, `first`, `both`). The value taken in the view the action played in is carried over to the other view, so the hold works in first person even when the action has no first-person HKX.
 - The left hand needs Left Hand Equipment Overhaul 2.0 or later: vanilla's adjustment (`DW_ShieldAdjustment`) overrides the Shield bone. Make left-hand reverse-grip HKX from the reference pose, with an `Adjustment_Additive` annotation at 0 seconds, and an `Adjustment_Off` annotation at the end of the release action. For a left-hand hold carried over to the other view, Animation Injector sends that view `Adjustment_Additive` itself, and `Adjustment_Off` when the hold ends.
 - Also usable as a registered event: `<Event name="…"><Do op="gripHold" hand="right" view="both"/></Event>`. Any HKX that sends that event name runs it, ours or another mod's, vanilla or OAR. The HKX annotation commands are `AI.GripHold|right|third` and `AI.GripRelease|right|third`.
+
+## Attack data by event
+
+1.1.0. Attack data is what the engine reads as "what attack is this": the damage multiplier, the stagger, whether it is a power attack and which hand's weapon strikes. An action usually names it with `<Action attack="attackStart">`. When OAR swaps the same action's HKX per moveset, one moveset's clip may swing the left hand while the attack data is still the right hand's. Such a clip names its own attack data in an annotation.
+
+```
+0.10  AI.AttackDataOn|attackStartLeftHand
+```
+
+- The name is the event name of one of the race's attack data (`attackStart`, `attackStartLeftHand`, `attackPowerStartInPlace`, `bashStart` …). A name the race does not have changes nothing, and the log lists the names it has.
+- Put it before `HitFrame`. It is over the action's `attack=`, and each one in a clip changes it again (right hand, left hand, right hand).
+- It ends at whichever comes first: `AI.AttackDataOff` (or an event registered with `attackDataOff`), the end of the clip that sent it, played through or cut short (no off annotation needed), the time written after the name (`AI.AttackDataOn|name|0.4`), or the engine putting in attack data of its own (a vanilla attack starting). Then the action's `attack=` is back, or the value from before once the action has ended too.
+- Also usable as a registered event: `<Event name="MyLeftSwing"><Do op="attackDataOn" name="attackStartLeftHand"/></Event>`, `<Event name="MySwingEnd"><Do op="attackDataOff"/></Event>`. An animation that is not one of our actions (another mod's, vanilla, OAR) changes its actor the same way, and the end of that clip gives the value back.
+- Which hand's weapon strikes: the engine decides by the attack data. A dual-wield clip that swings the left hand (`weaponLeftSwing`) with the right hand's attack data still strikes with the right-hand weapon (and its enchantment); with the left hand's attack data it strikes with the left-hand weapon. With Precision installed, Precision strikes with the hand of the swing annotation (`weaponSwing` / `weaponLeftSwing`), so the hand follows the annotation and only the rest of the attack data (damage multiplier, stagger, power attack) follows the name.
 
 ## NPC attack chains
 

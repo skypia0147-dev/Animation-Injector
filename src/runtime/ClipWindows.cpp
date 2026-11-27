@@ -18,6 +18,8 @@ int WindowOf(EventOp op, bool& on) {
     case EventOp::kRotateOff: on = false; return 2;
     case EventOp::kTimeOn: on = true; return 3;
     case EventOp::kTimeOff: on = false; return 3;
+    case EventOp::kAttackDataOn: on = true; return 4;
+    case EventOp::kAttackDataOff: on = false; return 4;
     default: return -1;
     }
 }

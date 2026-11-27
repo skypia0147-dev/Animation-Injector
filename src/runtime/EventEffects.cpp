@@ -5,6 +5,7 @@
 #include "runtime/ResourceCost.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/ActorImmunity.h"
+#include "runtime/AttackDataLayer.h"
 #include "runtime/ClipWindows.h"
 #include "runtime/FireArrow.h"
 #include "runtime/GripHold.h"
@@ -24,7 +25,7 @@ constexpr float kChainGrace = 1.0f;
 constexpr std::uint32_t kSaveType = 'AIES';        // event effect state spells
 constexpr std::uint32_t kGlobalSaveType = 'AIEG';  // globals set with restore="end", held when saved (0.12.296)
 
-enum class Kind : std::uint8_t { kHide, kState, kTime, kIFrame, kArmor, kRotate, kGlobal };
+enum class Kind : std::uint8_t { kHide, kState, kTime, kIFrame, kArmor, kRotate, kGlobal, kAttack };
 struct Hold {
     RE::ActorHandle actor;
     Kind kind;
@@ -257,6 +258,12 @@ void End(const Hold& h) {
             }
         }
         break;
+    case Kind::kAttack:
+        // The event's attack data goes with its last hold: the action's own, or the value from before, comes back.
+        if (actor && std::none_of(holds.begin(), holds.end(),
+                         [&](const Hold& o) { return o.actor == h.actor && o.kind == Kind::kAttack; }))
+            AttackDataLayer::ClearEvent(actor.get());
+        break;
     default: break;
     }
 }
@@ -420,6 +427,27 @@ void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor,
         break;
     case EventOp::kRotateOff:
         Release([&](const Hold& h) { return h.actor == handle && h.kind == Kind::kRotate; }, "rotateOff");
+        break;
+    case EventOp::kAttackDataOn:
+        // The sender's attack data (1.1.0): its race's by name, over the one its action named. It ends at its off, with
+        // the clip that sent it (ClipWindowsJudge::kEndsWithClip: no off needed), after its span, at the end of the run
+        // it was turned on in, or once the engine replaced it (Update); it never waits for an off as the other windows
+        // do, since the next attack names its own.
+        if (Over(f, context) || !AttackDataLayer::SetEvent(actor, f.name, context.origin)) break;
+        if (auto* h = Find(handle, Kind::kAttack, scope)) {
+            Bind(*h, f, context, EventOp::kAttackDataOff);
+            h->untilOff = h->timed;
+        } else {
+            Hold hold{handle, Kind::kAttack, scope};
+            Bind(hold, f, context, EventOp::kAttackDataOff);
+            hold.untilOff = hold.timed;
+            holds.push_back(hold);
+        }
+        logger::debug("[EventEffects] attack data '{}' on {:08X}: clip {} span {:.2f}", f.name, actor->GetFormID(),
+            context.clip, f.span);
+        break;
+    case EventOp::kAttackDataOff:
+        Release([&](const Hold& h) { return h.actor == handle && h.kind == Kind::kAttack; }, "attackDataOff");
         break;
     case EventOp::kCancel: PairFeatures::RequestCancel(handle); break;
     case EventOp::kFireArrow:
@@ -593,15 +621,20 @@ void Update(float delta) {
         Release([&](const Hold& h) { return h.scope == id && !h.untilOff; }, "scope-ended");
         logger::debug("[EventEffects] scope {} closed", id);
     }
-    std::vector<RE::ActorHandle> gone;
+    std::vector<RE::ActorHandle> gone, replaced;
     for (const auto& h : holds) {
         auto actor = h.actor.get();
         if (!Usable(actor.get())) {
             if (std::find(gone.begin(), gone.end(), h.actor) == gone.end()) gone.push_back(h.actor);
         } else if (h.kind == Kind::kHide)
             WeaponCull::Hide(h.cull, actor.get());
+        else if (h.kind == Kind::kAttack && !AttackDataLayer::EventInEffect(actor.get()))
+            replaced.push_back(h.actor);
     }
     for (const auto& handle : gone) Release([&](const Hold& h) { return h.actor == handle; }, "actor-unavailable");
+    // Attack data the engine replaced since (a vanilla attack started): that hold is over, nothing is written back.
+    for (const auto& handle : replaced)
+        Release([&](const Hold& h) { return h.actor == handle && h.kind == Kind::kAttack; }, "attack-data-replaced");
 }
 bool HyperArmorFor(RE::ActorHandle actor) {
     const auto id = actor.native_handle();
@@ -620,6 +653,7 @@ void ResetOnLoad() {
         }
     holds.clear();
     scopes.clear();
+    AttackDataLayer::Reset();
     addedSpells.clear();
     Strike::ResetOnLoad();
     rotations.clear();

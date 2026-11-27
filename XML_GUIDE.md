@@ -222,6 +222,8 @@ HKX에 넣은 주석 이벤트가 오면 기능을 실행합니다. 이벤트와
 | `cancel` | 페어 끝내기 | |
 | `gripHold` | 무기 잡기 유지: 그 순간 손의 무기 뼈(오른손 Weapon, 왼손 Shield) 값을 동작이 끝난 뒤에도 유지 ([무기 잡기 유지](#무기-잡기-유지)) | `hand="right\|left\|both"`, `view="third\|first\|both"`(기본 third) |
 | `gripRelease` | 잡기 유지 풀기(바로) | `hand`, `view` |
+| `attackDataOn` | 공격 데이터 바꾸기(1.1.0): 그 액터의 공격 데이터를 종족의 그 이름 공격 데이터로 둡니다. 동작의 `attack=`보다 우선합니다 ([이벤트로 공격 데이터 바꾸기](#이벤트로-공격-데이터-바꾸기)) | `name`(공격 데이터의 이벤트 이름: `attackStart`, `attackStartLeftHand`, `bashStart` …), `duration`(초, 그 시간 뒤 끝남) |
+| `attackDataOff` | 바꾼 공격 데이터 끝내기: 동작의 `attack=` 값(없으면 바꾸기 전 값)으로 돌아갑니다 | |
 
 켜 두는 기능(숨기기·무적 등)은 짝 기능(`show`·`iframeOff` 등)이 오거나 이어지는 동작이 모두 끝나면 꺼집니다. 다만 등록된 이벤트로 켠 `iframeOn`·`armorOn`·`rotateOn`·`timeOn`은 짝 기능을 등록한 이벤트가 있으면 애니메이션이 끝나도 그 이벤트가 올 때까지 유지됩니다(사망·래그돌·불러오기 때는 꺼짐). 단, 켜는 이벤트를 보낸 HKX가 그보다 뒤에 끄는 이벤트도 보내면 구간처럼 동작합니다: 끄는 이벤트가 오거나 그 HKX가 끝나거나 끊기면 꺼집니다. 우리 동작이든 다른 모드·바닐라 HKX든 같습니다. 등록의 켜는 기능에 `duration`(초, 0~60)을 주면 그 시간이 지나면 꺼집니다. 그 전에 끄는 이벤트가 오면 그때 꺼지고, HKX가 끝나거나 끊겨도 남은 시간은 유지됩니다(시간 배율은 실제 초, 그 밖은 게임 시간).
 
@@ -250,6 +252,8 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 | `AI.CancelPair` | 페어 끝내기 |
 | `AI.GripHold\|손\|시점` | 무기 잡기 유지 (손 right·left·both, 시점 third·first·both) |
 | `AI.GripRelease\|손\|시점` | 잡기 유지 풀기 |
+| `AI.AttackDataOn\|이름` | 공격 데이터 바꾸기 (이름 뒤에 `\|초`를 붙이면 그 시간 뒤 끝남) |
+| `AI.AttackDataOff` | 바꾼 공격 데이터 끝내기 |
 
 타격(`strike`)은 설정이 많아 명령이 없습니다. 이벤트 등록으로 씁니다. 켜는 명령의 끄기는 위의 규칙을 따르고, 끄는 명령은 언제든 보낼 수 있으므로 끄는 명령을 넣지 않으면 사망·래그돌·불러오기 전까지 켜져 있습니다. 명령과 등록 이벤트는 같은 기능으로 취급합니다(`AI.IFrameOff`는 등록 이벤트가 켠 무적도 끕니다).
 
@@ -283,6 +287,20 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 - `view`: 유지할 시점(`third` 3인칭, `first` 1인칭, `both` 둘 다). 동작이 재생된 시점에서 잡은 값을 다른 시점에 옮겨 쓰므로, 그 동작에 1인칭 HKX가 없어도 1인칭에서 유지됩니다.
 - 왼손은 바닐라 보정(`DW_ShieldAdjustment`)이 Shield 뼈를 덮어써서, Left Hand Equipment Overhaul 2.0 이상이 있어야 보입니다. 왼손 역수 HKX는 기본 자세 기준으로 만들고 0초에 `Adjustment_Additive` 주석을, 풀기 동작 끝에 `Adjustment_Off` 주석을 넣습니다. 다른 시점으로 옮긴 왼손 유지에는 Animation Injector가 그 시점에 `Adjustment_Additive`를 보내고, 유지가 끝나면 `Adjustment_Off`를 보냅니다.
 - 등록 이벤트로도 씁니다: `<Event name="…"><Do op="gripHold" hand="right" view="both"/></Event>`. 그 이벤트 이름을 주석으로 보내는 HKX라면 우리 동작이든 다른 모드·바닐라·OAR 애니메이션이든 실행됩니다. HKX 주석 명령은 `AI.GripHold|right|third`, `AI.GripRelease|right|third`입니다.
+
+## 이벤트로 공격 데이터 바꾸기
+
+1.1.0. 공격 데이터는 엔진이 "이 공격이 무엇인지"를 읽는 값입니다(피해 배율·경직·파워어택 여부·어느 손 무기로 치는지). 보통은 `<Action attack="attackStart">`로 동작마다 정합니다. 그런데 같은 동작의 HKX를 OAR이 무브셋마다 바꾸면, 어떤 무브셋의 클립은 왼손으로 휘두르는데 공격 데이터는 오른손 것 그대로입니다. 그런 클립은 주석으로 자기 공격 데이터를 정합니다.
+
+```
+0.10  AI.AttackDataOn|attackStartLeftHand
+```
+
+- 이름은 그 종족 공격 데이터의 이벤트 이름입니다(`attackStart`, `attackStartLeftHand`, `attackPowerStartInPlace`, `bashStart` …). 종족에 없는 이름이면 바꾸지 않고 로그에 그 종족이 가진 이름을 적습니다.
+- `HitFrame`보다 앞에 둡니다. 동작의 `attack=`보다 우선하고, 한 클립에서 여러 번 쓰면 그때마다 바뀝니다(오른손 → 왼손 → 오른손).
+- 끝나는 때: `AI.AttackDataOff`(또는 `attackDataOff`를 등록한 이벤트), 그 주석을 보낸 클립이 끝나거나 끊길 때(끄는 주석이 없어도), 붙인 시간(`AI.AttackDataOn|이름|0.4`)이 지났을 때, 엔진이 공격 데이터를 새로 넣었을 때(바닐라 공격 시작) 중 먼저 오는 것. 끝나면 동작의 `attack=` 값으로, 동작도 끝났으면 바꾸기 전 값으로 돌아갑니다.
+- 등록 이벤트로도 씁니다: `<Event name="MyLeftSwing"><Do op="attackDataOn" name="attackStartLeftHand"/></Event>`, `<Event name="MySwingEnd"><Do op="attackDataOff"/></Event>`. 우리 동작이 아닌 애니메이션(다른 모드·바닐라·OAR)이 보낸 것도 그 액터에 적용하고, 그 클립이 끝나면 되돌립니다.
+- 어느 손 무기로 치는지: 엔진은 공격 데이터로 정합니다. 쌍수에서 왼손으로 휘두르는 클립(`weaponLeftSwing`)이라도 공격 데이터가 오른손 것이면 오른손 무기(와 그 마법부여)로 칩니다. 왼손 공격 데이터를 주면 왼손 무기로 칩니다. Precision을 쓰면 Precision이 휘두르기 주석(`weaponSwing`/`weaponLeftSwing`)의 손으로 치므로 손은 주석대로이고, 공격 데이터의 나머지(피해 배율·경직·파워어택)만 따릅니다.
 
 ## NPC의 공격 연계
 

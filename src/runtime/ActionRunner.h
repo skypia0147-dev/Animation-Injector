@@ -198,8 +198,8 @@ private:
     void RunTimedEffects(float upTo);
     void ApplyAttackData();    // 공격 의미: 이 액션의 종족 공격 데이터를 attackData 에 넣는다
     void RestoreAttackData();  // 우리가 넣은 것이 아직 있으면 이전 값으로
-    RE::NiPointer<RE::BGSAttackData> _attackSet, _attackPrev;  // 우리가 넣은 것 / 넣기 전 값
-    void RestoreSlots();                                       // 종료: 전부 원상복구
+    bool _attackSet = false;   // this run named the actor's attack data (runtime/AttackDataLayer.h)
+    void RestoreSlots();       // 종료: 전부 원상복구
     void OpenRecovery(const char* a_why);
     void Recover(const char* a_why);
     std::unordered_set<std::string> _seenTags;  // 디버그: 이번 실행 중 받은 이벤트 이름

@@ -54,6 +54,11 @@ enum class EventOp : std::uint8_t {
     // run, e.g. AttackWinStart / AttackWinEnd open and close the window in which a vanilla NPC asks for its next
     // attack (a clip of another moveset carries only its own window events, MCO_WinOpen and MCO_WinClose).
     kAnimEvent,
+    // The actor's attack data becomes its race's attack data `name` (1.1.0, runtime/AttackDataLayer.h), over the one
+    // its action named, until kAttackDataOff, the end of the clip that sent it, a span, or the engine's next change.
+    // A clip an animation replacer swapped in names its own this way (a left-hand swing in one moveset).
+    kAttackDataOn,
+    kAttackDataOff,
 };
 // The actors a function changes. A registered event's function changes its sender (kSender, 0.12.273). A pair's
 // clip-time effect names a role (0.12.275): kInitiator started the pair, kReceiver is the actor it was started on
@@ -91,6 +96,7 @@ struct EventFunctionSpec {
     float value = 0.0f;
     bool restore = false;
     // kModEvent: an SKSE mod event `name` with `text` and `number`, sent as the actor's. kAnimEvent: `name` only.
+    // kAttackDataOn: `name` is the race's attack data (its event name: attackStart, attackStartLeftHand, bashStart).
     std::string name, text;
     float number = 0.0f;
     // kGripHold / kGripRelease: which hands and views (the registry's, what it acts with).
@@ -101,7 +107,8 @@ struct EventFunctionSpec {
 
 // A window's on function: the ones that may stay on for a span.
 constexpr bool WindowOn(EventOp op) {
-    return op == EventOp::kIFrameOn || op == EventOp::kArmorOn || op == EventOp::kRotateOn || op == EventOp::kTimeOn;
+    return op == EventOp::kIFrameOn || op == EventOp::kArmorOn || op == EventOp::kRotateOn || op == EventOp::kTimeOn ||
+           op == EventOp::kAttackDataOn;
 }
 // Ops that run only with an action's numbers (0.12.281): skipped, and logged, when the sender's action gives none.
 constexpr bool NeedsValues(EventOp op) { return op == EventOp::kCost || op == EventOp::kTimeOn; }

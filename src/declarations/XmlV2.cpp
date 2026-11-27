@@ -245,7 +245,8 @@ const std::pair<std::string_view, EventOp> kOps[] = {{"hide", EventOp::kHide}, {
     {"rotateOn", EventOp::kRotateOn}, {"rotateOff", EventOp::kRotateOff}, {"cancel", EventOp::kCancel},
     {"fireArrow", EventOp::kFireArrow}, {"ragdoll", EventOp::kRagdoll}, {"strike", EventOp::kStrike},
     {"sound", EventOp::kSound}, {"globalSet", EventOp::kGlobalSet}, {"modEvent", EventOp::kModEvent},
-    {"gripHold", EventOp::kGripHold}, {"gripRelease", EventOp::kGripRelease}, {"animEvent", EventOp::kAnimEvent}};
+    {"gripHold", EventOp::kGripHold}, {"gripRelease", EventOp::kGripRelease}, {"animEvent", EventOp::kAnimEvent},
+    {"attackDataOn", EventOp::kAttackDataOn}, {"attackDataOff", EventOp::kAttackDataOff}};
 // <Do op="magic" action> (11-01): one function for a spell, the action says what it does.
 const std::pair<std::string_view, EventOp> kMagicActions[] = {
     {"cast", EventOp::kMagicCast}, {"add", EventOp::kMagicAdd}, {"remove", EventOp::kMagicRemove}};
@@ -338,7 +339,8 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
     const bool timed = use == DoUse::kTimed;
     // A window's span (11-02): a registered function's own `duration`, 0~60 seconds; elsewhere duration is a shake's.
     const auto opName = get(e, "op");
-    const bool window = opName == "iframeOn" || opName == "armorOn" || opName == "rotateOn" || opName == "timeOn";
+    const bool window = opName == "iframeOn" || opName == "armorOn" || opName == "rotateOn" || opName == "timeOn" ||
+                        opName == "attackDataOn";
     if (use == DoUse::kRegistry)
         for (const char* n : kNumbers)
             if (e.attribute(n) && !(window && std::string_view(n) == "duration"))
@@ -381,7 +383,7 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
     choice(e, "op",
         {"hide", "show", "magic", "cost", "shake", "stopVelocity", "timeOn", "timeOff", "iframeOn", "iframeOff",
             "armorOn", "armorOff", "rotateOn", "rotateOff", "cancel", "fireArrow", "ragdoll", "strike", "sound",
-            "globalSet", "modEvent", "gripHold", "gripRelease", "animEvent"});
+            "globalSet", "modEvent", "gripHold", "gripRelease", "animEvent", "attackDataOn", "attackDataOff"});
     choice(e, "action", {"cast", "add", "remove"});
     if (op == "magic")
         required(e, "action");
@@ -404,7 +406,7 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
     if (window && use != DoUse::kRegistry && e.attribute("duration"))
         fail(e, "A window's duration (span) is set in the event registry");
     if (use == DoUse::kRegistry && e.attribute("duration") && !window)
-        fail(e, "A registered duration is the span of iframeOn·armorOn·rotateOn·timeOn");
+        fail(e, "A registered duration is the span of iframeOn·armorOn·rotateOn·timeOn·attackDataOn");
     num(e, "duration", window ? 60 : 30);
     num(e, "factor", 5, 0.05);
     num(e, "ease", 2);
@@ -458,8 +460,16 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
         // The event the actor's graph would have sent (1.1.0): a name only.
         if (use != DoUse::kValues && get(e, "name").empty()) fail(e, "animEvent needs a name");
         if (e.attribute("text") || e.attribute("number")) fail(e, "text and number are used by modEvent only");
+    } else if (op == "attackDataOn") {
+        // The race's attack data by its event name (1.1.0), over the action's own until attackDataOff.
+        const auto name = get(e, "name");
+        if (use != DoUse::kValues &&
+            (name.empty() || name.size() > 64 || name.find_first_of(" \t|") != std::string::npos))
+            fail(e,
+                "attackDataOn needs a name: the attack data's event name (attackStart, attackStartLeftHand, bashStart)");
+        if (e.attribute("text") || e.attribute("number")) fail(e, "text and number are used by modEvent only");
     } else if (e.attribute("name") || e.attribute("text") || e.attribute("number"))
-        fail(e, "name is used by modEvent and animEvent; text and number by modEvent only");
+        fail(e, "name is used by modEvent, animEvent and attackDataOn; text and number by modEvent only");
     // A hold of a hand's attachment bone (1.0.9): which hands (required where the registry or a clip time says what
     // it acts with) and which views (default third person). A release lets go at once.
     const bool grip = op == "gripHold" || op == "gripRelease";
@@ -514,7 +524,7 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
         const float n = e.attribute("number").as_float(0.0f);
         f.number = std::isfinite(n) ? n : 0.0f;
     }
-    if (op == "animEvent") f.name = get(e, "name");
+    if (op == "animEvent" || op == "attackDataOn") f.name = get(e, "name");
     f.stamina = number(e.attribute("stamina"), 0, 100000);
     f.magicka = number(e.attribute("magicka"), 0, 100000);
     f.health = number(e.attribute("health"), 0, 100000);

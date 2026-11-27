@@ -16,6 +16,8 @@
 //     the end of that clip, when it plays through or is cut short, as a clip range (user decision 11-02);
 //   - for a window turned on with a span (a registered function's duration, an AI. command's last value): the
 //     span's end, and only that besides its off and the common ends (11-02);
+//   - for attack data (attackDataOn, 1.1.0): the end of the clip that sent it whether or not that clip sends its off,
+//     and the engine's next change of the actor's attack data; it never waits for its off through the scope's end;
 //   - the actor's death, ragdoll or unloaded 3D, or a load / new game.
 // There is no time limit (decision D4). A hold taken outside any run scope lasts until its off
 // function or one of the common ends.

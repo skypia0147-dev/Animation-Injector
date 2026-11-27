@@ -1,6 +1,7 @@
 #include "PCH.h"
 #include "runtime/PairTargetMath.h"
 #include "runtime/ActionRunner.h"
+#include "runtime/AttackDataLayer.h"
 #include "runtime/PartRunner.h"
 #include "runtime/PostCancelTime.h"
 #include "runtime/ActionRegistry.h"
@@ -610,51 +611,25 @@ void ActionRunner::ApplyCost() {
 void ActionRunner::ApplyAttackData() {
     const auto& spec = Spec();
     if (!spec.attack.enabled) return;
-    const std::string& name = spec.attack.data;
     auto* p = Owner();
     if (!p || !p->Is3DLoaded()) return;
-    auto* proc = p->GetActorRuntimeData().currentProcess;
-    auto* high = proc ? proc->high : nullptr;
-    auto* race = p->GetRace();
-    if (!high || !race || !race->attackDataMap) {
-        logger::warn("[{}] Attack: no high process, race or attackDataMap", spec.id);
-        return;
-    }
-    auto& map = race->attackDataMap->attackDataMap;
-    auto it = map.find(Fixed(name));
-    if (it == map.end() || !it->second) {
-        std::string keys;
-        for (const auto& e : map) {
-            if (!keys.empty()) keys += ", ";
-            keys += e.first.c_str() ? e.first.c_str() : "?";
-        }
-        logger::warn("[{}] Attack: race '{}' has no attack data '{}'. Names it has: {}", spec.id,
-            race->GetFormEditorID(), name, keys);
-        return;
-    }
-    if (high->attackData != _attackSet || !_attackSet)
-        _attackPrev = high->attackData;  // 앞 재생이 넣은 우리 것이 남아 있으면 그 전 값 유지
-    _attackSet = it->second;
-    high->attackData = _attackSet;
-    const auto& d = _attackSet->data;
+    auto* data = AttackDataLayer::Find(p, spec.attack.data, spec.id.c_str());
+    if (!data) return;
+    // The action's attack data, under an event's (attackDataOn) while one is on (runtime/AttackDataLayer.h).
+    AttackDataLayer::SetAction(p, _idx, data);
+    _attackSet = true;
+    const auto& d = data->data;
     logger::debug(
         "[{}] Attack: attackData ← '{}' (dmgMult {:.2f} flags 0x{:X} angle {:.0f}/{:.0f} stagger {:.2f} type {})",
-        spec.id, name, d.damageMult, d.flags.underlying(), d.attackAngle, d.strikeAngle, d.staggerOffset,
+        spec.id, spec.attack.data, d.damageMult, d.flags.underlying(), d.attackAngle, d.strikeAngle, d.staggerOffset,
         d.attackType ? d.attackType->GetFormEditorID() : "-");
 }
 
 void ActionRunner::RestoreAttackData() {
     if (!_attackSet) return;
-    auto* p = Owner();
-    auto* proc = p ? p->GetActorRuntimeData().currentProcess : nullptr;
-    auto* high = proc ? proc->high : nullptr;
-    if (high && high->attackData == _attackSet) {  // 아직 우리 것이면 되돌린다 (캔슬 아웃으로 엔진이 바꿨으면 그대로)
-        high->attackData = _attackPrev;
-        logger::debug(
-            "[{}] Attack: attackData restored to '{}'", Spec().id, _attackPrev ? _attackPrev->event.c_str() : "(none)");
-    }
-    _attackSet.reset();
-    _attackPrev.reset();
+    _attackSet = false;
+    // Ours goes; the value from before comes back unless an event's is on or the engine replaced it since.
+    if (auto* p = Owner()) AttackDataLayer::ClearAction(p, _idx);
 }
 
 void ActionRunner::ReleaseRotation() {

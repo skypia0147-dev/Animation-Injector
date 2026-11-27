@@ -820,6 +820,44 @@ int main() {
                       PartOfPrefix("") == 0 && PartOfPrefix("3_") == 0,
                 "a synchronized clip's prefix: null is NPC, an unknown one reads annotations as written");
         }
+        // Attack data by event (1.1.0): on with the race's attack data name, off without one; a span as a window's.
+        {
+            const auto p =
+                Parse("<EventRegistry><Event name='LeftSwing'><Do op='attackDataOn' name='attackStartLeftHand'/>"
+                      "</Event><Event name='SwingEnd'><Do op='attackDataOff'/></Event><Event name='Brief'>"
+                      "<Do op='attackDataOn' name='bashStart' duration='0.4'/></Event></EventRegistry>");
+            Check(p.ok && p.events[0].functions[0].op == EventOp::kAttackDataOn &&
+                      p.events[0].functions[0].name == "attackStartLeftHand" && p.events[0].functions[0].span == 0.0f &&
+                      p.events[1].functions[0].op == EventOp::kAttackDataOff && p.events[2].functions[0].span == 0.4f,
+                "attackDataOn names the attack data, attackDataOff ends it, a duration is its span");
+            for (const char* bad :
+                {"<EventRegistry><Event name='X'><Do op='attackDataOn'/></Event></EventRegistry>",
+                    "<EventRegistry><Event name='X'><Do op='attackDataOn' name='a b'/></Event></EventRegistry>",
+                    "<EventRegistry><Event name='X'><Do op='attackDataOff' name='attackStart'/></Event></EventRegistry>",
+                    "<EventRegistry><Event name='X'><Do op='attackDataOn' name='a' text='t'/></Event></EventRegistry>",
+                    "<Action id='A' clip='a.hkx'><Do at='0.2' op='attackDataOn' name='attackStart'/></Action>"})
+                Check(Rejected(bad), (std::string("refused: ") + bad).c_str());
+            Check(WindowOn(EventOp::kAttackDataOn) && !WindowOn(EventOp::kAttackDataOff),
+                "attackDataOn is a window's on");
+            const auto on = AnnotationCommands::Parse("AttackDataOn|attackStartLeftHand"),
+                       timed = AnnotationCommands::Parse("attackdataon|bashStart|0.5"),
+                       off = AnnotationCommands::Parse("AttackDataOff");
+            Check(on && on->op == EventOp::kAttackDataOn && on->name == "attackStartLeftHand" && on->span == 0.0f &&
+                      timed && timed->name == "bashStart" && timed->span == 0.5f && off &&
+                      off->op == EventOp::kAttackDataOff,
+                "AI.AttackDataOn|name[|span] and AI.AttackDataOff");
+            for (const char* bad : {"AttackDataOn", "AttackDataOn|", "AttackDataOn|a b", "AttackDataOn|a|x",
+                     "AttackDataOn|a|1|2", "AttackDataOff|attackStart"})
+                Check(!AnnotationCommands::Parse(bad), (std::string("refused: '") + bad + "'").c_str());
+            // The clip that turns attack data on owns it with no off of its own; the other windows still need one.
+            using namespace ClipWindowsJudge;
+            const Role attackOn{5, kEndsWithClip}, attackOff{6, 0, kEndsWithClip}, ghostOn{0, 0b0001};
+            Check(Judge({{0.2f, &attackOn}}) == std::vector<Own>{{5, 4}}, "attack data on alone: its clip owns it");
+            Check(Judge({{0.2f, &attackOn}, {0.6f, &attackOff}}) == std::vector<Own>{{5, 4}},
+                "attack data on and off: its clip owns it once");
+            Check(Judge({{0.2f, &attackOn}, {0.1f, &ghostOn}}) == std::vector<Own>{{5, 4}},
+                "another window's on alone is still not its clip's");
+        }
         std::cout << checks << " event registry checks passed\n";
         return 0;
     } catch (const std::exception& e) {

@@ -23,7 +23,8 @@
 //   MagicCast|plugin|form  Cost|stamina|magicka|health  CostPercent|stamina|magicka|health
 //   CamShake|strength|duration  StopVelocity  Ragdoll|direction|force  FireArrow|damage%
 //   Sound|file|bone|volume  SoundForm|plugin|form|bone|volume  GlobalSet|plugin|form|value
-//   ModEvent|name|text|number  CancelPair
+//   ModEvent|name|text|number  CancelPair  GripHold|hand|view  GripRelease|hand|view
+//   AttackDataOn|name[|span]  AttackDataOff
 // A window's on turned on without a span follows the window rules (runtime/EventEffects.h): its off command is
 // always there to send.
 namespace AnimationInjector::AnnotationCommands {
@@ -179,6 +180,13 @@ inline std::optional<Parsed> Parse(std::string_view payload) {
     else if (same(name, "GripRelease"))
         ok = plain(EventOp::kGripRelease, 2) && ParseGrip(kGripHands, v[1], f.gripHand) &&
              ParseGrip(kGripViews, v[2], f.gripView);
+    else if (same(name, "AttackDataOn")) {
+        // The race's attack data by its event name (1.1.0): a name with no blank, at most 64 characters.
+        ok = window(EventOp::kAttackDataOn, 1) && !v[1].empty() && v[1].size() <= 64 &&
+             v[1].find_first_of(" \t") == std::string_view::npos;
+        f.name = v[1];
+    } else if (same(name, "AttackDataOff"))
+        ok = plain(EventOp::kAttackDataOff, 0);
     if (!ok) return std::nullopt;
     return f;
 }
