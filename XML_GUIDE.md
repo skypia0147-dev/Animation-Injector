@@ -82,7 +82,7 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `<Cost stamina magicka health measure at>` | 자원 소모: 스태미나·매지카·체력(체력은 마지막 1은 남김). `measure="percent"`면 각 최대치의 %(0~100), 쓰지 않으면 수치 그대로 |
 | `<Exit at blend>` | 언제 끝내고 몇 초 동안 섞을지. `at`을 쓰지 않으면 클립 끝 0.05초 전 |
 
-`<Action>`의 속성: `enter`(들어갈 때 블렌드 초), `attack="attackStart"`(공격 데이터: 종족의 그 이름의 공격 데이터를 동작 동안 캐릭터의 공격 데이터로 둡니다. 엔진은 피해 배율·경직·파워어택 여부를, Precision은 충돌 범위를 여기서 읽습니다. 아래 「공격 동작과 파워어택」), `air="both"`(땅·공중 모두) / `"only"`(공중에서만, 쓰지 않으면 땅에서만), `view="first"`·`"both"`(1인칭 동작, 1인칭 HKX는 `_1stPerson` 아래 같은 경로), `otherView="switch"`(시점 전환, 1.0.8 이상: 3인칭 동작을 1인칭에서, 1인칭 동작을 3인칭에서 시작하면 동작의 인칭으로 카메라를 바꿔 재생하고 끝나면 원래 인칭으로 돌아옵니다. 쓰지 않으면 다른 인칭에서는 시작하지 않습니다. `view="both"`와 1인칭 페어에는 쓸 수 없습니다. 1.0.7까지의 `firstPerson`은 읽지 않습니다), `loop="true" maxHold="3"`(반복 재생: 클립을 끝없이 이어 재생하고, `maxHold`초(기본 3)가 지나면 키를 뗀 것으로 봅니다(차지를 시작한 키를 아직 누르고 있으면 그 키를 누른 순간부터 세어, 방향별 반복 동작을 오가도 시계는 하나). 키를 떼면 전환이 없으면 그때 끝냅니다. 일반 동작만, `<Exit at>`·끝나면 전환은 쓸 수 없습니다. 무적·회전 같은 기능 시각은 동작 시작부터 세고 `end-…`를 쓸 수 없습니다. 전환의 감지 구간(`from`·`until`)은 **바퀴마다** 다시 열리고 닫히며 `until="end"`·`end-…`는 그 바퀴의 끝입니다. HKX 주석 이벤트는 바퀴마다 다시 옵니다).
+`<Action>`의 속성: `enter`(들어갈 때 블렌드 초), `attack="attackStart"`(공격 데이터: 종족의 그 이름의 공격 데이터를 동작 동안 캐릭터의 공격 데이터로 둡니다. 엔진은 피해 배율·경직·파워어택 여부를, Precision은 충돌 범위를 여기서 읽습니다. 아래 「공격 동작과 파워어택」), `air="both"`(땅·공중 모두) / `"only"`(공중에서만, 쓰지 않으면 땅에서만), `view="first"`·`"both"`(1인칭 동작, 1인칭 HKX는 `_1stPerson` 아래 같은 경로), `otherView="switch"`(시점 전환, 1.0.8 이상: 3인칭 동작을 1인칭에서, 1인칭 동작을 3인칭에서 시작하면 동작의 인칭으로 카메라를 바꿔 재생하고 끝나면 원래 인칭으로 돌아옵니다. 쓰지 않으면 다른 인칭에서는 시작하지 않습니다. `view="both"`와 1인칭 페어에는 쓸 수 없습니다. 1.0.7까지의 `firstPerson`은 읽지 않습니다), `loop="true" maxHold="3"`(반복 재생: 클립을 끝없이 이어 재생하고, `maxHold`초(기본 3)가 지나면 키를 뗀 것으로 봅니다(차지를 시작한 키를 아직 누르고 있으면 그 키를 누른 순간부터 세어, 방향별 반복 동작을 오가도 시계는 하나). 키를 떼면 전환이 없으면 그때 끝냅니다. 일반 동작만, `<Exit at>`·끝나면 전환은 쓸 수 없습니다. 무적·회전 같은 기능 시각은 동작 시작부터 세고 `end-…`를 쓸 수 없습니다. 전환의 감지 구간(`from`·`until`)은 **바퀴마다** 다시 열리고 닫히며 `until="end"`·`end-…`는 그 바퀴의 끝입니다. HKX 주석 이벤트는 바퀴마다 다시 옵니다), `optional="true"`(선택 클립, 1.1.0: 무브셋에 따라 있을 수도 없을 수도 있는 클립. 이 HKX가 기본 경로(낱개 파일·BSA)에도, OAR·DAR 폴더 어디에도 같은 이름으로 없으면 런타임이 이 동작을 만들지 않고 애니메이션 이름도 등록하지 않으며, 이 동작으로 가는 조건 행은 거짓으로 보고 다음 행으로, 끝나면 전환(`on="end"`)은 없는 것으로 보고 원래대로 끝냅니다. 캐릭터의 일반 전신 동작만(`<Pair>`·`body`·크리처 `rig` 불가). 예: MCO의 차지·전환 클립. 어디 한 곳에라도 있으면 만들어지고, OAR이 그 액터에게 줄 파일이 없으면(그 클립이 없는 무기의 무브셋) 클립이 켜지는 순간 바로 끝납니다: 반복 동작은 키를 뗀 것으로, 끝나면 전환이 있으면 그리로, 없으면 빠져나옵니다).
 
 **차지 예시**: `<Start control="rightAttack" press="hold" to="ChargeStart"/>` → ChargeStart의 `<Transition to="ChargeLoop" on="end"/>`와 `<Transition condition="ChargeLevel" on="release" from="0.2"/>` → `<Action id="ChargeLoop" loop="true" maxHold="3">`의 `<Transition condition="ChargeLevel" on="release"/>` → 조건 카드 ChargeLevel에서 `<Check kind="heldTime" compare="ge" value="1.5"/>`로 강·약 발동.
 
@@ -163,7 +163,7 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `heldTime` | `compare` `value` | 이 동작을 시작한 키를 누르고 있던 시간(초). 차지 종료 전환이 고를 때는 누른 순간부터 뗀 순간까지. 플레이어만(NPC는 판정 불가) |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | 그 방향에 그만큼 빈 공간이 있을 때 |
 | `distance` | `compare` `value`; `measure="reach"`(1.1.0) | 상대(partner)와의 거리. `measure="reach"`면 무기 길이를 넘어선 거리(거리 − 이 액터의 공격 거리 − 상대의 반경)라 0은 상대가 무기 끝에 닿는 거리, 0보다 작으면 이미 닿는 거리입니다. 숫자 하나로 단검과 대검에 모두 맞습니다. 상대가 있는 시작·전환에서만(페어, 전투 대상 시작, `on="npc"` 전환, 전투 시작) |
-| `graphVariable` | `variable="이름"` `type="bool\|int\|float"` `compare` `value` | 그 액터의 그래프 변수 비교(1.1.0, bool은 0·1). 조건이 쓰는 변수는 런타임이 3인칭 캐릭터 그래프에 넣으므로 비헤이비어 패치가 없어도 HKX 주석(Payload Interpreter `@SGVI\|이름\|값` 등)이 값을 쓸 수 있습니다. 이미 있는 변수(그 비헤이비어 모드가 만든 것)는 그대로 씁니다 |
+| `graphVariable` | `variable="이름"` `type="bool\|int\|float"` `compare` `value` | 그 액터의 그래프 변수 비교(1.1.0, bool은 0·1). 조건이 쓰는 변수는 런타임이 3인칭 캐릭터 그래프에 넣으므로 비헤이비어 패치가 없어도 HKX 주석(Payload Interpreter `@SGVI\|이름\|값` 등)이 값을 쓸 수 있습니다. 이미 있는 변수(그 비헤이비어 모드가 만든 것)는 그대로 씁니다. `compare="exists"`(값 없음)는 값 대신 그 변수가 그래프에 있는지 봅니다. 이 검사가 쓰는 변수는 그래프에 넣지 않으므로 비헤이비어 패치가 설치됐는지 알 수 있습니다(하위 비헤이비어의 변수도 찾습니다). 예: MCO 애드온은 `<Check kind="graphVariable" variable="MCO_BlendLength" type="float" compare="exists" not="true"/>`로 MCO의 Nemesis 패치가 있으면 시작하지 않습니다. 같은 변수를 다른 파일이 값으로 비교하면 런타임이 넣으므로 늘 있음이 됩니다 |
 
 `compare`는 `lt`(작다) `le`(작거나 같다) `eq`(같다) `ge`(크거나 같다) `gt`(크다) `range`(`value`~`upper` 사이)입니다.
 
@@ -229,6 +229,38 @@ HKX에 넣은 주석 이벤트가 오면 기능을 실행합니다. 이벤트와
 
 이벤트로 실행하는 기능에는 `delay`(초)를 값으로 주어 늦출 수 있습니다(활 발사 제외). 페어의 `<Do at>`에는 `target="initiator\|receiver\|both\|player"`로 누구에게 적용할지 정합니다.
 
+## 그래프 변수 등록하기 (VariableRegistry)
+
+1.1.0. `<VariableRegistry>`에 적은 그래프 변수는 런타임이 3인칭 캐릭터 그래프에 넣습니다(플레이어와 NPC 모두). 비헤이비어 패치나 다른 변수 등록 플러그인 없이, Open Animation Replacer(OAR) 조건·HKX 주석·다른 SKSE 플러그인이 그 이름으로 읽고 씁니다.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="MyMoveset">
+  <VariableRegistry>
+    <Variable name="iMyMoveset_MoveInput" type="int" source="moveInput"/>
+    <Variable name="iMyMoveset_Stance" type="int"/>
+  </VariableRegistry>
+</AnimationSet>
+```
+
+- `name`: 영문·숫자·`_` 1~64자. 이름은 모든 모드가 함께 쓰므로 모드 이름을 앞에 붙이세요. `type`: `bool` `int` `float`. 처음 값은 0(false)입니다.
+- `source`가 없으면 이름만 등록합니다. 값은 다른 곳(다른 플러그인의 `SetGraphVariableInt`, Payload Interpreter 주석 등)이 씁니다.
+- `source="moveInput"`(`type="int"`)이면 런타임이 **플레이어의 이동 입력 방향**을 그 변수에 둡니다: 0 없음, 1 앞, 2 오른쪽, 3 뒤, 4 왼쪽. 키보드와 패드 왼쪽 스틱 모두 읽고, 대각선은 큰 쪽으로 봅니다. True Directional Movement가 캐릭터를 돌려도 누른 키 그대로입니다. 값이 바뀔 때만 씁니다. NPC는 입력이 없으므로 0입니다.
+- `source="strafeInput"`(`type="int"`)은 같은 값이되, 이동 키가 캐릭터를 옆·뒤로 움직이는 대신 **돌리는** 동안에는 0입니다(True Directional Movement의 방향성 설정, 타깃 락이 없을 때). 무브셋의 좌·우·뒤 공격처럼 "옆으로 움직일 때만" 골라야 하는 조건에 씁니다. TDM의 글로벌(`TDM_DirectionalMovement`)을 OAR 조건으로 직접 보면 동작(콤보) 도중에는 맞지 않습니다: TDM은 동작 중 이동 입력을 받지 못해 설정과 무관하게 방향성으로 보고합니다.
+- 그래프에 이미 같은 이름의 변수가 있으면(그 비헤이비어 모드가 만든 것) 그대로 씁니다. 종류가 다르면 넣지 않고 로그에 남깁니다.
+- 파일은 `<VariableRegistry>`만 가져도 됩니다. 한 파일에 256개까지입니다.
+
+OAR 조건에서는 이렇게 읽습니다(앞으로 이동 키를 누른 채 하는 공격의 예):
+
+```json
+{
+  "condition": "CompareValues",
+  "Value A": { "graphVariable": "iMyMoveset_MoveInput", "graphVariableType": "Int" },
+  "Comparison": "==",
+  "Value B": { "value": 1.0 }
+}
+```
+
 ## HKX 주석 명령 (`AI.`)
 
 HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기능이 실행됩니다. 값은 주석에 적은 그대로 쓰므로 다른 모드·바닐라 HKX에서도 똑같이 동작합니다. 명령 이름은 대소문자를 가리지 않고, 값은 모두 적어야 합니다. 기능은 주석을 보낸 액터에게 적용됩니다.
@@ -256,6 +288,21 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 | `AI.AttackDataOff` | 바꾼 공격 데이터 끝내기 |
 
 타격(`strike`)은 설정이 많아 명령이 없습니다. 이벤트 등록으로 씁니다. 켜는 명령의 끄기는 위의 규칙을 따르고, 끄는 명령은 언제든 보낼 수 있으므로 끄는 명령을 넣지 않으면 사망·래그돌·불러오기 전까지 켜져 있습니다. 명령과 등록 이벤트는 같은 기능으로 취급합니다(`AI.IFrameOff`는 등록 이벤트가 켠 무적도 끕니다).
+
+## Payload Interpreter 주석 (`PIE.`)
+
+1.1.0. MCO와 그 무브셋의 클립에는 Payload Interpreter용 주석이 들어 있습니다. Payload Interpreter가 설치돼 있지 않으면 런타임이 그중 세 가지를 직접 처리합니다. 그래서 이 세 가지만 쓰는 무브셋은 Payload Interpreter 없이 동작합니다.
+
+| 주석 | 하는 일 |
+|---|---|
+| `PIE.@SGVI\|변수\|값` | 그 액터의 그래프 int 변수 쓰기 (예: `MCO_nextattack`) |
+| `PIE.@SGVF\|변수\|값` | 그래프 float 변수 쓰기 (예: `MCO_AttackSpeed`) |
+| `PIE.@CAMSHAKE\|세기\|초` | 카메라 흔들기 |
+
+- Payload Interpreter가 설치돼 있으면 런타임은 `PIE` 주석에 손대지 않습니다. 명령은 한 번만 실행됩니다.
+- 변수는 그래프에 있어야 써집니다. 조건(`graphVariable`)이 읽거나 `<VariableRegistry>`에 등록한 변수는 런타임이 넣어 둡니다.
+- 그 밖의 Payload Interpreter 명령(`@CAST` 등)과 모드별 매크로(`PIE.$이름`)는 처리하지 않습니다. 그런 주석을 쓰는 모드는 Payload Interpreter나 그 모드의 플러그인이 필요합니다.
+- 이벤트 이름 `PIE`는 런타임이 모든 그래프에 등록합니다.
 
 ## 무기 잡기 유지
 

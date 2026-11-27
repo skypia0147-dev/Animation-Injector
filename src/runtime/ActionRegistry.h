@@ -3,6 +3,7 @@
 #include "PCH.h"
 #include "runtime/ActionSpec.h"
 #include "runtime/LadderSpec.h"
+#include "runtime/GraphVariables.h"
 #include "runtime/TdmMovement.h"
 
 // 로드된 액션 선언과 실행기의 목록. 1층(삽입·훅)과 3층(실행기)이 여기서 서로를 찾는다.
@@ -112,6 +113,8 @@ const std::vector<std::string>& AllEventNames();
 const std::vector<std::string>& RegistryEventNames();
 // The locomotion file's <Locomotion>, Locomotion\Locomotion.xml (runtime/LadderSpec.h, core/LocomotionSplit.h).
 const LocomotionSpec& Locomotion();
+// Every file's <VariableRegistry> entries, in file name order (runtime/GraphVariables.h, runtime/InputVariables.h).
+const std::vector<GraphVariables::Registered>& RegisteredVariables();
 bool AnyActive();  // 플레이어 실행기 중 Idle 이 아닌 것
 // Main thread: any full-body runner of this actor (player or NPC) is not idle.
 bool Busy(RE::Actor* actor);

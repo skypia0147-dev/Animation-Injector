@@ -229,6 +229,60 @@ int main() {
                 "no walk speed: the state alone");
         }
 
+        // <VariableRegistry> (runtime/GraphVariables.h): what the parser reads and rejects.
+        {
+            const auto parse = [](const std::string& body, std::vector<GraphVariables::Registered>& variables) {
+                const std::string xml = "<AnimationSet version='6' id='Test'>" + body + "</AnimationSet>";
+                pugi::xml_document doc;
+                doc.load_string(xml.c_str());
+                std::vector<ActionSpec> actions;
+                std::vector<EventRuleSpec> events;
+                LocomotionSpec locomotion;
+                std::string mod, error;
+                return XmlV2::Compile(
+                    doc, "test.xml", actions, events, locomotion, variables, mod, error, Declarations::ResolveKeyName);
+            };
+            const auto rejected = [&](const std::string& body) {
+                std::vector<GraphVariables::Registered> v;
+                return !parse("<VariableRegistry>" + body + "</VariableRegistry>", v) && v.empty();
+            };
+            std::vector<GraphVariables::Registered> v;
+            Check(parse(R"(<VariableRegistry><Variable name="iMy_Move" type="int" source="moveInput"/>)"
+                        R"(<Variable name="bMy_Flag" type="bool"/><Variable name="fMy_Speed" type="float"/>)"
+                        "</VariableRegistry>",
+                      v) &&
+                      v.size() == 3,
+                "a file may hold only a variable registry");
+            Check(v[0].name == "iMy_Move" && v[0].type == GraphVariables::Type::kInt &&
+                      v[0].source == GraphVariables::Source::kMoveInput && v[0].file == "test.xml",
+                "a moveInput variable");
+            Check(v[1].type == GraphVariables::Type::kBool && v[1].source == GraphVariables::Source::kNone &&
+                      v[2].type == GraphVariables::Type::kFloat,
+                "names alone, by type");
+            Check(rejected(""), "an empty registry is rejected");
+            Check(rejected(R"(<Variable name="a" />)"), "type is required");
+            Check(rejected(R"(<Variable name="a" type="string"/>)"), "type is bool, int or float");
+            Check(rejected(R"(<Variable name="a.b" type="int"/>)"), "names are letters, digits and underscores");
+            Check(rejected(R"(<Variable name="a" type="int"/><Variable name="A" type="bool"/>)"),
+                "one name once, ignoring case");
+            Check(rejected(R"(<Variable name="a" type="int" source="keys"/>)"), "a source is moveInput or strafeInput");
+            {
+                std::vector<GraphVariables::Registered> s;
+                Check(parse(R"(<VariableRegistry><Variable name="iMy_Strafe" type="int" source="strafeInput"/>)"
+                            "</VariableRegistry>",
+                          s) &&
+                          s.size() == 1 && s[0].source == GraphVariables::Source::kStrafeInput,
+                    "a strafeInput variable");
+                Check(rejected(R"(<Variable name="a" type="bool" source="strafeInput"/>)"), "strafeInput is an int");
+            }
+            Check(rejected(R"(<Variable name="a" type="float" source="moveInput"/>)"), "moveInput is an int");
+            // MoveDir: 0 forward, 1 back, 2 left, 3 right, 4 none -> 1 forward, 2 right, 3 back, 4 left, 0 none.
+            Check(GraphVariables::MoveInputValue(0) == 1 && GraphVariables::MoveInputValue(3) == 2 &&
+                      GraphVariables::MoveInputValue(1) == 3 && GraphVariables::MoveInputValue(2) == 4 &&
+                      GraphVariables::MoveInputValue(4) == 0 && GraphVariables::MoveInputValue(-1) == 0,
+                "the movement input's values go clockwise from forward");
+        }
+
         // Through the loader: the locomotion file's <Locomotion> alone is used, whole; no other file adds to it.
         {
             const std::string mine = R"(<Locomotion><Tree weapon="H2H" use="own"/><Except set="Sneak"/></Locomotion>)";

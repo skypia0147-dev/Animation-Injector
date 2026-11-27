@@ -1,4 +1,6 @@
 #include "runtime/AnnotationCommands.h"
+#define AI_PAYLOAD_COMMANDS_PURE
+#include "runtime/PayloadCommands.h"
 #include "runtime/ClipWindowsJudge.h"
 #include "Settings.h"
 #include "declarations/XmlV2.h"
@@ -609,6 +611,28 @@ int main() {
                 "parameters refused");
             Check(refused("<EventRegistry><Event name='ai'/></EventRegistry>"), "AI is reserved, ignoring case");
             Check(refused("<Action id='A' clip='a.hkx'><Exit at='event:AI'/></Action>"), "in any event attribute");
+            // Payload Interpreter's native commands (runtime/PayloadCommands.h).
+            {
+                namespace PC = PayloadCommands;
+                const auto i = PC::Parse("@SGVI|MCO_nextattack|2");
+                Check(i && i->kind == PC::Kind::kSetInt && i->variable == "MCO_nextattack" && i->integer == 2,
+                    "PIE: an int variable");
+                const auto f = PC::Parse("@sgvf|MCO_AttackSpeed|1.25");
+                Check(f && f->kind == PC::Kind::kSetFloat && f->variable == "MCO_AttackSpeed" &&
+                          std::fabs(f->number - 1.25f) < 1e-6f,
+                    "PIE: a float variable, the command's name ignoring case");
+                const auto s = PC::Parse("@CAMSHAKE|0.5|0.3");
+                Check(s && s->kind == PC::Kind::kCamShake && std::fabs(s->number - 0.5f) < 1e-6f &&
+                          std::fabs(s->seconds - 0.3f) < 1e-6f,
+                    "PIE: a camera shake");
+                Check(!PC::Parse("$HitLeft") && !PC::Parse("@CAST|0X803|Mod.esp|1|1|0|0|0|0|0|0|0") &&
+                          !PC::Parse("@SVGF|MCO_AttackSpeed|1.0"),
+                    "PIE: a macro and other commands are not ours");
+                Check(!PC::Parse("@SGVI|MCO_nextattack") && !PC::Parse("@SGVI|MCO_nextattack|2|3") &&
+                          !PC::Parse("@SGVI||2") && !PC::Parse("@SGVI|a|2.5") && !PC::Parse("@SGVF|a|x") &&
+                          !PC::Parse("@CAMSHAKE|-1|0.3") && !PC::Parse(""),
+                    "PIE: every field written, whole numbers");
+            }
             using AnnotationCommands::Parse;
             using AnnotationCommands::Parsed;
             const auto shakeOf = [](float strength, float duration) {

@@ -21,6 +21,7 @@
 #include <bit>
 #include <format>
 #include "runtime/Signals.h"
+#include "runtime/ClipPresence.h"
 #include "runtime/GraphVariables.h"
 #include <functional>
 #include <map>
@@ -309,6 +310,7 @@ int RegisterAnimationFiles(RE::hkbCharacterStringData* strings, const char* stag
     const auto append = [&](const std::vector<std::string>& list) {
         for (const auto& file : list) {
             if (FindName(names, file.c_str()) >= 0) continue;
+            if (ClipPresence::AbsentFile(file)) continue;  // an optional clip installed nowhere: never bound
             if (AnimationTableFull(names, strings->name.c_str())) {
                 full = true;
                 return false;
@@ -2256,7 +2258,8 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
     int firstPersonPairs = 0;
     for (int a = 0; a < Actions::Count(); ++a) {
         const auto& spec = Actions::Spec(a);
-        if (spec.clips.empty()) continue;  // a selecting action has nothing to play (XmlV2, 0.12.244)
+        if (spec.clips.empty()) continue;       // a selecting action has nothing to play (XmlV2, 0.12.244)
+        if (ClipPresence::Absent(a)) continue;  // an optional clip installed nowhere (runtime/ClipPresence.h)
         if (spec.CreatureAction()) continue;
         if (spec.Part()) continue;  // a part action is a clip of a part layer (core/UpperLayer.h), not a state
         if (spec.paired.enabled) {

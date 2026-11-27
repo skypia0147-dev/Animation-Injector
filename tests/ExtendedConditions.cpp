@@ -226,6 +226,19 @@ int main() {
     Check(!Read("kind='graphVariable' variable='A' type='string' compare='eq' value='1'"));  // an unknown type
     Check(!Read("kind='graphVariable' variable='A B' type='int' compare='eq' value='1'"));   // a space in the name
     Check(!Read("kind='graphVariable' variable='A' type='int'"));                            // no comparison
+    // compare="exists" (1.1.0): whether the graph has the variable at all, with no value; never added to the graph.
+    {
+        pugi::xml_document doc;
+        doc.load_string("<Check kind='graphVariable' variable='MCO_IsPowerAttacking' type='bool' compare='exists'/>");
+        ConditionFlowXml::Predicate pr;
+        std::string error;
+        Check(ConditionFlowXml::ReadCheck(doc.document_element(), pr, error));
+        Check(pr.test == ConditionFlowXml::Test::kGraphVariable && pr.compare == "exists");
+    }
+    Check(Read("kind='graphVariable' variable='A' type='bool' compare='exists' not='true'"));
+    Check(!Read("kind='graphVariable' variable='A' type='bool' compare='exists' value='1'"));
+    Check(!Read("kind='graphVariable' variable='A' compare='exists'"));                   // a type still
+    Check(!Read("kind='resource' option='stamina' measure='current' compare='exists'"));  // graph variables only
     Check(!Read("kind='resource' option='stamina' measure='current' compare='ge' value='1' variable='A'"));
     Check(!Read("kind='resource' option='stamina' measure='current' compare='ge' value='1' type='int'"));
     // 1.1.0: a distance past the subject's attack reach, below 0 inside it.

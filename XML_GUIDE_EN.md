@@ -82,7 +82,7 @@ With a weapon drawn, G does slash 1; pressing G again during it leads on to slas
 | `<Cost stamina magicka health measure at>` | Resource cost: stamina, magicka, health (health never its last point). `measure="percent"`: percent of each maximum (0~100); without it, the values as written |
 | `<Exit at blend>` | When it ends and how many seconds it blends. Without `at`, 0.05 seconds before the clip's end |
 
-`<Action>` attributes: `enter` (blend seconds going in), `attack="attackStart"` (attack data: the race's attack data of that name is the character's attack data while the action plays; the engine reads the damage multiplier, stagger and whether it is a power attack from it, and Precision its collision. See Attacks and power attacks below), `air="both"` (ground and air) / `"only"` (air only; without it, ground only), `view="first"` or `"both"` (a first-person action; first-person HKX files go at the same path under `_1stPerson`), `otherView="switch"` (the view switch, 1.0.8 or later: a third-person action started in first person, or a first-person action started in third person, switches the camera to the action's view, plays, and returns to the view it started from when it ends. Without it the action does not start in the other view. Not with `view="both"`, nor on a first-person pair. The `firstPerson` of 1.0.7 and earlier is not read), `loop="true" maxHold="3"` (a loop: the clip plays over and over, and after `maxHold` seconds (default 3) the key counts as released, counted from the press of the key that started the charge while it is still down, so directional loops share one clock; without an on="release" transition it ends then. Ordinary actions only; no `<Exit at>` or on="end" transition. Feature times (i-frames, rotation…) count from the action's start and take no `end-…`; transition windows (`from`, `until`) open and close again **every cycle**, `until="end"` and `end-…` meaning that cycle's end; HKX annotation events come again every cycle).
+`<Action>` attributes: `enter` (blend seconds going in), `attack="attackStart"` (attack data: the race's attack data of that name is the character's attack data while the action plays; the engine reads the damage multiplier, stagger and whether it is a power attack from it, and Precision its collision. See Attacks and power attacks below), `air="both"` (ground and air) / `"only"` (air only; without it, ground only), `view="first"` or `"both"` (a first-person action; first-person HKX files go at the same path under `_1stPerson`), `otherView="switch"` (the view switch, 1.0.8 or later: a third-person action started in first person, or a first-person action started in third person, switches the camera to the action's view, plays, and returns to the view it started from when it ends. Without it the action does not start in the other view. Not with `view="both"`, nor on a first-person pair. The `firstPerson` of 1.0.7 and earlier is not read), `loop="true" maxHold="3"` (a loop: the clip plays over and over, and after `maxHold` seconds (default 3) the key counts as released, counted from the press of the key that started the charge while it is still down, so directional loops share one clock; without an on="release" transition it ends then. Ordinary actions only; no `<Exit at>` or on="end" transition. Feature times (i-frames, rotation…) count from the action's start and take no `end-…`; transition windows (`from`, `until`) open and close again **every cycle**, `until="end"` and `end-…` meaning that cycle's end; HKX annotation events come again every cycle), `optional="true"` (an optional clip, 1.1.0: a clip a moveset may or may not have. When this HKX is neither at its own path (loose or in a BSA) nor, by the same name, in any OAR or DAR folder, the runtime does not make the action or register its animation name; a condition row going to it counts as false and the next row is read, and an on="end" transition to it counts as none, so the action ends as it would. A character's ordinary full-body actions only (no `<Pair>`, `body` or creature `rig`). For example MCO's charge and transition clips. A clip installed anywhere makes the action; for an actor OAR has no file to give (a weapon whose moveset lacks it) it ends as its clip activates: a loop counts as let go, an action with an on="end" goes there, any other exits).
 
 **Charge example**: `<Start control="rightAttack" press="hold" to="ChargeStart"/>` → ChargeStart's `<Transition to="ChargeLoop" on="end"/>` and `<Transition condition="ChargeLevel" on="release" from="0.2"/>` → `<Action id="ChargeLoop" loop="true" maxHold="3">` with `<Transition condition="ChargeLevel" on="release"/>` → the ChargeLevel card picks the strong or weak release by `<Check kind="heldTime" compare="ge" value="1.5"/>`.
 
@@ -163,7 +163,7 @@ Common conditions:
 | `heldTime` | `compare` `value` | how long the key that started this action was held, in seconds; when an on="release" transition chooses, from the press to the release. The player only (unknown for an NPC) |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | there is that much open space that way |
 | `distance` | `compare` `value`; `measure="reach"` (1.1.0) | The distance to the partner. With `measure="reach"` it is the gap past the weapon's reach (distance − this actor's attack reach − the partner's radius): 0 puts the partner at the weapon's tip, below 0 is already within reach. One number fits a dagger and a greatsword. Only where there is a partner (pairs, combat-target starts, `on="npc"` transitions, combat starts) |
-| `graphVariable` | `variable="name"` `type="bool\|int\|float"` `compare` `value` | Compares a graph variable of the actor (1.1.0; a bool reads 0 or 1). The runtime adds every variable a check names to the third-person character graphs, so an HKX annotation (Payload Interpreter's `@SGVI\|name\|value` and the like) can set it without a behavior patch. A variable the graph already has (from that behavior mod) is used as it is |
+| `graphVariable` | `variable="name"` `type="bool\|int\|float"` `compare` `value` | Compares a graph variable of the actor (1.1.0; a bool reads 0 or 1). The runtime adds every variable a check names to the third-person character graphs, so an HKX annotation (Payload Interpreter's `@SGVI\|name\|value` and the like) can set it without a behavior patch. A variable the graph already has (from that behavior mod) is used as it is. `compare="exists"` (no value) asks whether the graph has the variable at all instead of its value; the variable of such a check is not added to the graph, so it tells whether a behavior patch is installed (a sub-behavior's variables are found too). For example, the MCO add-on does not start with MCO's Nemesis patch installed: `<Check kind="graphVariable" variable="MCO_BlendLength" type="float" compare="exists" not="true"/>`. A variable another file compares by value is added by the runtime and then always exists |
 
 `compare` is `lt` (less) `le` (less or equal) `eq` (equal) `ge` (greater or equal) `gt` (greater) `range` (between `value` and `upper`).
 
@@ -229,6 +229,38 @@ A feature that stays on (hiding, invulnerability and such) ends when its pair (`
 
 A feature run by an event can be held back with a `delay` (seconds) value (not firing an arrow). In a pair's `<Do at>`, `target="initiator|receiver|both|player"` says whom it applies to.
 
+## Registering graph variables (VariableRegistry)
+
+1.1.0. The runtime puts every graph variable written in `<VariableRegistry>` into the third-person character graphs (the player's and NPCs'). Open Animation Replacer (OAR) conditions, HKX annotations and other SKSE plugins read and write it by name, with no behavior patch and no other variable registration plugin.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="MyMoveset">
+  <VariableRegistry>
+    <Variable name="iMyMoveset_MoveInput" type="int" source="moveInput"/>
+    <Variable name="iMyMoveset_Stance" type="int"/>
+  </VariableRegistry>
+</AnimationSet>
+```
+
+- `name`: 1–64 letters, digits or `_`. Every mod shares the names, so put your mod's name first. `type`: `bool` `int` `float`. The initial value is 0 (false).
+- Without `source` only the name is registered. Something else writes the value (another plugin's `SetGraphVariableInt`, a Payload Interpreter annotation).
+- With `source="moveInput"` (`type="int"`) the runtime keeps the variable at **the player's movement input direction**: 0 none, 1 forward, 2 right, 3 back, 4 left. It reads the keyboard and the gamepad's left stick, and a diagonal counts as its larger side. It is the input as pressed, even when True Directional Movement turns the character. It is written only when the value changes. NPCs have no input: theirs stays 0.
+- `source="strafeInput"` (`type="int"`) is the same value, but 0 while the movement keys **turn** the character instead of moving it sideways or back (True Directional Movement's directional setting, without a target lock). Use it for conditions that should pick only when the character strafes, such as a moveset's left, right and back attacks. An OAR condition on TDM's own global (`TDM_DirectionalMovement`) is wrong inside an action (a combo): TDM receives no movement input there and reports directional whatever the setting.
+- A variable of that name already in the graph (made by a behavior mod) is used as it is. One of another type is not added and is logged.
+- A file may hold only `<VariableRegistry>`. Up to 256 per file.
+
+An OAR condition reads it like this (an attack made while holding the forward movement key):
+
+```json
+{
+  "condition": "CompareValues",
+  "Value A": { "graphVariable": "iMyMoveset_MoveInput", "graphVariableType": "Int" },
+  "Comparison": "==",
+  "Value B": { "value": 1.0 }
+}
+```
+
 ## HKX annotation commands (`AI.`)
 
 An HKX annotation `AI.Command|value|value` runs a feature at its time with no registration. The values are the ones written in the annotation, so it works the same in any other mod's or vanilla HKX. The command name ignores case, and every value must be written. The feature applies to the actor that sent the annotation.
@@ -256,6 +288,21 @@ An HKX annotation `AI.Command|value|value` runs a feature at its time with no re
 | `AI.AttackDataOff` | End the changed attack data |
 
 A strike has no command for its many settings; register it on an event. An on command ends by the rules above; an off command can always be sent, so without one it stays on until death, ragdoll or a load. Commands and registered events are one feature (`AI.IFrameOff` also ends invulnerability a registered event turned on).
+
+## Payload Interpreter annotations (`PIE.`)
+
+1.1.0. Clips made for MCO and its movesets carry annotations for Payload Interpreter. When Payload Interpreter is not installed the runtime runs three of them itself, so a moveset that uses only these plays without Payload Interpreter.
+
+| Annotation | What it does |
+|---|---|
+| `PIE.@SGVI\|variable\|value` | Sets a graph int variable of that actor (e.g. `MCO_nextattack`) |
+| `PIE.@SGVF\|variable\|value` | Sets a graph float variable (e.g. `MCO_AttackSpeed`) |
+| `PIE.@CAMSHAKE\|strength\|seconds` | Shakes the camera |
+
+- With Payload Interpreter installed the runtime does not touch `PIE` annotations. A command runs once.
+- A variable must be in the graph to be written. The runtime puts in the ones a check (`graphVariable`) reads or a file registers in `<VariableRegistry>`.
+- Payload Interpreter's other commands (`@CAST` and the rest) and a mod's own macros (`PIE.$Name`) are not handled. A mod whose clips use them needs Payload Interpreter or its own plugin.
+- The runtime registers the event name `PIE` in every graph.
 
 ## Grip hold
 

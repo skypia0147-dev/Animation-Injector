@@ -3,6 +3,7 @@
 #include "core/NativePairEnd.h"
 #include "compat/OpenAnimationReplacerAPI-Animations.h"
 #include "PCH.h"
+#include "runtime/ClipPresence.h"
 #include "runtime/PairFeatures.h"
 #include "core/ClipHooks.h"
 #include "core/NodeFactory.h"
@@ -59,6 +60,27 @@ void DumpAnnotations(RE::hkbClipGenerator* a_this, const char* a_when) {
     }
 }
 
+// OAR's animation interface, or nullptr without OAR.
+OAR_API::Animations::IAnimationsInterface* OarAnimations() {
+    static auto* oar = []() -> OAR_API::Animations::IAnimationsInterface* {
+        auto module = GetModuleHandleW(L"OpenAnimationReplacer.dll");
+        if (!module) return nullptr;
+        auto request = reinterpret_cast<OAR_API::Animations::_RequestPluginAPI_Animations>(
+            GetProcAddress(module, "RequestPluginAPI_Animations"));
+        if (!request) return nullptr;
+        const auto* plugin = SKSE::PluginDeclaration::GetSingleton();
+        return request(OAR_API::Animations::InterfaceVersion::V1, plugin->GetName().data(), plugin->GetVersion());
+    }();
+    return oar;
+}
+// Whether OAR gives this clip a file of its own now.
+bool Replaced(const RE::hkbClipGenerator* clip) {
+    auto* oar = OarAnimations();
+    if (!oar) return false;
+    const auto info = oar->GetCurrentReplacementAnimationInfo(const_cast<RE::hkbClipGenerator*>(clip));
+    const char* selected = info.animationPath.c_str();
+    return selected && *selected;
+}
 struct Activate {
     static void thunk(RE::hkbClipGenerator* a_this, const RE::hkbContext& a_ctx) {
         int action = -1, variant = -1;
@@ -71,16 +93,7 @@ struct Activate {
             const int idx = NodeFactory::EnsureAnimationName(a_ctx.character, want);
             // OAR can deduplicate identical bytes across differently named paths.
             // Query the active selection instead of inferring ownership from a path.
-            static auto* oar = []() -> OAR_API::Animations::IAnimationsInterface* {
-                auto module = GetModuleHandleW(L"OpenAnimationReplacer.dll");
-                if (!module) return nullptr;
-                auto request = reinterpret_cast<OAR_API::Animations::_RequestPluginAPI_Animations>(
-                    GetProcAddress(module, "RequestPluginAPI_Animations"));
-                if (!request) return nullptr;
-                const auto* plugin = SKSE::PluginDeclaration::GetSingleton();
-                return request(
-                    OAR_API::Animations::InterfaceVersion::V1, plugin->GetName().data(), plugin->GetVersion());
-            }();
+            auto* oar = OarAnimations();
             const auto info =
                 oar ? oar->GetCurrentReplacementAnimationInfo(a_this) : OAR_API::Animations::ReplacementAnimationInfo{};
             const char* selected = info.animationPath.c_str();
@@ -135,6 +148,9 @@ struct Activate {
                     if (const char* text = note.text.c_str(); text && std::strncmp(text, "animmotion ", 11) == 0)
                         moves = true;
         }
+        // An optional clip with nothing to play for this actor (runtime/ClipPresence.h: the replacer gives it no file
+        // and its own path has none): a negative length, and the runner ends it at once.
+        if (Actions::Spec(action).optional && ClipPresence::NothingToPlay(action, Replaced(a_this))) dur = -1.0f;
         // Adopts an external entry and updates the runner, now or on the main thread's next update.
         Actions::ClipActivated(ActorForContext(a_ctx), action, variant, dur, moves);
     }

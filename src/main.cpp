@@ -48,6 +48,7 @@
 #include "runtime/PairStartCamera.h"
 #include "runtime/ActorImmunity.h"
 #include "runtime/AnnotationCommands.h"
+#include "runtime/PayloadCommands.h"
 #include "core/StartupRecord.h"
 #include <spdlog/sinks/basic_file_sink.h>
 
@@ -114,6 +115,7 @@ void EndSession() {
     PairFeatures::ResetOnLoad();
     EventRegistry::ResetOnLoad();
     AnnotationCommands::ResetOnLoad();
+    PayloadCommands::ResetOnLoad();
     EventEffects::ResetOnLoad();
     GripHold::ReleaseAll();
     LocomotionDrive::ResetOnLoad();

@@ -207,7 +207,8 @@ std::string Lower(std::string text) {
     return text;
 }
 bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out, std::vector<EventRuleSpec>* a_events,
-    LoadedNames* a_names, LocomotionSpec* a_locomotion = nullptr, bool a_locomotionFile = true) {
+    LoadedNames* a_names, LocomotionSpec* a_locomotion = nullptr, bool a_locomotionFile = true,
+    std::vector<GraphVariables::Registered>* a_variables = nullptr) {
     const auto file = PathText(a_file);
     pugi::xml_document doc;
     const auto res = doc.load_file(a_file.c_str());
@@ -224,6 +225,7 @@ bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out
     std::vector<ActionSpec> parsed;
     std::vector<EventRuleSpec> events;
     LocomotionSpec locomotion;
+    std::vector<GraphVariables::Registered> variables;
     std::string mod, error;
     // The set's id names its actions in the runtime (XmlV2::Compile): two mods' actions never meet. A second file
     // with the same id (two mods that kept the editor's default, or one mod installed twice) gets <id>_2, <id>_3, ...:
@@ -238,14 +240,15 @@ bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out
                 "apart",
                 file, base, a_names->sets.at(Lower(base)), qualifier);
     }
-    if (!XmlV2::Compile(doc, file, parsed, events, locomotion, mod, error, ResolveKeyName, qualifier)) {
+    if (!XmlV2::Compile(doc, file, parsed, events, locomotion, variables, mod, error, ResolveKeyName, qualifier)) {
         logger::error("[Decl:v2] {}: {} — entire file skipped", file, error);
         return false;
     }
     // The locomotion file (runtime/LadderSpec.h kLocomotionFile) holds the locomotion and nothing else; no other
     // file's <Locomotion> is used.
     const bool declaresLocomotion = !locomotion.Empty();
-    if (a_locomotion && a_locomotionFile && declaresLocomotion && (!parsed.empty() || !events.empty())) {
+    if (a_locomotion && a_locomotionFile && declaresLocomotion &&
+        (!parsed.empty() || !events.empty() || !variables.empty())) {
         logger::error(
             "[Decl] {}: the locomotion file (Locomotion\\Locomotion.xml) holds <Locomotion> alone — entire file "
             "skipped",
@@ -273,8 +276,11 @@ bool FromXml(const std::filesystem::path& a_file, std::vector<ActionSpec>& a_out
         for (const auto& spec : parsed) a_names->actions.insert(Lower(spec.id));
     }
     logger::info("[Decl:v2] {}: validated", file);
-    logger::info("[Decl] {} (mod '{}'): actions {}, event registrations {}, locomotion {}", file, mod, parsed.size(),
-        events.size(), locomotion.declared ? "yes" : "none");
+    logger::info("[Decl] {} (mod '{}'): actions {}, event registrations {}, variable registrations {}, locomotion {}",
+        file, mod, parsed.size(), events.size(), variables.size(), locomotion.declared ? "yes" : "none");
+    if (a_variables)
+        a_variables->insert(
+            a_variables->end(), std::make_move_iterator(variables.begin()), std::make_move_iterator(variables.end()));
     a_out.insert(a_out.end(), std::make_move_iterator(parsed.begin()), std::make_move_iterator(parsed.end()));
     if (a_events)
         a_events->insert(
@@ -305,13 +311,19 @@ bool LoadXmlFile(const std::filesystem::path& file, std::vector<ActionSpec>& out
     LocomotionSpec& locomotion) {
     return FromXml(file, output, &events, nullptr, &locomotion);
 }
-
-std::vector<ActionSpec> LoadAll(std::vector<EventRuleSpec>* events, LocomotionSpec* locomotion) {
-    return LoadAllFrom(std::filesystem::current_path() / "Data/SKSE/Plugins/AnimationInjector", events, locomotion);
+bool LoadXmlFile(const std::filesystem::path& file, std::vector<ActionSpec>& output, std::vector<EventRuleSpec>& events,
+    LocomotionSpec& locomotion, std::vector<GraphVariables::Registered>& variables) {
+    return FromXml(file, output, &events, nullptr, &locomotion, true, &variables);
 }
 
-std::vector<ActionSpec> LoadAllFrom(
-    const std::filesystem::path& root, std::vector<EventRuleSpec>* events, LocomotionSpec* locomotion) {
+std::vector<ActionSpec> LoadAll(std::vector<EventRuleSpec>* events, LocomotionSpec* locomotion,
+    std::vector<GraphVariables::Registered>* variables) {
+    return LoadAllFrom(
+        std::filesystem::current_path() / "Data/SKSE/Plugins/AnimationInjector", events, locomotion, variables);
+}
+
+std::vector<ActionSpec> LoadAllFrom(const std::filesystem::path& root, std::vector<EventRuleSpec>* events,
+    LocomotionSpec* locomotion, std::vector<GraphVariables::Registered>* variables) {
     std::vector<ActionSpec> out;
     std::error_code ec;
     if (!std::filesystem::is_directory(root, ec)) {
@@ -334,7 +346,7 @@ std::vector<ActionSpec> LoadAllFrom(
         return _wcsicmp(f.filename().c_str(), std::wstring(kLocomotionFile).c_str()) == 0 &&
                _wcsicmp(f.parent_path().filename().c_str(), std::wstring(kLocomotionFolder).c_str()) == 0;
     };
-    for (const auto& f : xmls) FromXml(f, out, events, &names, locomotion, locomotionFile(f));
+    for (const auto& f : xmls) FromXml(f, out, events, &names, locomotion, locomotionFile(f), variables);
     // The per-action summary is only logged at debug; its strings are not built otherwise.
     for (const auto& s : out) {
         if (!FrameworkSettings::Get().debug) break;

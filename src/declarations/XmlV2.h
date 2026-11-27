@@ -4,6 +4,7 @@
 #include <string_view>
 #include <vector>
 #include <pugixml.hpp>
+#include "runtime/GraphVariables.h"
 
 namespace AnimationInjector {
 struct ActionSpec;
@@ -29,6 +30,11 @@ bool Compile(const pugi::xml_document& source, const std::string& sourceName, st
 bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
     std::vector<EventRuleSpec>& events, LocomotionSpec& locomotion, std::string& mod, std::string& error,
     KeyResolver resolveKey, std::string_view qualifier = {});
+// The same, also collecting the file's <VariableRegistry> (runtime/GraphVariables.h) into `variables`. A file may
+// hold only that. Variable names are whole graph variable names: the qualifier does not apply to them.
+bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
+    std::vector<EventRuleSpec>& events, LocomotionSpec& locomotion, std::vector<GraphVariables::Registered>& variables,
+    std::string& mod, std::string& error, KeyResolver resolveKey, std::string_view qualifier = {});
 // The same, keeping only the actions (tools and tests that read actions).
 bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
     std::string& mod, std::string& error, KeyResolver resolveKey, std::string_view qualifier = {});

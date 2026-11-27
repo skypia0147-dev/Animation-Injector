@@ -176,9 +176,13 @@ Predicate ReadPredicate(XML n) {
         Fail(n, "option is not supported by this condition");
     if (test == "child") predicate.option = "child";
     // A fall's distance is optional: an air check without a value only asks in the air, falling or rising.
+    // Whether the actor's graph has a graph variable at all (compare="exists", 1.1.0): a behavior patch's own
+    // variable tells that patch is installed. Such a check takes no value, and its variable is not added to the graph.
+    const bool exists = test == "graphVariable" && std::string_view(n.attribute("compare").as_string()) == "exists";
     const bool numeric =
-        oneOf(test, {"resource", "distance", "relativeAngle", "heightDifference", "scale", "scaleRatio", "height",
-                        "slope", "actorValue", "gameHour", "heldTime", "graphVariable"}) ||
+        (oneOf(test, {"resource", "distance", "relativeAngle", "heightDifference", "scale", "scaleRatio", "height",
+                         "slope", "actorValue", "gameHour", "heldTime", "graphVariable"}) &&
+            !exists) ||
         (test == "air" && n.attribute("value"));
     // A distance past the reach (1.1.0) is below 0 inside it; a graph variable may hold any number.
     const bool reach = test == "distance" && std::string_view(n.attribute("measure").as_string()) == "reach";
@@ -218,6 +222,9 @@ Predicate ReadPredicate(XML n) {
                 Fail(n, "upper requires range");
         } else if (n.attribute("compare") || n.attribute("upper"))
             Fail(n, "chance only takes value");
+    } else if (exists) {
+        if (n.attribute("value") || n.attribute("upper")) Fail(n, "compare=\"exists\" takes no value");
+        predicate.compare = "exists";
     } else if (n.attribute("value") || n.attribute("compare") || n.attribute("upper"))
         Fail(n, "numeric attributes require numeric condition");
     // A fall's distance is falling's or rising's: in the air at all has none.

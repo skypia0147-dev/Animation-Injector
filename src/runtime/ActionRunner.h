@@ -62,7 +62,9 @@ public:
     void ResetOnLoad();
     void OnAnimEvent(const RE::BSFixedString& a_tag);
     // a_moves: the clip's HKX carries AMR motion ("animmotion" annotations).
+    // a_duration < 0: an optional clip with nothing to play for this actor (core/ClipHooks), which ends at once.
     void OnClipActivated(int a_variant, float a_duration, bool a_moves);
+    void EndEmpty();
     void OnClipDeactivated(int a_variant);
     // 창 입력 (액션 실행 중 창 키가 눌림): step:next 창이면 Next 이벤트를 보낸다 (그래프가 창 밖이면 보관/폐기)
     // 이동 입력 변화 (InputSink): kind 0 = 이동키/스틱, 1 = 스프린트, 2 = 점프. Recovery 가 열려 있으면 이동으로 나간다
@@ -147,6 +149,9 @@ private:
     bool _exitSent = false;
     float _clipDuration = 0.0f;
     bool _endReached = false, _releaseForced = false;  // charge (10-30): ReachedEnd / ForceRelease asked this run
+    // An empty optional clip's exit (EndEmpty), sent each frame until the graph takes it: at the clip's activation the
+    // graph is still entering the state and refuses it (11-27 in-game: it went only at the 3 s safety exit).
+    bool _emptyExit = false;
     // In its Rotate window the player turns as TDM's setting would (runtime/TdmTurn.h); true when it turned.
     bool TurnLikeTdm(float a_delta);
     void MeasureSteer();

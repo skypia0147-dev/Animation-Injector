@@ -2,6 +2,7 @@
 #include "PCH.h"
 #include "runtime/ActionSpec.h"
 #include "runtime/LadderSpec.h"
+#include "runtime/GraphVariables.h"
 
 namespace AnimationInjector {
 
@@ -49,16 +50,20 @@ namespace Declarations {
 // name order.
 // `locomotion`: the <Locomotion> of the locomotion file, Locomotion\Locomotion.xml (runtime/LadderSpec.h): that one
 // file's and no other's; a <Locomotion> anywhere else is reported and not used.
-std::vector<ActionSpec> LoadAll(std::vector<EventRuleSpec>* events = nullptr, LocomotionSpec* locomotion = nullptr);
+// `variables`: also collects every file's <VariableRegistry> entries (runtime/GraphVariables.h), in file name order.
+std::vector<ActionSpec> LoadAll(std::vector<EventRuleSpec>* events = nullptr, LocomotionSpec* locomotion = nullptr,
+    std::vector<GraphVariables::Registered>* variables = nullptr);
 // LoadAll over any folder laid out like Data/SKSE/Plugins/AnimationInjector (offline scale bench).
 std::vector<ActionSpec> LoadAllFrom(const std::filesystem::path& root, std::vector<EventRuleSpec>* events = nullptr,
-    LocomotionSpec* locomotion = nullptr);
+    LocomotionSpec* locomotion = nullptr, std::vector<GraphVariables::Registered>* variables = nullptr);
 // Shared entry point for the plugin and offline declaration verification.
 bool LoadXmlFile(const std::filesystem::path& file, std::vector<ActionSpec>& output);
 bool LoadXmlFile(
     const std::filesystem::path& file, std::vector<ActionSpec>& output, std::vector<EventRuleSpec>& events);
 bool LoadXmlFile(const std::filesystem::path& file, std::vector<ActionSpec>& output, std::vector<EventRuleSpec>& events,
     LocomotionSpec& locomotion);
+bool LoadXmlFile(const std::filesystem::path& file, std::vector<ActionSpec>& output, std::vector<EventRuleSpec>& events,
+    LocomotionSpec& locomotion, std::vector<GraphVariables::Registered>& variables);
 // Key name resolver used by the plugin. Unknown names return UINT32_MAX; tests must use
 // this instead of a stand-in so validation sees the same values as the game.
 std::uint32_t ResolveKeyName(const char* name);

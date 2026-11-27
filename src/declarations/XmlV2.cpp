@@ -1047,7 +1047,7 @@ struct Compiler {
         const bool pair = std::string_view(n.name()) == "Pair";
         shape(n,
             {"id", "clip", "view", "otherView", "air", "attack", "enter", "block", "safety", "lostBlend", "reorient",
-                "interruptOnHit", "loop", "maxHold", "rig", "body", "facing", "signal"},
+                "interruptOnHit", "loop", "maxHold", "rig", "body", "facing", "signal", "optional"},
             {"Exit", "Rotate", "IFrame", "HyperArmor", "TimeScale", "Cost", "MoveCancel", "Transition", "FindPartner",
                 "Carry", "QTE", "CarryRelease", "EventValues", "Do", "Camera"});
         if (!pair) {
@@ -1166,6 +1166,13 @@ struct Compiler {
             v.file = f;
             s.clips.push_back(std::move(v));
         }
+        // An optional clip (1.1.0, runtime/ClipPresence.h): left out when no file is installed for it.
+        boolean(n, "optional");
+        s.optional = n.attribute("optional").as_bool(false);
+        if (s.optional &&
+            (pair || n.attribute("body") ||
+                (n.attribute("rig") && PairedRig::FromName(get(n, "rig")) != PairedRig::Kind::kCharacter)))
+            fail(n, "optional is for a character's ordinary full-body actions (Action, no body or rig)");
         // Charge (10-30): a loop plays on until a transition, a move cancel or its maxHold (ActionSpec.h LoopSpec).
         boolean(n, "loop");
         s.loop.enabled = n.attribute("loop").as_bool(false);
@@ -1822,8 +1829,41 @@ LocomotionSpec Locomotion(Node locomotion, const std::string& sourceName) {
     }
     return spec;
 }
+// <VariableRegistry><Variable name type source/></VariableRegistry> (runtime/GraphVariables.h, 1.1.0).
+std::vector<GraphVariables::Registered> Variables(Node registry, const std::string& sourceName) {
+    shape(registry, {}, {"Variable"});
+    std::vector<GraphVariables::Registered> out;
+    std::set<std::string> names;
+    for (auto v : registry.children("Variable")) {
+        shape(v, {"name", "type", "source"});
+        GraphVariables::Registered r;
+        r.name = required(v, "name");
+        if (!GraphVariables::ValidName(r.name))
+            fail(v, "A variable name uses 1–64 letters, digits or underscores: " + r.name);
+        if (!names.insert(lower(r.name)).second) fail(v, "Registered the same variable twice: " + r.name);
+        const auto type = required(v, "type");
+        if (!has({"bool", "int", "float"}, type)) fail(v, "type is bool, int or float: " + type);
+        r.type = type == "bool"    ? GraphVariables::Type::kBool
+                 : type == "float" ? GraphVariables::Type::kFloat
+                                   : GraphVariables::Type::kInt;
+        if (v.attribute("source")) {
+            const auto source = get(v, "source");
+            if (source != "moveInput" && source != "strafeInput")
+                fail(v, "source value is not supported: " + source + " (moveInput, strafeInput)");
+            if (r.type != GraphVariables::Type::kInt) fail(v, "source=\"" + source + "\" needs type=\"int\"");
+            r.source =
+                source == "moveInput" ? GraphVariables::Source::kMoveInput : GraphVariables::Source::kStrafeInput;
+        }
+        r.file = sourceName;
+        out.push_back(std::move(r));
+    }
+    if (out.empty()) fail(registry, "The variable registry is empty: write <Variable name=\"…\" type=\"…\"/>");
+    if (out.size() > 256) fail(registry, "Up to 256 variable registrations per file");
+    return out;
+}
 bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
-    std::vector<EventRuleSpec>& events, LocomotionSpec& locomotionOutput, std::string& mod, std::string& error,
+    std::vector<EventRuleSpec>& events, LocomotionSpec& locomotionOutput,
+    std::vector<GraphVariables::Registered>& variablesOutput, std::string& mod, std::string& error,
     KeyResolver resolveKey, std::string_view qualifier) {
     error.clear();
     try {
@@ -1835,7 +1875,7 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
         if (std::string_view(root.name()) != "AnimationSet") fail(root, "An AnimationSet root is required");
         if (get(root, "version") != "6") fail(root, "Only format 6 (version=\"6\") is read");
         shape(root, {"version", "id", "view"},
-            {"Inputs", "EventRegistry", "Start", "Condition", "Action", "Pair", "Locomotion"});
+            {"Inputs", "EventRegistry", "VariableRegistry", "Start", "Condition", "Action", "Pair", "Locomotion"});
         identifier(root, required(root, "id"));
         Compiler c{resolveKey};
         c.qualifier = std::string(qualifier);
@@ -1882,6 +1922,8 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
         if (auto r = one(root, "EventRegistry")) c.registry(r, sourceName, registry);
         LocomotionSpec locomotion;
         if (auto l = one(root, "Locomotion")) locomotion = Locomotion(l, sourceName);
+        std::vector<GraphVariables::Registered> variables;
+        if (auto v = one(root, "VariableRegistry")) variables = Variables(v, sourceName);
         // Ways into each action (T2): starts, transitions, QTE results, card rows and carry putdowns that name it.
         std::map<std::string, int> ways;
         auto count = [&](Node n, const char* attr) {
@@ -1965,15 +2007,18 @@ bool CompileFormat6(const pugi::xml_document& source, const std::string& sourceN
             if (kind.empty()) fail(node, "Undefined action: " + to);
             if (kind != "action") fail(node, "An event QTE's to points only to ordinary actions: " + to);
         }
-        if ((c.declared.empty() && registry.empty() && locomotion.Empty()) || actions.size() > 256)
+        if ((c.declared.empty() && registry.empty() && locomotion.Empty() && variables.empty()) ||
+            actions.size() > 1024)
             fail(root,
-                "It needs 1–256 actions, an event registry or locomotion ladders (Locomotion) (a start or transition "
-                "that chooses by conditions counts as one each)");
+                "It needs 1–1024 actions, an event registry, a variable registry or locomotion ladders (Locomotion) "
+                "(a start or transition that chooses by conditions counts as one each)");
         mod = get(root, "id");
         output.insert(output.end(), std::make_move_iterator(actions.begin()), std::make_move_iterator(actions.end()));
         for (auto& r : registry) c.qualify(r.qtes);
         events.insert(events.end(), std::make_move_iterator(registry.begin()), std::make_move_iterator(registry.end()));
         locomotionOutput = std::move(locomotion);
+        variablesOutput.insert(variablesOutput.end(), std::make_move_iterator(variables.begin()),
+            std::make_move_iterator(variables.end()));
         return true;
     } catch (const std::exception& e) {
         error = e.what();
@@ -1985,12 +2030,19 @@ bool Compile(const pugi::xml_document& source, const std::string& sourceName, st
     std::vector<EventRuleSpec>& events, std::string& mod, std::string& error, KeyResolver resolveKey,
     std::string_view qualifier) {
     LocomotionSpec locomotion;
-    return CompileFormat6(source, sourceName, output, events, locomotion, mod, error, resolveKey, qualifier);
+    std::vector<GraphVariables::Registered> variables;
+    return CompileFormat6(source, sourceName, output, events, locomotion, variables, mod, error, resolveKey, qualifier);
 }
 bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
     std::vector<EventRuleSpec>& events, LocomotionSpec& locomotion, std::string& mod, std::string& error,
     KeyResolver resolveKey, std::string_view qualifier) {
-    return CompileFormat6(source, sourceName, output, events, locomotion, mod, error, resolveKey, qualifier);
+    std::vector<GraphVariables::Registered> variables;
+    return CompileFormat6(source, sourceName, output, events, locomotion, variables, mod, error, resolveKey, qualifier);
+}
+bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
+    std::vector<EventRuleSpec>& events, LocomotionSpec& locomotion, std::vector<GraphVariables::Registered>& variables,
+    std::string& mod, std::string& error, KeyResolver resolveKey, std::string_view qualifier) {
+    return CompileFormat6(source, sourceName, output, events, locomotion, variables, mod, error, resolveKey, qualifier);
 }
 bool Compile(const pugi::xml_document& source, const std::string& sourceName, std::vector<ActionSpec>& output,
     std::string& mod, std::string& error, KeyResolver resolveKey, std::string_view qualifier) {

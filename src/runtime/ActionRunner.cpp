@@ -2,6 +2,7 @@
 #include "runtime/PairTargetMath.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/AttackDataLayer.h"
+#include "runtime/ClipPresence.h"
 #include "runtime/PartRunner.h"
 #include "runtime/PostCancelTime.h"
 #include "runtime/ActionRegistry.h"
@@ -204,7 +205,7 @@ bool ActionRunner::RestartLinked(const RE::BSFixedString& ground, const RE::BSFi
     RestoreSlots();
     _elapsed = 0.0f;
     _carryReleaseDue = false;
-    _endReached = _releaseForced = false;
+    _endReached = _releaseForced = _emptyExit = false;
     _seenTags.clear();
     ResetPlaybackFlags();
     _clipTime = -1.0f;
@@ -267,7 +268,7 @@ bool ActionRunner::RequestImpl(const RE::BSFixedString* ground, const RE::BSFixe
     _elapsed = 0.0f;
     _carryReleaseDue = false;
     _exitSent = false;
-    _endReached = _releaseForced = false;
+    _endReached = _releaseForced = _emptyExit = false;
     _clipDuration = 0.0f;
     _exitingTime = 0.0f;
     _seenTags.clear();
@@ -535,7 +536,7 @@ void ActionRunner::Adopt(int a_variant) {
     _elapsed = 0.0f;
     _carryReleaseDue = false;
     _exitSent = false;
-    _endReached = _releaseForced = false;
+    _endReached = _releaseForced = _emptyExit = false;
     _clipDuration = 0.0f;
     _exitingTime = 0.0f;
     _seenTags.clear();
@@ -973,6 +974,25 @@ void ActionRunner::OnClipActivated(int a_variant, float a_duration, bool a_moves
     if (_isPlayer) PairFeatures::BeginActionCamera(_owner, _idx);
     logger::debug("[{}] clip activated: variant {}, length {:.3f}s, safety exit at {:.2f}s", Spec().id, _variant,
         a_duration, SafetyTime());
+    if (a_duration < 0.0f) EndEmpty();
+}
+
+// An optional clip with nothing to play for this actor (core/ClipHooks: no replacement, no file of its own): it ends
+// at once, as MCO's graph passes a clip that has no file. A loop counts as let go (its on="release" goes), an action
+// with an on="end" goes there, any other exits. Until 11-27 such a clip held a still pose until the safety exit (a
+// charge loop for maxHold).
+void ActionRunner::EndEmpty() {
+    if (_state != State::kActive || _exitSent) return;
+    logger::info("[{}] actor {:08X}: no file for this actor (the replacer gives this optional clip none): ends at once",
+        Spec().id, Owner() ? Owner()->GetFormID() : 0);
+    if (Spec().loop.enabled) {
+        _releaseForced = true;
+        if (ActionLinks::ForceRelease(_owner, _idx)) return;
+    } else if (Spec().endLinkAt >= 0.0f) {
+        _endReached = true;
+        if (ActionLinks::ReachedEnd(_owner, _idx)) return;
+    }
+    _emptyExit = true;
 }
 
 float ActionRunner::SafetyTime() const noexcept {
@@ -1261,7 +1281,15 @@ void ActionRunner::Update(float a_delta) {
             _elapsed >= _clipDuration - spec.endLinkAt) {
             _endReached = true;
             RunTimedEffects(std::numeric_limits<float>::infinity());
-            if (_state == State::kActive && !ActionLinks::ReachedEnd(_owner, _idx)) ExitForLink();
+            // An on="end" to an optional action left out (runtime/ClipPresence.h) is no transition: the action exits
+            // at its Exit point as it would without one (11-27: MCO's power hits waited for a charge loop no moveset
+            // had, asking each frame until the clip ended, and so left later than before).
+            const bool nowhere = std::any_of(spec.links.begin(), spec.links.end(), [](const ActionLinkSpec& l) {
+                if (!l.onEnd || l.action.empty()) return false;
+                const int to = Actions::IndexOf(l.action);
+                return to >= 0 && ClipPresence::Absent(to);
+            });
+            if (_state == State::kActive && (nowhere || !ActionLinks::ReachedEnd(_owner, _idx))) ExitForLink();
         }
         // maxHold counts from the press of the key that started the charge while it is down (a moving charge keeps
         // one clock from loop to loop), else from this action's start.
@@ -1273,6 +1301,7 @@ void ActionRunner::Update(float a_delta) {
             if (!ActionLinks::ForceRelease(_owner, _idx)) ExitForLink();
         }
     }
+    if (_emptyExit && _state == State::kActive && !_exitSent) ExitForLink();
     if (_state == State::kActive && !_exitSent && _elapsed >= SafetyTime()) {
         RunTimedEffects(std::numeric_limits<float>::infinity());
         if (_state != State::kActive) return;

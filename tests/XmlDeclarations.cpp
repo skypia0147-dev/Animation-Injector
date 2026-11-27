@@ -186,9 +186,15 @@ std::vector<std::string> registrySnapshot(std::vector<EventRuleSpec> events) {
     std::sort(out.begin(), out.end());
     return out;
 }
+// The file's <VariableRegistry> entries of the last load (runtime/GraphVariables.h).
+std::vector<GraphVariables::Registered> g_variables;
+const char* variableType(GraphVariables::Type t) {
+    return t == GraphVariables::Type::kBool ? "bool" : t == GraphVariables::Type::kFloat ? "float" : "int";
+}
 bool load(
     const wchar_t* path, std::vector<ActionSpec>& out, std::vector<EventRuleSpec>& events, LocomotionSpec& locomotion) {
-    return Declarations::LoadXmlFile(path, out, events, locomotion);
+    g_variables.clear();
+    return Declarations::LoadXmlFile(path, out, events, locomotion, g_variables);
 }
 bool load(const wchar_t* path, std::vector<ActionSpec>& out, std::vector<EventRuleSpec>& events) {
     LocomotionSpec locomotion;
@@ -399,6 +405,12 @@ int validateJson(const wchar_t* path) {
                                 std::string(kTreeUseNames[static_cast<std::size_t>(locomotion.trees[i].use)]));
         jsonList(std::cout, trees);
     }
+    {
+        std::vector<std::string> variables;
+        for (const auto& v : g_variables) variables.push_back(v.name);
+        std::cout << ",\"variables\":";
+        jsonList(std::cout, variables);
+    }
     std::cout << ",\"errors\":";
     jsonList(std::cout, errors);
     std::cout << ",\"warnings\":";
@@ -533,6 +545,12 @@ int wmain(int argc, wchar_t** argv) {
         for (std::size_t i = 0; i < kLadderSetCount; ++i)
             if (locomotion.declared && locomotion.except[i])
                 std::cout << "Except " << LadderSetName(static_cast<LadderSet>(i)) << '\n';
+        for (const auto& v : g_variables)
+            std::cout << "Variable " << v.name << " type=" << variableType(v.type)
+                      << (v.source == GraphVariables::Source::kMoveInput        ? " source=moveInput"
+                             : v.source == GraphVariables::Source::kStrafeInput ? " source=strafeInput"
+                                                                                : "")
+                      << '\n';
         for (auto& a : out) {
             std::cout << a.id << " key=" << a.trigger.key << " clips=" << a.clips.size()
                       << " rig=" << PairedRig::Name(a.rig) << " targetRig=" << PairedRig::Name(a.paired.targetRig)

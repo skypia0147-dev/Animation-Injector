@@ -380,6 +380,18 @@ int main() {
                 "an attribute format 6 does not have");
             Check(Refused(Parse("<Action id='A' clip='a.hkx'/>", "5"), "Only format 6"), "only format 6 is read");
         }
+        // optional (1.1.0): an ordinary character action whose clip may be installed nowhere.
+        {
+            const auto p =
+                Parse("<Action id='A' clip='a.hkx' optional='true' loop='true'/><Action id='B' clip='b.hkx'/>");
+            Check(p.ok && p["A"].optional && !p["B"].optional, "optional reads onto the action");
+            Check(Refused(Parse("<Action id='A' clip='a.hkx' optional='yes'/>"), "optional"),
+                "optional is true or false");
+            Check(Refused(Parse("<Action id='A' clip='a.hkx' optional='true' body='upper'/>"), "optional"),
+                "a part action is never optional");
+            Check(Refused(Parse("<Action id='A' clip='a.hkx' optional='true' rig='dog'/>"), "optional"),
+                "a creature action is never optional");
+        }
         std::cout << "Format 6 checks passed: " << checks << "\n";
         return 0;
     } catch (const std::exception& e) {

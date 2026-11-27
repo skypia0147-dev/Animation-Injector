@@ -333,6 +333,14 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
     case Test::kGraphVariable: {
         // 1.1.0. Not per frame: a condition is read when a start, a transition or an NPC's choice asks.
         const RE::BSFixedString name(p.variable);
+        // compare="exists": whether the graph has it at all (its value read as its own type; any type answers).
+        if (p.compare == "exists") {
+            bool b = false;
+            std::int32_t i = 0;
+            float f = 0.0f;
+            return boolean(subject->GetGraphVariableBool(name, b) || subject->GetGraphVariableInt(name, i) ||
+                           subject->GetGraphVariableFloat(name, f));
+        }
         if (p.variableType == "bool") {
             bool value = false;
             return subject->GetGraphVariableBool(name, value) ? numeric(value ? 1.0 : 0.0) : Value::kUnavailable;

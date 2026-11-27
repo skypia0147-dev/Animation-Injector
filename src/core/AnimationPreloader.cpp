@@ -6,6 +6,7 @@
 #include "core/AnimationBindingWithTriggers.h"
 #include "core/ClipHooks.h"
 #include "core/OwnLocomotion.h"
+#include "runtime/ClipPresence.h"
 #include "runtime/ActionRegistry.h"
 #include "runtime/PairedRig.h"
 #include "Settings.h"
@@ -682,6 +683,7 @@ void Install() {
         for (int a = 0; a < Actions::Count(); ++a) {
             const auto& spec = Actions::Spec(a);
             if (spec.paired.enabled || spec.CreatureAction() || spec.Part()) continue;  // parts: above
+            if (ClipPresence::Absent(a)) continue;  // an optional clip installed nowhere: never played
             for (const auto& clip : spec.clips)
                 ordinary.push_back({clip.file, clip.clipName + "_Preload", spec.view.view});
         }

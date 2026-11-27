@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace AnimationInjector::ConditionFlow {
@@ -72,9 +73,11 @@ inline Error Validate(std::span<const Node> nodes, int entry, std::size_t predic
 
 // Evaluation only selects a destination. Starting it and charging costs belong to the caller.
 // A fresh invocation is required at transition time; do not cache buffered-input results.
-template<class ReadPredicate>
-Result Select(
-    std::span<const Node> nodes, int entry, std::size_t predicates, std::size_t actions, ReadPredicate&& read) {
+// `passOver(action)` names a destination that cannot play here (an optional action whose clip is installed nowhere,
+// runtime/ClipPresence.h): its row counts as false and the selection goes on to the next.
+template<class ReadPredicate, class PassOver>
+Result Select(std::span<const Node> nodes, int entry, std::size_t predicates, std::size_t actions, ReadPredicate&& read,
+    PassOver&& passOver) {
     Result result;
     result.error = Validate(nodes, entry, predicates, actions);
     if (result.error != Error::kNone) return result;
@@ -114,6 +117,7 @@ Result Select(
         result.unavailable |= v == Value::kUnavailable;
         return v;
     };
+    int lastCondition = absent;
     for (int id = entry; id != absent;) {
         if (budget == 0) {
             result.error = Error::kBudget;
@@ -123,14 +127,26 @@ Result Select(
         const auto& n = nodes[id];
         if (n.kind == Kind::kStop) break;
         if (n.kind == Kind::kAction) {
+            if (passOver(n.action)) {
+                // The row that led here is passed over: on to what its condition does when false.
+                id = lastCondition == absent ? absent : nodes[lastCondition].fail;
+                lastCondition = absent;
+                continue;
+            }
             result.action = n.action;
             break;
         }
         const auto answer = value(value, id);
         if (result.error != Error::kNone) break;
+        lastCondition = id;
         id = answer == Value::kTrue ? n.pass : n.fail;
     }
     if (result.error != Error::kNone) result.action = absent;
     return result;
+}
+template<class ReadPredicate>
+Result Select(
+    std::span<const Node> nodes, int entry, std::size_t predicates, std::size_t actions, ReadPredicate&& read) {
+    return Select(nodes, entry, predicates, actions, std::forward<ReadPredicate>(read), [](int) { return false; });
 }
 }

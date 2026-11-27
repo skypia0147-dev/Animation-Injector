@@ -36,6 +36,13 @@ int main() {
     Check(choose() == 0);
     scene = {Value::kFalse, Value::kUnavailable};
     Check(choose() == absent);
+    // A destination that cannot play here (an optional action left out, 1.1.0) is passed over: its row counts as
+    // false and the next row's destination is chosen; with none after it, nothing is.
+    scene = {Value::kTrue, Value::kTrue};
+    Check(Select(graph, 0, 2, 2, [&](int i) { return scene[i]; }, [](int a) { return a == 0; }).action == 1);
+    Check(Select(graph, 0, 2, 2, [&](int i) { return scene[i]; }, [](int) { return true; }).action == absent);
+    scene = {Value::kFalse, Value::kTrue};
+    Check(Select(graph, 0, 2, 2, [&](int i) { return scene[i]; }, [](int a) { return a == 0; }).action == 1);
     // Rejoining branches are valid; execution cycles, even disconnected, are not.
     graph[1].pass = 2;
     Check(Validate(graph, 0, 2, 2) == Error::kNone);

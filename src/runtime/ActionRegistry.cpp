@@ -8,8 +8,11 @@
 #include "runtime/InputSink.h"
 #include "runtime/EventHistory.h"
 #include "runtime/ActionRegistry.h"
+#include "runtime/ClipPresence.h"
 #include "runtime/PartRunner.h"
 #include "runtime/Signals.h"
+#include "runtime/InputVariables.h"
+#include "runtime/PayloadCommands.h"
 #include "runtime/NpcDecision.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/ClipIndex.h"
@@ -142,7 +145,8 @@ int ResolveFlow(
     CaptureMovement(random);
     CaptureHeld(random);
     const auto result = ConditionFlow::Select(
-        spec.flow.nodes, spec.flow.entry, spec.flow.predicates.size(), spec.flowActions.size(), [&](int index) {
+        spec.flow.nodes, spec.flow.entry, spec.flow.predicates.size(), spec.flowActions.size(),
+        [&](int index) {
             using Value = ConditionFlow::Value;
             using Test = ConditionFlowXml::Test;
             const auto& p = spec.flow.predicates[index];
@@ -246,6 +250,11 @@ int ResolveFlow(
             }
             }
             return answer ? Value::kTrue : Value::kFalse;
+        },
+        [&](int destination) {
+            // An optional action left out (runtime/ClipPresence.h): its row is passed over.
+            const int index = IndexOf(spec.flowActions[destination]);
+            return index >= 0 && ClipPresence::Absent(index);
         });
     if (result.action < 0 || result.error != ConditionFlow::Error::kNone || (requireAvailable && result.unavailable))
         return -1;
@@ -295,6 +304,7 @@ std::vector<ActionSpec> g_specs;
 ClipIndex g_clipIndex;
 DeclarationCatalog g_catalog;
 LocomotionSpec g_locomotion;
+std::vector<GraphVariables::Registered> g_variables;
 std::unordered_map<std::string, int> g_idIndex;  // exact id -> action
 std::unordered_map<std::uint32_t, std::vector<int>> g_keyActions, g_padActions;
 // Actions started by a game control (0.12.292), and whether any start or transition names one.
@@ -309,8 +319,9 @@ const std::vector<int> kNoActions;
 // first reader, comes after the game's own data load.
 struct Declared {
     std::vector<ActionSpec> specs;
-    std::vector<EventRuleSpec> events;  // every file's EventRegistry, merged by EventRegistry::Build
-    LocomotionSpec locomotion;          // the locomotion file's <Locomotion> (runtime/LadderSpec.h)
+    std::vector<EventRuleSpec> events;                  // every file's EventRegistry, merged by EventRegistry::Build
+    LocomotionSpec locomotion;                          // the locomotion file's <Locomotion> (runtime/LadderSpec.h)
+    std::vector<GraphVariables::Registered> variables;  // every file's <VariableRegistry>
     ClipIndex clips;
     DeclarationCatalog catalog;
     std::unordered_map<std::string, int> ids;
@@ -326,7 +337,7 @@ Declared BuildDeclarations() {
     using Clock = std::chrono::steady_clock;
     Declared d;
     const auto loadStart = Clock::now();
-    d.specs = Declarations::LoadAll(&d.events, &d.locomotion);
+    d.specs = Declarations::LoadAll(&d.events, &d.locomotion, &d.variables);
     ExpandFlowLinkRoutes(d.specs);
     d.clips.Build(d.specs);
     // Lookups that used to walk every action: by id, by start key, button or game control, and the links
@@ -383,6 +394,9 @@ Declared BuildDeclarations() {
     registered.reserve(d.events.size() + 1);
     // The annotation command event (runtime/AnnotationCommands.h) is in every graph, declared or not.
     registered.emplace_back(AnnotationCommands::kEvent);
+    // Payload Interpreter's event, so its annotations reach the runtime without a behavior patch
+    // (runtime/PayloadCommands.h).
+    registered.emplace_back(PayloadCommands::kEvent);
     for (const auto& rule : d.events) registered.push_back(rule.name);
     d.catalog.Build(d.specs, registered);
     d.catalogMs = std::chrono::duration<double, std::milli>(Clock::now() - catalogStart).count();
@@ -448,6 +462,7 @@ void Publish() {
     }
     g_clipIndex = std::move(d.clips);
     g_locomotion = std::move(d.locomotion);
+    g_variables = std::move(d.variables);
     g_catalog = std::move(d.catalog);
     g_idIndex = std::move(d.ids);
     g_keyActions = std::move(d.keyActions);
@@ -702,6 +717,9 @@ struct AnimEventHook {
                 OnAnimEventFrom(actor, a_ev->tag);
                 static const RE::BSFixedString command(AnnotationCommands::kEvent.data());
                 if (a_ev->tag == command) AnnotationCommands::Observe(actor, a_ev->payload);
+                // Payload Interpreter's native commands, when it is not installed (runtime/PayloadCommands.h).
+                static const RE::BSFixedString payloadEvent(PayloadCommands::kEvent.data());
+                if (a_ev->tag == payloadEvent) PayloadCommands::Observe(actor, a_ev->payload);
             }
         }
         return func(a_sink, a_ev, a_src);
@@ -741,6 +759,7 @@ struct
         PairFeatures::Update(a_delta);
         EventRegistry::Update(a_delta);
         AnnotationCommands::Update();
+        PayloadCommands::Update();
         GripHold::Update(a_delta);
         PairedSession::Update(a_delta);
         PairRootScale::Update();
@@ -749,6 +768,7 @@ struct
         UpdateNpcRunners(a_delta);
         PartRunner::Update(a_delta);      // part actions (body=): the layer weights, clocks and interruptions
         Signals::Update();                // OAR signals of the actions now playing (after every runner moved on)
+        InputVariables::Update();         // registered variables the runtime keeps (<Variable source>)
         static float ensureTimer = 0.0f;  // NPC 프로젝트 DB 에 이벤트 이름 등록 (외부 진입 이벤트가 오기 전에)
         Qte::Update(a_delta);
         QteMenu::Sync();  // the QTE menu is open only while a QTE is on screen
@@ -1048,6 +1068,10 @@ const LocomotionSpec& Locomotion() {
     EnsureLoaded();
     return g_locomotion;
 }
+const std::vector<GraphVariables::Registered>& RegisteredVariables() {
+    EnsureLoaded();
+    return g_variables;
+}
 
 bool AnyActive() {
     return g_playerBound.load(std::memory_order_acquire) &&
@@ -1101,6 +1125,7 @@ void BeforeGameLoad() {
     ResetEventTriggers();
     PartRunner::Reset();
     Signals::Reset();
+    InputVariables::Reset();
     NpcDecision::Reset();
     g_callbacks.Clear();
     for (auto& [id, entry] : NpcSnapshot()) entry->runners.ForEach([](int, ActionRunner& r) { r.ResetOnLoad(); });
@@ -1125,6 +1150,7 @@ void OnGameLoad() {
     PairedSession::ResetOnLoad();
     PartRunner::Reset();
     Signals::Reset();
+    InputVariables::Reset();
     NpcDecision::Reset();
     static int n = 0;
     BindPlayer();

@@ -195,6 +195,10 @@ struct ActionSpec {
     TriggerSpec trigger;
     ConditionSpec condition;
     LoopSpec loop;
+    // optional="true" (1.1.0): an action whose clip a moveset may or may not have (MCO's charge and transition clips).
+    // When no file is installed for it anywhere (runtime/ClipPresence.h), it is not made and what goes to it is
+    // passed over.
+    bool optional = false;
     float safetyDuration = 3.0f;         // 클립 길이를 모를 때의 보험 타이머 (페어 기본은 파서가 30)
     float exitTriggerBeforeEnd = 0.05f;  // 클립 끝 몇 초 전에 exit 발화. <0 = 트리거를 만들지 않음(HKX 주석이 공급)
     // Charge (10-30): an on="end" transition takes the Exit point (seconds before the clip's end) from the exit
