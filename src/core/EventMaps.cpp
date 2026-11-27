@@ -7,6 +7,7 @@
 #include "core/FullBodyEntryNames.h"
 #include "core/PairEntryNames.h"
 #include "runtime/Signals.h"
+#include "runtime/GraphVariables.h"
 #include <span>
 #include <unordered_set>
 
@@ -237,6 +238,16 @@ void Ensure(RE::Actor* p, const std::vector<std::string>& a_names) {
         if (!signals.empty() && !EnsureVariableLookup(g.get(), signals))
             logger::error("[Signal] project '{}' variable lookup could not be extended; OAR conditions will not read "
                           "the signals",
+                projectName);
+    }
+    // The graph variables checks read (runtime/GraphVariables.h, 1.1.0): those the master graph has.
+    if (rig == PairedRig::Kind::kCharacter && !GraphVariables::All().empty()) {
+        std::vector<const char*> names;
+        for (const auto& v : GraphVariables::All())
+            if (FindEventName(data->stringData->variableNames, v.name.c_str()) >= 0) names.push_back(v.name.c_str());
+        if (!names.empty() && !EnsureVariableLookup(g.get(), names))
+            logger::error("[GraphVariable] project '{}' variable lookup could not be extended; checks and annotations "
+                          "will not reach the variables",
                 projectName);
     }
 

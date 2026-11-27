@@ -85,10 +85,16 @@ struct CapturedTrigger {
     int action = -1;
     RE::ActorHandle target;
     bool sprinting = false;
+    // Seconds it has waited for an action of the actor to finish leaving (1.1.0: a start asked while one blends out
+    // plays once it is gone, within a second).
+    float age = 0.0f;
 };
 std::vector<CapturedTrigger> CaptureEventTrigger(RE::Actor* actor, const RE::BSFixedString& event);
 bool CommitEventTrigger(const std::vector<CapturedTrigger>& captured);
 bool QueueEventTrigger(RE::Actor* actor, const RE::BSFixedString& event);
+// A start asked by the runtime for an NPC (a combat start, runtime/NpcDecision.h, 1.1.0): queued as an event start is,
+// its conditions read with `target` as the partner on the next update. Main thread.
+void QueueStart(RE::Actor* actor, int action, RE::ActorHandle target);
 void ResetEventTriggers();
 // An NPC's graph is asked for an event: its move cancel may end the action on it (runtime/NpcMoveCancel.h).
 void NoteNpcRequest(RE::Actor* actor, const RE::BSFixedString& event);

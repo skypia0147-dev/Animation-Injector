@@ -74,7 +74,11 @@ enum class Test {
     kRecentEvent,
     // 11-22. The foot that last touched the ground (option left|right): of the two foot events, FootLeft and FootRight,
     // the one that reached the subject last (runtime/EventHistory.h). A stop clip for each foot on moveStop.
-    kFoot
+    kFoot,
+    // 1.1.0. A graph variable of the subject (variable, type bool|int|float) compared (compare, value; a bool reads
+    // 0 or 1). Every variable a check names is added to the third-person character graphs (runtime/GraphVariables.h),
+    // so a clip's annotation (Payload Interpreter's @SGVI) can set it.
+    kGraphVariable
 };
 enum class EquippedType {
     kBow,
@@ -124,13 +128,19 @@ struct Predicate {
     std::uint32_t form = 0;
     // A keyword check named by its editor ID (keyword=) instead of plugin and form: keywords keep their editor ID in
     // game, unlike most forms. `keywordForm` is the keyword found once the game data is loaded (ActionRegistry), 0
-    // until then or when no loaded plugin has it.
+    // until then or when no loaded plugin has it. `keywordMissing` is set once the game data is loaded and no plugin
+    // has it (1.1.0): nothing can carry such a keyword, so the check is false rather than unavailable.
     std::string keyword;
     std::uint32_t keywordForm = 0;
+    bool keywordMissing = false;
     float equals = 1;
     std::string option;
     std::string compare = "le";
+    // resource: current|percent, actorValue: current|base. distance (1.1.0): "reach" measures the gap past the
+    // subject's attack reach (the distance less that reach and the other actor's bound radius); else the distance.
     std::string measure = "current";
+    // kGraphVariable (1.1.0): its name and type ("bool", "int" or "float").
+    std::string variable, variableType;
     float value = 0, upper = 0;
     // kPreviousAction: the action ids as written, their indices once every declaration is loaded
     // (runtime/ActionRegistry.cpp), the seconds since it ended (< 0 = any) and how it ended. kHitReceived: within.

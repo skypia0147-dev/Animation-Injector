@@ -21,6 +21,7 @@
 #include <bit>
 #include <format>
 #include "runtime/Signals.h"
+#include "runtime/GraphVariables.h"
 #include <functional>
 #include <map>
 #include <tuple>
@@ -1351,6 +1352,37 @@ void AddSignalVariables(RE::hkbBehaviorGraph* graph) {
     }
     logger::info("[Signal] {} of {} signal variables in the character graph", added, variables.size());
 }
+// The graph variables checks read (runtime/GraphVariables.h, 1.1.0), 0 or false, into a third-person character master
+// graph; one the graph has already (an MCO-patched graph's) is kept as it is.
+void AddGraphVariables(RE::hkbBehaviorGraph* graph) {
+    using VT = RE::hkbVariableInfo::VariableType;
+    const auto& variables = GraphVariables::All();
+    if (variables.empty()) return;
+    int added = 0;
+    for (const auto& v : variables) {
+        const char* name = v.name.c_str();
+        int index = -1;
+        switch (v.type) {
+        case GraphVariables::Type::kBool:
+            index = EnsureVariable(graph, name, VT::VARIABLE_TYPE_BOOL,
+                [&](RE::hkbBehaviorGraphData& data) { return data.AddBoolVariable(RE::hkStringPtr(name), false); });
+            break;
+        case GraphVariables::Type::kInt:
+            index = EnsureVariable(graph, name, VT::VARIABLE_TYPE_INT32,
+                [&](RE::hkbBehaviorGraphData& data) { return data.AddIntVariable(RE::hkStringPtr(name), 0); });
+            break;
+        case GraphVariables::Type::kFloat:
+            index = EnsureVariable(graph, name, VT::VARIABLE_TYPE_REAL,
+                [&](RE::hkbBehaviorGraphData& data) { return data.AddFloatVariable(RE::hkStringPtr(name), 0.0f); });
+            break;
+        }
+        if (index < 0)
+            logger::error("[GraphVariable] '{}' could not be added (a variable of that name has another type)", name);
+        else
+            ++added;
+    }
+    logger::info("[GraphVariable] {} of {} graph variables in the character graph", added, variables.size());
+}
 // Builds the two shared root entries of a character graph (see core/FullBodyEntry.h). On any
 // mismatch the reason is returned and the graph gets no full-body action.
 const char* PrepareSharedEntry(
@@ -2193,7 +2225,10 @@ void TryInjectGraph(RE::hkbBehaviorGraph* a_graph, RE::hkbCharacter* a_character
     // Events go into this graph right before its first action (a validated target that no action
     // enters gets none).
     const bool rootTarget = std::strcmp(tgt->smName, "RootBehaviorGraph") == 0;
-    if (rootTarget && !g_currentFirstPerson) AddSignalVariables(a_graph);
+    if (rootTarget && !g_currentFirstPerson) {
+        AddSignalVariables(a_graph);
+        AddGraphVariables(a_graph);
+    }
     // The node id budget: the graph's own nodes now, then every node an action makes. An action that might not fit
     // is left out whole, and the graph keeps working (see "Node id budget" above).
     const char* viewLabel = g_currentFirstPerson ? "first-person" : "third-person";

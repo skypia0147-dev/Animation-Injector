@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 #include "runtime/PairFeatureSpec.h"
@@ -40,9 +41,16 @@ struct ActorHandle {
 struct Actor {
     unsigned id = 0;
     bool exists = true, loaded = true, dead = false, ragdoll = false;
+    // An NPC's combat (on="npc" transitions, 1.1.0).
+    bool combat = false;
+    struct RuntimeData {
+        ActorHandle currentCombatTarget;
+    } runtime;
     bool Is3DLoaded() const { return loaded; }
     bool IsDead() const { return dead; }
     bool IsInRagdollState() const { return ragdoll; }
+    bool IsInCombat() const { return combat; }
+    RuntimeData& GetActorRuntimeData() { return runtime; }
     unsigned GetFormID() const { return id; }
     bool GetGraphVariableBool(const BSFixedString&, bool& value) {
         value = false;
@@ -138,8 +146,14 @@ inline RE::ActorHandle CaptureTarget(RE::Actor*, int, RE::ActorHandle partner = 
 inline int flowSelection = -2;
 inline std::vector<std::uint64_t> requestSeeds;
 inline int resolvedMovement = -2;  // the movement direction the last request read
+// The flows ResolveFlow refuses (an on="npc" transition's checks that do not hold), by destination, and the partner the
+// last one was read with.
+inline std::vector<int> refusedFlows;
+inline RE::ActorHandle resolvedPartner;
 inline int ResolveFlow(
-    RE::Actor*, int action, RE::ActorHandle = {}, bool = false, ConditionValues::Request* request = nullptr) {
+    RE::Actor*, int action, RE::ActorHandle partner = {}, bool = false, ConditionValues::Request* request = nullptr) {
+    resolvedPartner = partner;
+    if (std::find(refusedFlows.begin(), refusedFlows.end(), action) != refusedFlows.end()) return -1;
     if (request) {
         resolvedMovement = request->movementCaptured ? request->movementDirection : -2;
         request->Chance(action, 0, 30);
@@ -156,6 +170,11 @@ inline int IndexOf(std::string_view id) {
 }
 inline ActionRunner* RunnerFor(RE::Actor* actor, int index, bool) {
     return actor ? &runners[actor->id][index] : nullptr;
+}
+// Same lookup as RunnerFor; the stub runners outlive the test, so the reference does not own them.
+inline std::shared_ptr<ActionRunner> RunnerRef(RE::Actor* actor, int index) {
+    auto* r = RunnerFor(actor, index, false);
+    return r ? std::shared_ptr<ActionRunner>(std::shared_ptr<void>{}, r) : nullptr;
 }
 }
 namespace PairedSession {

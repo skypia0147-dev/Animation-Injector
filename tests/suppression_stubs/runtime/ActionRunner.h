@@ -11,13 +11,15 @@ struct ActionSpec {
     SuppressSpec suppress;
     struct Trigger {
         std::string onEvent;
-        bool onEventNpc = true;
+        bool onEventPlayer = false, onEventNpc = true;
     } trigger;
 };
 struct ActionRunner {
     bool active = false;
     int origin = -1;
+    bool leaving = false;
     bool IsActive() const { return active; }
+    bool Leaving() const { return leaving; }
     int RequestOrigin() const { return origin; }
 };
 }

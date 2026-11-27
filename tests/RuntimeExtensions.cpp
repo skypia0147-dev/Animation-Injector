@@ -118,6 +118,71 @@ int wmain(int argc, wchar_t** argv) {
                 two("", "<Transition to='B' on='move' key='G'/>"), two("", "<Transition to='B' on='move' event='E'/>"),
                 two("", "<HyperArmor until='end-0.2'/>", "loop='true'"), two("", "", "align='camera'")})
             Check(!Valid(bad), "charge rejected");
+        // 1.1.0: an NPC's own transition (on="npc"), a transition's cooldown and a combat start (combat="npc").
+        {
+            const auto compiled = [](const std::string& xml) {
+                pugi::xml_document in;
+                std::vector<ActionSpec> out;
+                std::string mod, error;
+                in.load_string(xml.c_str());
+                XmlV2::Compile(in, "test", out, mod, error, [](const char*) -> std::uint32_t { return 34; });
+                return out;
+            };
+            const auto npc = compiled(two("", "<Transition to='B' on='npc' from='0.3' until='1' cooldown='2'/>"));
+            Check(npc.size() == 2 && npc[0].links.size() == 1 && npc[0].links[0].onNpc &&
+                      Near(npc[0].links[0].cooldown, 2.0f) && Near(npc[0].links[0].openAt, 0.3f),
+                "an NPC's transition read");
+            const auto keyed = compiled(two("", "<Transition to='B' key='G' cooldown='0.5'/>"));
+            Check(keyed.size() == 2 && keyed[0].links.size() == 1 && !keyed[0].links[0].onNpc &&
+                      Near(keyed[0].links[0].cooldown, 0.5f),
+                "a key transition's cooldown read");
+            for (const auto& ok : {two("", "<Transition to='B' on='npc'/>"),
+                     two("", "<Transition to='B' on='npc' from='event:Open' until='event:Close'><Check kind='distance' "
+                             "measure='reach' compare='le' value='50'/><Check kind='chance' value='60'/></Transition>"),
+                     two("", "<Transition to='B' on='npc'/><Transition to='B' event='attackStart'/>"),
+                     two("", "<Transition to='B' on='npc' from='0.2'/><Transition to='A' on='npc' from='0.2'/>"),
+                     two("", "<Transition to='B' event='E' cooldown='600'/>")})
+                Check(Valid(ok), "an NPC's transition or a cooldown accepted");
+            for (const auto& bad :
+                {two("", "<Transition to='B' on='npc' key='G'/>"), two("", "<Transition to='B' on='npc' event='E'/>"),
+                    two("", "<Transition to='B' on='npc' buffer='false'/>"),
+                    two("", "<Transition to='B' key='G' cooldown='-1'/>"),
+                    two("", "<Transition to='B' key='G' cooldown='601'/>"),
+                    two("", "<Transition end='true' event='Stop' cooldown='1'/>"),
+                    two("", "<Transition to='B' on='npc'/>", "body='upper'"),
+                    two("", "<Transition to='B' on='player'/>")})
+                Check(!Valid(bad), "an NPC's transition or a cooldown rejected");
+            Check(!Valid("<AnimationSet version='6' id='Test'><Pair id='P' clip='p.hkx'><FindPartner/>"
+                         "<Transition to='A' on='npc'/></Pair><Action id='A' clip='a.hkx'/></AnimationSet>"),
+                "an NPC's transition on a pair");
+            // bufferFrom (1.1.0): a buffered window that opens later, on a key, an event or a movement key.
+            const auto late = compiled(
+                two("", "<Transition to='B' event='E' from='event:Open' until='event:Close' bufferFrom='0.35'/>"));
+            Check(late.size() == 2 && late[0].links.size() == 1 && Near(late[0].links[0].bufferFrom, 0.35f),
+                "bufferFrom read");
+            for (const auto& bad : {two("", "<Transition to='B' event='E' bufferFrom='0.35'/>"),
+                     two("", "<Transition to='B' event='E' from='0.5' buffer='false' bufferFrom='0.35'/>"),
+                     two("", "<Transition to='B' on='npc' from='0.5' bufferFrom='0.35'/>"),
+                     two("", "<Transition to='B' event='E' from='0.5' bufferFrom='-1'/>")})
+                Check(!Valid(bad), "bufferFrom rejected");
+            const auto combat = compiled(Start("combat='npc' every='1.5'"));
+            Check(combat.size() == 1 && combat[0].trigger.onCombat && Near(combat[0].trigger.every, 1.5f) &&
+                      combat[0].trigger.onEvent.empty() && !combat[0].trigger.key,
+                "a combat start read");
+            for (const auto& ok : {"combat='npc'", "combat='npc' cooldown='3'"})
+                Check(Valid(Start(ok)), "a combat start accepted");
+            Check(Valid(Start("combat='npc'", "<Check kind='distance' measure='reach' compare='range' value='100' "
+                                              "upper='300'/><Check kind='chance' value='30'/>")),
+                "a combat start with checks");
+            for (const auto& bad : {"combat='npc' event='E'", "combat='npc' key='G'", "combat='npc' actor='npc'",
+                     "combat='npc' target='combatTarget'", "combat='npc' block='attackStart'",
+                     "combat='npc' press='tap'", "combat='player'", "combat='npc' every='0'", "combat='npc' every='61'",
+                     "key='G' every='1'"})
+                Check(!Valid(Start(bad)), "a combat start rejected");
+            Check(!Valid("<AnimationSet version='6' id='Test'><Start combat='npc' to='P'/><Pair id='P' clip='p.hkx'>"
+                         "<FindPartner/></Pair></AnimationSet>"),
+                "a combat start of a pair");
+        }
         Check(Valid(Start("key='G'", "<Check kind='heldTime' compare='ge' value='1.5'/>")), "held time accepted");
         Check(!Valid(Start("key='G'", "<Check kind='heldTime' subject='partner' compare='ge' value='1.5'/>")),
             "held time has no subject");

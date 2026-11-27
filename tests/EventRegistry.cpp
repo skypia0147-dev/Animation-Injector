@@ -285,6 +285,23 @@ int main() {
             "a sound's volume is the action's");
         Check(Rejected("<EventRegistry><Event name='X'><Do op='modEvent'/></Event></EventRegistry>"),
             "a mod event needs a name");
+        // 1.1.0: an animation event handed to the actor as its graph's (MCO's window to the vanilla one).
+        {
+            const auto p = Parse("<EventRegistry><Event name='MCO_WinOpen'><Do op='animEvent' name='AttackWinStart'/>"
+                                 "</Event></EventRegistry><Action id='A' clip='a.hkx'><Do at='0.3' op='animEvent' "
+                                 "name='AttackWinEnd'/></Action>");
+            Check(p.ok && p.events[0].functions[0].op == EventOp::kAnimEvent &&
+                      p.events[0].functions[0].name == "AttackWinStart" &&
+                      p.actions[0].pairFeatures.timed.size() == 1 &&
+                      p.actions[0].pairFeatures.timed[0].function.op == EventOp::kAnimEvent,
+                "an animation event function parses, registered or at a clip time");
+        }
+        Check(Rejected("<EventRegistry><Event name='X'><Do op='animEvent'/></Event></EventRegistry>"),
+            "an animation event needs a name");
+        Check(Rejected("<EventRegistry><Event name='X'><Do op='animEvent' name='A' text='b'/></Event></EventRegistry>"),
+            "an animation event takes no text");
+        Check(Rejected("<EventRegistry><Event name='X'><Do op='hide' name='A'/></Event></EventRegistry>"),
+            "a name is a mod event's or an animation event's");
         Check(Rejected("<Action id='A' clip='a.hkx'><EventValues><Event name='X'><Do op='modEvent' name='Y'/></Event>"
                        "</EventValues></Action>"),
             "a mod event's name is the registry's");

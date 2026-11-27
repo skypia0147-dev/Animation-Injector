@@ -209,6 +209,38 @@ int main() {
     Check(!Read("kind='foot' option='left' within='0.5'"));
     Check(!Read("kind='foot' option='left' events='FootLeft'"));
     Check(!Read("kind='foot' option='left' value='1'"));
+    // 1.1.0: a graph variable of the subject, compared; any number (an int may be below 0).
+    {
+        pugi::xml_document doc;
+        doc.load_string("<Check kind='graphVariable' variable='MCO_nextattack' type='int' compare='eq' value='2'/>");
+        ConditionFlowXml::Predicate pr;
+        std::string error;
+        Check(ConditionFlowXml::ReadCheck(doc.document_element(), pr, error));
+        Check(pr.test == ConditionFlowXml::Test::kGraphVariable && pr.variable == "MCO_nextattack" &&
+              pr.variableType == "int" && pr.compare == "eq" && pr.value == 2.0f);
+    }
+    Check(Read("kind='graphVariable' variable='bIsBlocking' type='bool' compare='eq' value='1' subject='partner'"));
+    Check(Read("kind='graphVariable' variable='Speed' type='float' compare='range' value='-5' upper='300'"));
+    Check(!Read("kind='graphVariable' type='int' compare='eq' value='1'"));                  // no variable
+    Check(!Read("kind='graphVariable' variable='A' compare='eq' value='1'"));                // no type
+    Check(!Read("kind='graphVariable' variable='A' type='string' compare='eq' value='1'"));  // an unknown type
+    Check(!Read("kind='graphVariable' variable='A B' type='int' compare='eq' value='1'"));   // a space in the name
+    Check(!Read("kind='graphVariable' variable='A' type='int'"));                            // no comparison
+    Check(!Read("kind='resource' option='stamina' measure='current' compare='ge' value='1' variable='A'"));
+    Check(!Read("kind='resource' option='stamina' measure='current' compare='ge' value='1' type='int'"));
+    // 1.1.0: a distance past the subject's attack reach, below 0 inside it.
+    {
+        pugi::xml_document doc;
+        doc.load_string("<Check kind='distance' measure='reach' compare='range' value='-20' upper='80'/>");
+        ConditionFlowXml::Predicate pr;
+        std::string error;
+        Check(ConditionFlowXml::ReadCheck(doc.document_element(), pr, error));
+        Check(pr.test == ConditionFlowXml::Test::kDistance && pr.measure == "reach" && pr.value == -20.0f);
+    }
+    Check(Read("kind='distance' compare='le' value='200'"));
+    Check(!Read("kind='distance' compare='ge' value='-1'"));                   // a plain distance is not below 0
+    Check(!Read("kind='distance' measure='percent' compare='le' value='1'"));  // reach is its one measure
+    Check(!Read("kind='relativeAngle' measure='reach' compare='le' value='30'"));
     // 10-29: the last weapon hit received, of a kind, optionally within some seconds; the subject or its partner.
     for (const char* option : {"normal", "power", "bash", "sneak", "blocked"})
         Check(Read(std::string("kind='hitReceived' option='") + option + "'"));

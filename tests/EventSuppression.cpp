@@ -111,6 +111,20 @@ int main() {
         check(!EventSuppression::Consume(&npc, "blockStart"));
         npc.dead = false;
         Actions::runners[1] = {false, -1};
+        // 1.1.0: the start's own event while an action of the actor leaves waits for it, kept from the vanilla graph
+        // even though the start cannot start yet (an NPC's next attack asked as the clip ends).
+        spec.trigger = {"attackStart", false, true};
+        spec.suppress = {SuppressSpec::When::kStartable, {"attackStart"}};
+        EventSuppression::Load(Actions::specs);
+        Actions::selected = -1;
+        check(!EventSuppression::Consume(&npc, "attackStart"));
+        Actions::runners[1].leaving = true;
+        check(EventSuppression::Consume(&npc, "attackStart"));
+        check(!EventSuppression::Consume(player, "attackStart"));  // the start is not the player's
+        spec.trigger.onEventPlayer = true;
+        EventSuppression::Load(Actions::specs);
+        check(EventSuppression::Consume(player, "attackStart"));
+        Actions::runners[1] = {false, -1};
         spec.trigger = {};
         spec.suppress.events.clear();
         EventSuppression::Load(Actions::specs);

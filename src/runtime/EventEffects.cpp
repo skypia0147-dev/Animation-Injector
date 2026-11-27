@@ -473,6 +473,24 @@ void RunOn(const EventFunctionSpec& f, const Context& context, RE::Actor* actor,
     // A hold outlives the clip that sent it (1.0.9): its own release or an automatic one ends it, not the run.
     case EventOp::kGripHold: GripHold::Hold(actor, f.gripHand, f.gripView); break;
     case EventOp::kGripRelease: GripHold::Release(actor, f.gripHand, f.gripView); break;
+    case EventOp::kAnimEvent: {
+        // As the graph would have sent it (1.1.0): to the actor's own animation event sink, with its active graph as
+        // the source, the delivery GetUpHandoff verified. The engine's handlers for the name run on the actor.
+        RE::BSTSmartPointer<RE::BSAnimationGraphManager> manager;
+        if (f.name.empty() || !actor->GetAnimationGraphManager(manager) || !manager) break;
+        RE::BSTSmartPointer<RE::BShkbAnimationGraph> graph;
+        {
+            RE::BSSpinLockGuard lock(manager->GetRuntimeData().updateLock);
+            const auto active = manager->GetRuntimeData().activeGraph;
+            if (active < manager->graphs.size()) graph = manager->graphs[active];
+        }
+        if (!graph) break;
+        const RE::BSAnimationGraphEvent event{RE::BSFixedString(f.name), actor, RE::BSFixedString{}};
+        static_cast<RE::BSTEventSink<RE::BSAnimationGraphEvent>*>(actor)->ProcessEvent(
+            &event, graph->GetEventSource<RE::BSAnimationGraphEvent>());
+        logger::debug("[AnimEvent] '{}' -> {:08X} '{}'", context.origin, actor->GetFormID(), f.name);
+        break;
+    }
     }
     logger::debug("[EventEffects] '{}' op={} actor={:08X} scope={}", context.origin, static_cast<int>(f.op),
         actor->GetFormID(), scope);

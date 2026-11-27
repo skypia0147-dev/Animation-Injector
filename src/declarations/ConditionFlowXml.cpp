@@ -31,7 +31,7 @@ void Shape(XML n, std::initializer_list<std::string_view> names, bool children =
 Predicate ReadPredicate(XML n) {
     Shape(n, {"kind", "not", "subject", "distance", "direction", "maxRise", "maxDrop", "maxSlope", "radius", "plugin",
                  "form", "keyword", "equals", "hand", "type", "state", "option", "compare", "measure", "value", "upper",
-                 "actions", "within", "ended", "events"});
+                 "actions", "within", "ended", "events", "variable"});
     Predicate predicate;
     const auto test = Required(n, "kind");
     if (test == "air")
@@ -122,6 +122,8 @@ Predicate ReadPredicate(XML n) {
         predicate.test = Test::kRecentEvent;
     else if (test == "foot")
         predicate.test = Test::kFoot;
+    else if (test == "graphVariable")
+        predicate.test = Test::kGraphVariable;
     else
         Fail(n, "unsupported condition " + test);
     const auto oneOf = [&](const std::string& s, std::initializer_list<std::string_view> choices) {
@@ -174,9 +176,13 @@ Predicate ReadPredicate(XML n) {
         Fail(n, "option is not supported by this condition");
     if (test == "child") predicate.option = "child";
     // A fall's distance is optional: an air check without a value only asks in the air, falling or rising.
-    const bool numeric = oneOf(test, {"resource", "distance", "relativeAngle", "heightDifference", "scale",
-                                         "scaleRatio", "height", "slope", "actorValue", "gameHour", "heldTime"}) ||
-                         (test == "air" && n.attribute("value"));
+    const bool numeric =
+        oneOf(test, {"resource", "distance", "relativeAngle", "heightDifference", "scale", "scaleRatio", "height",
+                        "slope", "actorValue", "gameHour", "heldTime", "graphVariable"}) ||
+        (test == "air" && n.attribute("value"));
+    // A distance past the reach (1.1.0) is below 0 inside it; a graph variable may hold any number.
+    const bool reach = test == "distance" && std::string_view(n.attribute("measure").as_string()) == "reach";
+    const float minimum = reach || test == "graphVariable" ? -1000000.0f : 0.0f;
     const auto number = [&](const char* key) {
         const auto s = Required(n, key);
         float value = 0;
@@ -199,7 +205,7 @@ Predicate ReadPredicate(XML n) {
             if (!oneOf(predicate.measure, {"current", "percent"})) Fail(n, "invalid resource measure");
             if (predicate.measure == "percent") maximum = 100;
         }
-        if (predicate.value < 0 || predicate.value > maximum) Fail(n, "comparison out of range");
+        if (predicate.value < minimum || predicate.value > maximum) Fail(n, "comparison out of range");
         if (numeric) {
             predicate.compare = Required(n, "compare");
             if (!oneOf(predicate.compare, {"lt", "le", "eq", "ge", "gt", "range"})) Fail(n, "invalid comparison");
@@ -217,7 +223,24 @@ Predicate ReadPredicate(XML n) {
     // A fall's distance is falling's or rising's: in the air at all has none.
     if (test == "air" && numeric && predicate.option == "any") Fail(n, "air any takes no value");
     if (test == "air" && !numeric) predicate.compare.clear();  // rising or falling only
-    if (test != "resource" && test != "actorValue" && n.attribute("measure")) Fail(n, "measure requires resource");
+    if (test == "distance" && n.attribute("measure")) {
+        // The gap past the subject's attack reach (1.1.0): one number fits a dagger and a greatsword.
+        if (!reach) Fail(n, "a distance's measure is reach");
+        predicate.measure = "reach";
+    } else if (test != "resource" && test != "actorValue" && n.attribute("measure"))
+        Fail(n, "measure requires resource, actorValue or distance");
+    // A graph variable (1.1.0): its name and type.
+    if (test == "graphVariable") {
+        predicate.variable = Required(n, "variable");
+        if (predicate.variable.size() > 128 ||
+            std::any_of(predicate.variable.begin(), predicate.variable.end(),
+                [](char c) { return static_cast<unsigned char>(c) <= ' ' || static_cast<unsigned char>(c) >= 0x7F; }))
+            Fail(n, "invalid graph variable name");
+        predicate.variableType = Required(n, "type");
+        if (!oneOf(predicate.variableType, {"bool", "int", "float"}))
+            Fail(n, "a graph variable's type is bool, int or float");
+    } else if (n.attribute("variable"))
+        Fail(n, "variable requires graphVariable");
     // The last of our actions the subject finished (0.12.296): ids, the seconds since and how it ended.
     if (test == "previousAction") {
         const std::string list = Required(n, "actions");
@@ -280,8 +303,8 @@ Predicate ReadPredicate(XML n) {
         auto it = std::find(std::begin(names), std::end(names), type);
         if (it == std::end(names)) Fail(n, "invalid equipped type");
         predicate.equippedType = static_cast<EquippedType>(it - std::begin(names));
-    } else if (n.attribute("hand") || n.attribute("type"))
-        Fail(n, "hand/type require equippedType");
+    } else if (n.attribute("hand") || (n.attribute("type") && predicate.test != Test::kGraphVariable))
+        Fail(n, "hand/type require equippedType (type: or graphVariable)");
     if (predicate.test == Test::kAttackState) {
         static constexpr std::string_view names[] = {"none", "draw", "swing", "hit", "nextAttack", "followThrough",
             "bash", "bowDraw", "bowAttached", "bowDrawn", "bowReleasing", "bowReleased", "bowNextAttack",

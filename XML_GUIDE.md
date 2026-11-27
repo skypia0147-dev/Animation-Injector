@@ -70,6 +70,9 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `<Transition to on="end" blend>` | 이 동작이 끝나는 순간(종료 지점) 끝내는 대신 `to`로 넘어갑니다. 동작마다 하나, 키·`from`·`until` 없음. 시각으로 끝나는 동작에서만(`<Exit at="event:…">`과 함께 쓸 수 없음) |
 | `<Transition to on="release" from until>` | 차지 종료: 구간 안에서 키가 떼져 있으면 넘어갑니다. "뗀 순간"이 아니라 상태라 구간 전에 뗐으면 구간이 열리는 순간 넘어갑니다. 키는 `key`·`gamepad`·`control`로 정하고, 쓰지 않으면 이 동작을 시작한 키(시작 키나 키 전환의 키, 끝나면·키를 떼면으로 이어지는 동안 유지). NPC는 반복 동작의 `maxHold`에서만 뗀 것으로 봅니다 |
 | `<Transition to on="move" from until buffer>` | 이동 전환: **차지 중**(이 동작을 시작한 키를 누르고 있는 동안)에 이동키를 누르면 넘어갑니다. 차지 키를 떼면 이동키는 아무것도 하지 않고 선입력도 버립니다(그때는 `on="release"`). 닷지처럼 키를 짧게 누르는 동작은 이동키+닷지 키를 쓰는 키 전환(`<Transition condition="방향 카드" key=…>`)으로 잇습니다. 키 전환과 같아서 구간 안에서 누르면 바로, 구간이 열리기 전에 누른 것도 선입력으로 받아 열리는 순간 넘어갑니다(`buffer="false"`면 선입력 없음). 구간이 열릴 때 이동키를 누르고 있는 것도 선입력으로 칩니다 — 누르고 있는 동안 한 번씩 이어 재생되고, 떼면 재생 중인 동작은 끝까지 재생하고 끝납니다. 조건 카드는 누르고 있는 방향(이미 뗐으면 누른 방향)으로 고릅니다(이동 방향 조건과 같은 판정, TDM 반영). 키·이벤트 없음, 플레이어만. 같은 동작으로 가면 그 동작을 처음부터 다시 재생하고, 반복 동작이 같은 동작을 고르면 끊지 않고 이어 재생합니다(차지는 그대로 유지). 방향별 대시를 조건 카드(`movementDirection`)로 고르는 데 씁니다 |
+| `<Transition to on="npc" from until>` | NPC가 스스로 고르는 전환(1.1.0). 구간이 열릴 때마다 한 번, 전투 중인 NPC가 전투 대상을 상대(partner)로 두고 조건을 봅니다. 맞으면 넘어갑니다. 같이 열리는 `on="npc"` 전환이 여럿이면 파일 순서대로 보고 처음 맞는 것으로 갑니다. 플레이어는 쓰지 않습니다. 키·이벤트·`buffer` 없음, 전신 동작만 ([NPC의 공격 연계](#npc의-공격-연계)) |
+| `<Transition … from="…" bufferFrom="초">` | 구간이 열리기 전에 누른 키·받은 이벤트(선입력)를 클립의 이 시각(초)부터만 받습니다(1.1.0). 그 전에 온 것은 버립니다. 예: 약공격 창에서 길게 누르면 엔진이 0.25초 뒤 파워 이벤트를 보내는데, 다음 타의 파워 전환에 `bufferFrom="0.35"`를 쓰면 그 이벤트는 버려지고 그 뒤에 누른 파워 키는 파워 창이 열릴 때 나갑니다. 선입력을 받는(`buffer`가 false가 아닌) 구간이 `from`으로 나중에 열리는 키·이벤트·이동 전환에만 씁니다 |
+| `<Transition … cooldown="초">` | 이 액터가 이 전환을 탄 뒤 그 시간(게임 초, 0~600) 동안 다시 타지 않습니다(1.1.0). 어떤 전환에도 씁니다(끝내기 전환 제외) |
 | `<Transition end="true" …>` | 끝내기 전환(1.0.8 이상): 다른 동작으로 가지 않고 이 동작을 바로 끝냅니다(`<Exit blend>`로 빠져나옴). 조건은 다른 전환과 같습니다: 키(`key`·`gamepad`·`control`·`input`, `press`), `event`, `on="release"`, `on="move"`, 구간(`from`·`until`·`buffer`). `to`·조건 카드·`blend`·`partnerTo`·`on="end"`는 쓰지 않습니다. 일반 동작만. 예: 이벤트로 시작한 반복 동작을 종료 이벤트로 끝내기 `<Action id="Loop" clip="…" loop="true" maxHold="600"><Transition end="true" event="StopLoop"/></Action>` |
 | `<MoveCancel at blend>` | `at` 이후 이동 키를 누르면 동작을 끊고 걷기·달리기로 돌아갑니다. 전투 중인 NPC는 `at`부터 AI에게 이동을 돌려주고, AI가 움직이거나 공격하려 하면 끊습니다(가만히 있으면 끝까지 재생) |
 | `<IFrame from until>` | 그 사이 무적 |
@@ -149,7 +152,7 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `movementDirection` | `option="forward\|back\|left\|right\|none"` | 이동 키 방향. True Directional Movement의 방향성 모드에서는 캐릭터가 입력 쪽으로 돌아 앞으로 달리므로, 이동 키를 누르고 있으면 항상 `forward`입니다(TDM이 없거나 다른 모드면 키 그대로) |
 | `chance` | `value`(0~100) | 그 확률로 |
 | `magicEffect` `perk` `spell` `race` `faction` `keyword` | `plugin="모드.esp"` `form="16진수 ID"` | 그것을 가졌을 때 |
-| `keyword` `wornKeyword` `equippedKeyword` | `keyword="WeapTypeClaw"`(Editor ID) — `plugin` `form` 대신. `equippedKeyword`는 `option="left\|right\|either"` | 그 키워드를 가졌을 때(본인·착용한 장비·그 손의 장비). 이름은 대소문자를 가리지 않고, 두 플러그인이 같은 이름을 쓰면 나중에 로드된 쪽. 없는 이름이면 로그에 경고하고 검사 불능 |
+| `keyword` `wornKeyword` `equippedKeyword` | `keyword="WeapTypeClaw"`(Editor ID) — `plugin` `form` 대신. `equippedKeyword`는 `option="left\|right\|either"` | 그 키워드를 가졌을 때(본인·착용한 장비·그 손의 장비). 이름은 대소문자를 가리지 않고, 두 플러그인이 같은 이름을 쓰면 나중에 로드된 쪽. 어떤 플러그인에도 없는 이름이면 그 키워드를 가진 것이 없으므로 거짓(1.1.0, 로그에 info 한 줄). 그래서 다른 모드의 키워드를 조건 줄 하나에 넣어도 그 모드가 없는 사용자에게는 그 줄만 맞지 않습니다 |
 | `global` | `plugin` `form` `equals` | 글로벌 값이 같을 때 |
 | `previousAction` | `actions="A,B"`(이 파일의 동작) `within="초"` | 직전에 그 동작을 했을 때 |
 | `weather` | `option="pleasant\|cloudy\|rainy\|snow"` | 그 날씨 |
@@ -159,6 +162,8 @@ G 키(패드 RB)를 누르면 구르기 HKX를 재생합니다.
 | `gameHour` | `compare` `value` | 게임 시각 비교 |
 | `heldTime` | `compare` `value` | 이 동작을 시작한 키를 누르고 있던 시간(초). 차지 종료 전환이 고를 때는 누른 순간부터 뗀 순간까지. 플레이어만(NPC는 판정 불가) |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | 그 방향에 그만큼 빈 공간이 있을 때 |
+| `distance` | `compare` `value`; `measure="reach"`(1.1.0) | 상대(partner)와의 거리. `measure="reach"`면 무기 길이를 넘어선 거리(거리 − 이 액터의 공격 거리 − 상대의 반경)라 0은 상대가 무기 끝에 닿는 거리, 0보다 작으면 이미 닿는 거리입니다. 숫자 하나로 단검과 대검에 모두 맞습니다. 상대가 있는 시작·전환에서만(페어, 전투 대상 시작, `on="npc"` 전환, 전투 시작) |
+| `graphVariable` | `variable="이름"` `type="bool\|int\|float"` `compare` `value` | 그 액터의 그래프 변수 비교(1.1.0, bool은 0·1). 조건이 쓰는 변수는 런타임이 3인칭 캐릭터 그래프에 넣으므로 비헤이비어 패치가 없어도 HKX 주석(Payload Interpreter `@SGVI\|이름\|값` 등)이 값을 쓸 수 있습니다. 이미 있는 변수(그 비헤이비어 모드가 만든 것)는 그대로 씁니다 |
 
 `compare`는 `lt`(작다) `le`(작거나 같다) `eq`(같다) `ge`(크거나 같다) `gt`(크다) `range`(`value`~`upper` 사이)입니다.
 
@@ -213,6 +218,7 @@ HKX에 넣은 주석 이벤트가 오면 기능을 실행합니다. 이벤트와
 | `sound` | 소리 재생 | `file="sound\…\a.wav"` 또는 `plugin` `form`; 값 `volume`(0~1) |
 | `globalSet` | 글로벌 값 바꾸기 | `plugin` `form` `restore="end"`(끝나면 되돌림); 값 `value` |
 | `modEvent` | Papyrus에 모드 이벤트 보내기 | `name` `text`; 값 `number` |
+| `animEvent` | 애니메이션 이벤트를 그 액터의 그래프가 보낸 것처럼 전달(1.1.0). 엔진이 그 이름에 하는 일이 그대로 일어납니다. 예: `AttackWinStart`/`AttackWinEnd`는 바닐라 NPC가 다음 공격을 고르는 창을 열고 닫음 ([NPC의 공격 연계](#npc의-공격-연계)) | `name` |
 | `cancel` | 페어 끝내기 | |
 | `gripHold` | 무기 잡기 유지: 그 순간 손의 무기 뼈(오른손 Weapon, 왼손 Shield) 값을 동작이 끝난 뒤에도 유지 ([무기 잡기 유지](#무기-잡기-유지)) | `hand="right\|left\|both"`, `view="third\|first\|both"`(기본 third) |
 | `gripRelease` | 잡기 유지 풀기(바로) | `hand`, `view` |
@@ -277,6 +283,45 @@ HKX 주석에 `AI.명령|값|값`을 넣으면 등록 없이 그 시각에 기�
 - `view`: 유지할 시점(`third` 3인칭, `first` 1인칭, `both` 둘 다). 동작이 재생된 시점에서 잡은 값을 다른 시점에 옮겨 쓰므로, 그 동작에 1인칭 HKX가 없어도 1인칭에서 유지됩니다.
 - 왼손은 바닐라 보정(`DW_ShieldAdjustment`)이 Shield 뼈를 덮어써서, Left Hand Equipment Overhaul 2.0 이상이 있어야 보입니다. 왼손 역수 HKX는 기본 자세 기준으로 만들고 0초에 `Adjustment_Additive` 주석을, 풀기 동작 끝에 `Adjustment_Off` 주석을 넣습니다. 다른 시점으로 옮긴 왼손 유지에는 Animation Injector가 그 시점에 `Adjustment_Additive`를 보내고, 유지가 끝나면 `Adjustment_Off`를 보냅니다.
 - 등록 이벤트로도 씁니다: `<Event name="…"><Do op="gripHold" hand="right" view="both"/></Event>`. 그 이벤트 이름을 주석으로 보내는 HKX라면 우리 동작이든 다른 모드·바닐라·OAR 애니메이션이든 실행됩니다. HKX 주석 명령은 `AI.GripHold|right|third`, `AI.GripRelease|right|third`입니다.
+
+## NPC의 공격 연계
+
+1.1.0. 바닐라 NPC는 공격 클립의 `AttackWinStart`~`AttackWinEnd` 창에서 다음 공격(약공격 `attackStart`, 파워어택 `attackPowerStart…`)을 보냅니다. 다른 모드의 클립(예: MCO 무브셋)에는 이 창 대신 그 모드의 창 이벤트(`MCO_WinOpen`/`MCO_WinClose`)만 있어서, NPC가 창을 모른 채 클립이 끝날 때마다 한 번씩만 칩니다. 세 가지로 NPC의 공격을 잇습니다.
+
+1. **바닐라 AI에게 창 알려 주기**: 그 모드의 창 이벤트에 `animEvent` 기능을 등록합니다. NPC의 전투 AI가 창 안에서 다음 공격을 보내고, 그 이벤트를 받는 전환이 이어 줍니다.
+2. **NPC가 스스로 고르는 전환** `on="npc"`: 창이 열리면 런타임이 거리·각도·확률·상대 상태를 보고 바로 다음 동작으로 보냅니다. 바닐라 AI가 고르지 않는 연계(가까우면 파워어택 등)를 넣습니다.
+3. **전투 시작** `<Start combat="npc">`: 공격 중이 아닌 NPC가 `every`초마다 이 시작을 확인합니다. 먼 거리에서 돌진 공격처럼 첫 공격을 고릅니다.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="MyMoveset">
+  <EventRegistry>
+    <Event name="MCO_WinOpen"><Do op="animEvent" name="AttackWinStart"/></Event>
+    <Event name="MCO_WinClose"><Do op="animEvent" name="AttackWinEnd"/></Event>
+  </EventRegistry>
+  <Start event="attackStart" block="attackStart" to="Attack1"/>
+  <Start combat="npc" every="0.5" to="Dash">
+    <Check kind="distance" measure="reach" compare="range" value="100" upper="300"/>
+    <Check kind="chance" value="30"/>
+  </Start>
+  <Action id="Attack1" clip="Animations\MCO_attack1.hkx" attack="attackStart">
+    <Transition to="Attack2" event="attackStart" from="event:MCO_WinOpen" until="event:MCO_WinClose">
+      <Check kind="graphVariable" variable="MCO_nextattack" type="int" compare="eq" value="2"/>
+    </Transition>
+    <Transition to="Power1" on="npc" from="event:MCO_WinOpen" until="event:MCO_WinClose" cooldown="3">
+      <Check kind="distance" measure="reach" compare="le" value="40"/>
+      <Check kind="chance" value="25"/>
+    </Transition>
+  </Action>
+  <Action id="Attack2" clip="Animations\MCO_attack2.hkx" attack="attackStart"/>
+  <Action id="Power1" clip="Animations\MCO_powerattack1.hkx" attack="attackPowerStartInPlace"/>
+  <Action id="Dash" clip="Animations\MyMoveset\Dash.hkx" attack="attackPowerStartForward"/>
+</AnimationSet>
+```
+
+- 전투 시작은 전투 중이고, 살아 있는 전투 대상이 같은 셀에 있고, 무기를 꺼냈고, 공격 중이 아니고, 서 있고(넘어짐·경직·래그돌 아님), 우리 전신 동작을 재생하지 않는 NPC만 확인합니다. 그 상태로 `every`초(0.1~60, 기본 0.5)가 지나야 묻습니다. 그래서 공격한 직후에는 그만큼 쉬고 묻습니다. 조건의 상대는 그 NPC의 전투 대상입니다. 여러 전투 시작은 파일 순서대로 보고 처음 맞는 것 하나만 시작합니다. 키·이벤트·`actor`·`target`·`block` 없이 쓰고, 일반 동작만 시작합니다.
+- 바닐라 AI의 공격은 그대로 옵니다. 이벤트 시작과 전환이 예전처럼 받습니다.
+- 동작이 끝나 빠져나가는 중(Exit가 지나 블렌드 중)에 그 동작을 시작하는 이벤트가 오면, 1.1.0부터는 바닐라 그래프로 보내지 않고 기다렸다가 빠져나간 뒤 시작합니다(최대 1초). 그전에는 그 이벤트가 바닐라 그래프로 가서 바닐라 공격이 나왔습니다.
 
 ## 이동하면서 상체·팔만 (body)
 

@@ -489,6 +489,14 @@ int main(int argc, char** argv) {
         assert(files[1].loaderName == "dodgeA_Preload");
         assert(files[2].path == "Animations\\Dodge\\B.hkx" && files[3].path == "Animations\\Stop\\C.hkx");
         assert(ProjectMask("FirstPerson") == kFirstPerson && ProjectMask("firstperson") == kFirstPerson);
+        // 1.1.0: a path with no file of its own (an animation replacer gives it as it plays, an MCO moveset's
+        // MCO_attack1.hkx) is not preloaded: four failed attempts were logged as errors.
+        RE::BSResourceNiBinaryStream::missing = {"Meshes\\Actors\\Character\\Animations\\Dodge\\B.hkx"};
+        Install();
+        assert(files.size() == 3 && files[2].path == "Animations\\Stop\\C.hkx");
+        RE::BSResourceNiBinaryStream::missing.clear();
+        Install();
+        assert(files.size() == 4);
         // 11-20: the own locomotion trees' files are jobs too, third person only, before the action files and with
         // ordinary preloading off as well.
         OwnLocomotion::treeFiles = {"Animations\\H2H_RunForward.hkx", "Animations\\H2H_WalkForward.hkx"};

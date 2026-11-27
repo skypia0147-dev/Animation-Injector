@@ -10,6 +10,7 @@
 #include "runtime/ActionRegistry.h"
 #include "runtime/PartRunner.h"
 #include "runtime/Signals.h"
+#include "runtime/NpcDecision.h"
 #include "runtime/ActionRunner.h"
 #include "runtime/ClipIndex.h"
 #include "core/EventMaps.h"
@@ -421,11 +422,17 @@ void ResolveKeywordNames() {
         for (auto& p : spec.flow.predicates) {
             if (p.keyword.empty()) continue;
             p.keywordForm = named[lower(p.keyword)];
+            p.keywordMissing = !p.keywordForm;
+            // A keyword of a mod the player does not use (a claw weapon's, say) is an ordinary false check: until
+            // 1.1.0 it was unavailable, and a start that blocks a vanilla event refuses a flow that read any
+            // unavailable check, so one optional row stopped the whole start (11-27 report: Dynamic Block Hit's
+            // WeapTypeClaw row left every block hit vanilla on a load order without that keyword).
             if (p.keywordForm)
                 logger::info("[Flow] '{}': keyword '{}' = {:08X}", spec.id, p.keyword, p.keywordForm);
             else
-                logger::warn(
-                    "[Flow] '{}': no loaded plugin has the keyword '{}'; the check is unavailable", spec.id, p.keyword);
+                logger::info(
+                    "[Flow] '{}': no loaded plugin has the keyword '{}'; nothing carries it, so the check is false",
+                    spec.id, p.keyword);
         }
 }
 void Publish() {
@@ -475,14 +482,38 @@ std::mutex g_bindMutex;
 using TriggerRequest = CapturedTrigger;
 std::mutex triggerMutex;
 std::vector<TriggerRequest> triggerQueue;
-void DrainTriggers() {
+// Starts waiting for an action of their actor to finish leaving (1.1.0). Main thread.
+std::vector<TriggerRequest> leavingWait;
+void DrainTriggers(float delta) {
     std::vector<TriggerRequest> queued;
     {
         std::lock_guard lock(triggerMutex);
         queued.swap(triggerQueue);
     }
+    for (auto& w : leavingWait) {
+        w.age += delta;
+        if (std::none_of(queued.begin(), queued.end(),
+                [&](const TriggerRequest& r) { return r.actor == w.actor && r.action == w.action; }))
+            queued.insert(queued.begin(), w);
+    }
+    leavingWait.clear();
     for (auto item : queued)
         if (auto actor = item.actor.get(); actor && actor->Is3DLoaded() && !actor->IsDead()) {
+            // The action the start plays is still leaving (its exit sent, its clip blending out; 1.1.0): the start
+            // plays once it is gone (an NPC asks for its next attack as the clip ends), for up to a second. Another
+            // action leaving does not hold it: the graph goes from that one's exit as before.
+            const auto wait = [&](int action) {
+                auto* runner = RunnerFor(actor.get(), action, false);
+                if (!runner || !runner->Leaving()) return false;
+                if (item.age < 1.0f)
+                    leavingWait.push_back(item);
+                else
+                    logger::debug(
+                        "[EventTrigger] action='{}' actor={:08X} dropped: it was still leaving after a second",
+                        g_specs[action].id, actor->GetFormID());
+                return true;
+            };
+            if (wait(item.action)) continue;
             const int origin = item.action;
             item.target = CaptureTarget(actor.get(), item.action, item.target);
             ConditionValues::Request request;
@@ -703,7 +734,8 @@ struct
         PairRootRuntime::Sample(a_delta, false);
         // Apply worker-thread clip results first so a finished runner can accept new triggers.
         DrainCallbacks();
-        DrainTriggers();
+        DrainTriggers(a_delta);
+        NpcDecision::Update(a_delta);  // combat starts (1.1.0): queued for the next drain
         ExitBlendHooks::Drain();
         // Drain final annotations and cumulative samples before session cleanup discards them.
         PairFeatures::Update(a_delta);
@@ -916,9 +948,14 @@ bool CommitEventTrigger(const std::vector<CapturedTrigger>& captured) {
 bool QueueEventTrigger(RE::Actor* actor, const RE::BSFixedString& event) {
     return CommitEventTrigger(CaptureEventTrigger(actor, event));
 }
+void QueueStart(RE::Actor* actor, int action, RE::ActorHandle target) {
+    if (!actor || action < 0 || action >= Count()) return;
+    CommitEventTrigger({{actor->GetHandle(), action, target, false}});
+}
 void ResetEventTriggers() {
     std::lock_guard lock(triggerMutex);
     triggerQueue.clear();
+    leavingWait.clear();
 }
 // Runs on whatever thread notifies the graph; the runner is held by reference for the call.
 void NoteNpcRequest(RE::Actor* actor, const RE::BSFixedString& event) {
@@ -1064,6 +1101,7 @@ void BeforeGameLoad() {
     ResetEventTriggers();
     PartRunner::Reset();
     Signals::Reset();
+    NpcDecision::Reset();
     g_callbacks.Clear();
     for (auto& [id, entry] : NpcSnapshot()) entry->runners.ForEach([](int, ActionRunner& r) { r.ResetOnLoad(); });
     if (g_playerBound.load(std::memory_order_acquire)) g_player->ForEach([](int, ActionRunner& r) { r.ResetOnLoad(); });
@@ -1087,6 +1125,7 @@ void OnGameLoad() {
     PairedSession::ResetOnLoad();
     PartRunner::Reset();
     Signals::Reset();
+    NpcDecision::Reset();
     static int n = 0;
     BindPlayer();
     g_callbacks.Clear();

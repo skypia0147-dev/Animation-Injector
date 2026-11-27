@@ -245,7 +245,7 @@ const std::pair<std::string_view, EventOp> kOps[] = {{"hide", EventOp::kHide}, {
     {"rotateOn", EventOp::kRotateOn}, {"rotateOff", EventOp::kRotateOff}, {"cancel", EventOp::kCancel},
     {"fireArrow", EventOp::kFireArrow}, {"ragdoll", EventOp::kRagdoll}, {"strike", EventOp::kStrike},
     {"sound", EventOp::kSound}, {"globalSet", EventOp::kGlobalSet}, {"modEvent", EventOp::kModEvent},
-    {"gripHold", EventOp::kGripHold}, {"gripRelease", EventOp::kGripRelease}};
+    {"gripHold", EventOp::kGripHold}, {"gripRelease", EventOp::kGripRelease}, {"animEvent", EventOp::kAnimEvent}};
 // <Do op="magic" action> (11-01): one function for a spell, the action says what it does.
 const std::pair<std::string_view, EventOp> kMagicActions[] = {
     {"cast", EventOp::kMagicCast}, {"add", EventOp::kMagicAdd}, {"remove", EventOp::kMagicRemove}};
@@ -381,7 +381,7 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
     choice(e, "op",
         {"hide", "show", "magic", "cost", "shake", "stopVelocity", "timeOn", "timeOff", "iframeOn", "iframeOff",
             "armorOn", "armorOff", "rotateOn", "rotateOff", "cancel", "fireArrow", "ragdoll", "strike", "sound",
-            "globalSet", "modEvent", "gripHold", "gripRelease"});
+            "globalSet", "modEvent", "gripHold", "gripRelease", "animEvent"});
     choice(e, "action", {"cast", "add", "remove"});
     if (op == "magic")
         required(e, "action");
@@ -454,8 +454,12 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
         fail(e, "value and restore are used by globalSet only");
     if (op == "modEvent") {
         if (use != DoUse::kValues && get(e, "name").empty()) fail(e, "modEvent needs a name");
+    } else if (op == "animEvent") {
+        // The event the actor's graph would have sent (1.1.0): a name only.
+        if (use != DoUse::kValues && get(e, "name").empty()) fail(e, "animEvent needs a name");
+        if (e.attribute("text") || e.attribute("number")) fail(e, "text and number are used by modEvent only");
     } else if (e.attribute("name") || e.attribute("text") || e.attribute("number"))
-        fail(e, "name, text and number are used by modEvent only");
+        fail(e, "name is used by modEvent and animEvent; text and number by modEvent only");
     // A hold of a hand's attachment bone (1.0.9): which hands (required where the registry or a clip time says what
     // it acts with) and which views (default third person). A release lets go at once.
     const bool grip = op == "gripHold" || op == "gripRelease";
@@ -510,6 +514,7 @@ EventFunctionSpec eventFunction(Node e, DoUse use) {
         const float n = e.attribute("number").as_float(0.0f);
         f.number = std::isfinite(n) ? n : 0.0f;
     }
+    if (op == "animEvent") f.name = get(e, "name");
     f.stamina = number(e.attribute("stamina"), 0, 100000);
     f.magicka = number(e.attribute("magicka"), 0, 100000);
     f.health = number(e.attribute("health"), 0, 100000);
@@ -547,6 +552,9 @@ struct LinkDeclaration {
     bool onEnd = false, onRelease = false, onMove = false;  // charge (10-30): on="end" / "release" / "move"
     PressKinds::Press press = PressKinds::Press::kDown;     // how its key is pressed (1.0.8)
     bool end = false;                                       // end="true": ends the action, no destination (1.0.8)
+    bool onNpc = false;                                     // on="npc": an NPC's own choice (1.1.0)
+    float bufferFrom = 0.0f;                                // bufferFrom="seconds": buffered from then (1.1.0)
+    float cooldown = 0.0f;                                  // cooldown="seconds" (1.1.0)
 };
 // The window of a vanilla transition or a Transition: buffered/window/always and its open and close times. No
 // from, until or buffer = always (the whole clip).
@@ -1006,9 +1014,10 @@ struct Compiler {
                     fail(d,
                         "An ordinary action's clip-time function applies to the actor playing it: no target or from");
                 const auto op = get(d, "op");
-                if (!op.empty() && !has({"hide", "show", "magic", "shake", "stopVelocity", "ragdoll", "strike", "sound",
-                                            "globalSet", "modEvent", "fireArrow", "gripHold", "gripRelease"},
-                                       op))
+                if (!op.empty() &&
+                    !has({"hide", "show", "magic", "shake", "stopVelocity", "ragdoll", "strike", "sound", "globalSet",
+                             "modEvent", "fireArrow", "gripHold", "gripRelease", "animEvent"},
+                        op))
                     fail(d,
                         "Not a clip-time function of an ordinary action: " + op +
                             " (invulnerability, hyper armor, rotation, cost and time scale are IFrame, HyperArmor, Rotate, Cost "
@@ -1297,7 +1306,7 @@ struct Compiler {
         for (auto t : n.children("Transition")) {
             shape(t,
                 Names{"to", "condition", "partnerTo", "input", "key", "gamepad", "control", "event", "blend", "from",
-                    "until", "buffer", "on", "press", "end"},
+                    "until", "buffer", "on", "press", "end", "cooldown", "bufferFrom"},
                 kCardParts);
             LinkDeclaration connect;
             KeyRef key;
@@ -1357,7 +1366,7 @@ struct Compiler {
                 key = keyRef(t);
                 // Charge (10-30): on="end" goes at this action's end, on="release" once its key is up (its own key,
                 // or the key that started the action).
-                choice(t, "on", {"end", "release", "move"});
+                choice(t, "on", {"end", "release", "move", "npc"});
                 const auto on = get(t, "on");
                 if (on.empty()) {
                     if (key.given == static_cast<bool>(t.attribute("event")))
@@ -1378,6 +1387,11 @@ struct Compiler {
                         // A movement key's press (10-31), buffered as a key's: no key of its own.
                         if (key.given) fail(t, "a move transition (on=\"move\") takes no key");
                         connect.onMove = true;
+                    } else if (on == "npc") {
+                        // An NPC's own choice (1.1.0): the runtime reads its checks as its window opens.
+                        if (key.given) fail(t, "an NPC's transition (on=\"npc\") takes no key");
+                        if (s.Part()) fail(t, "an NPC's transition (on=\"npc\") is for full-body actions");
+                        connect.onNpc = true;
                     } else
                         connect.onRelease = true;
                 }
@@ -1423,6 +1437,22 @@ struct Compiler {
                     (immediate ? immediateKeys : pressedKeys).insert(channel);
                 }
             }
+            // bufferFrom (1.1.0): a press or event before the window counts only from this clip time.
+            if (t.attribute("bufferFrom")) {
+                num(t, "bufferFrom", 600);
+                const auto on = get(t, "on");
+                if (on == "end" || on == "release" || on == "npc")
+                    fail(t, "bufferFrom is for transitions on a key, an event or a movement key");
+                if (!t.attribute("from") || get(t, "buffer", "true") != "true")
+                    fail(t, "bufferFrom goes with a buffered window that opens later (from)");
+                connect.bufferFrom = t.attribute("bufferFrom").as_float(0.0f);
+            }
+            // cooldown (1.1.0): game seconds before the same actor may take this transition again.
+            if (t.attribute("cooldown")) {
+                num(t, "cooldown", 600);
+                if (connect.end) fail(t, "an ending transition (end=\"true\") takes no cooldown");
+                connect.cooldown = t.attribute("cooldown").as_float(0.0f);
+            }
             connect.key = key.key;
             connect.gamepad = key.gamepad;
             connect.control = key.control;
@@ -1446,6 +1476,9 @@ struct Compiler {
             next.onEnd = l.onEnd;
             next.onRelease = l.onRelease;
             next.onMove = l.onMove;
+            next.onNpc = l.onNpc;
+            next.cooldown = l.cooldown;
+            next.bufferFrom = l.bufferFrom;
             next.press = l.press;
             next.end = l.end;
             next.buffered = (l.mode.empty() ? std::string("buffered") : l.mode) == "buffered";
@@ -1467,7 +1500,7 @@ struct Compiler {
             }
             if ((next.action.empty() && !next.end) ||
                 (next.event.empty() && !next.key && !next.gamepad && next.control == GameControl::kNone &&
-                    !next.onEnd && !next.onRelease && !next.onMove))
+                    !next.onEnd && !next.onRelease && !next.onMove && !next.onNpc))
                 continue;
             s.links.push_back(std::move(next));
         }
@@ -1561,7 +1594,7 @@ struct Compiler {
     void startShape(Node st) {
         shape(st,
             {"id", "to", "condition", "input", "key", "gamepad", "control", "event", "actor", "target", "range",
-                "angle", "press", "cooldown", "block", "blockWhen"},
+                "angle", "press", "cooldown", "block", "blockWhen", "combat", "every"},
             kCardParts);
         num(st, "cooldown");
         choice(st, "blockWhen", {"startable", "active", "both"});
@@ -1574,8 +1607,24 @@ struct Compiler {
     void applyStart(ActionSpec& s, Node st, bool pair) {
         auto& trigger = s.trigger;
         const auto key = keyRef(st);
-        if (key.given == static_cast<bool>(st.attribute("event")))
-            fail(st, "Give only one of a key (input, key/gamepad or control) or an event");
+        // A combat start (1.1.0): an NPC in combat asks it every `every` seconds, with no key or event.
+        choice(st, "combat", {"npc"});
+        const bool combatStart = static_cast<bool>(st.attribute("combat"));
+        if (static_cast<int>(key.given) + static_cast<int>(static_cast<bool>(st.attribute("event"))) +
+                static_cast<int>(combatStart) !=
+            1)
+            fail(st, "Give only one of a key (input, key/gamepad or control), an event or combat=\"npc\"");
+        if (st.attribute("every") && !combatStart) fail(st, "every is used only with combat=\"npc\"");
+        if (combatStart) {
+            if (pair) fail(st, "A combat start (combat=\"npc\") starts ordinary actions only");
+            for (const char* a : {"actor", "target", "range", "angle", "press", "block"})
+                if (st.attribute(a))
+                    fail(st, std::string("A combat start (combat=\"npc\") takes no ") + a +
+                                 " (its target is the NPC's combat target)");
+            num(st, "every", 60, 0.1);
+            trigger.onCombat = true;
+            trigger.every = st.attribute("every").as_float(0.5f);
+        }
         trigger.inputId = key.input;
         trigger.key = key.key;
         trigger.gamepad = key.gamepad;

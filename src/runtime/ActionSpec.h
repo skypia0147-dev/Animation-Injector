@@ -70,6 +70,11 @@ struct TriggerSpec {                                     // 액션 시작 입력
     bool combatTarget = false;
     bool frontTarget = false;
     float targetRange = 200.0f, targetAngle = 90.0f;
+    // <Start combat="npc" every="0.5"> (1.1.0, runtime/NpcDecision.h): an NPC in combat with a target, weapon drawn,
+    // not attacking and playing none of our full-body actions asks this start every `every` seconds (an opener, a gap
+    // closer); its conditions read the combat target as the partner. Ordinary actions only; no key or event.
+    bool onCombat = false;
+    float every = 0.5f;
 };
 
 // Recovery 슬롯 (계획서 §4-3): 이 이벤트(또는 시각) 이후에는 이동 입력만으로 액션을 끊고 이동으로 나간다.

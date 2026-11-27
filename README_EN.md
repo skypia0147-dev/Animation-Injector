@@ -1,6 +1,6 @@
 # Animation Injector
 
-**Version 1.0.9** · [한국어](README.md)
+**Version 1.1.0** · [한국어](README.md)
 
 Adding a new animation usually means patching the behavior graph with a tool such as Nemesis or Pandora. Animation Injector is an SKSE framework that skips that step.
 
@@ -36,8 +36,9 @@ Action mods combine these features into actions.
 | Area | What |
 |---|---|
 | Starting | Keyboard and gamepad keys, game controls (Jump, Sprint, ...; they follow your key bindings), animation events. For the player and NPCs. A key can tell the moment it goes down, a tap, a double press and a hold; a game control press no start takes goes back to the game (e.g. tap Jump to dodge, hold it to jump). Transitions on an action's end, on a key's release and on a movement change, looping clips and a held-time condition make charge attacks (moving ones too, by directional dash loops) |
-| Chaining | Move on to the next action on a key press or an event; cancel by moving or by another action |
-| Conditions | Play a different action by weapon, movement direction, being in the air, stamina, equipment, race, the previous action, the foot last set down (a stop for each foot), the hit just taken (normal, power attack, blocked and more), weather and more |
+| Chaining | Move on to the next action on a key press or an event; cancel by moving or by another action. A press before the window opens can be kept from a set time in the clip, and a transition can have a cooldown before it goes again |
+| NPC attacks | Let the vanilla NPC AI pick its next attack inside an action's window (by handing it an animation event), let an NPC pick the next action itself in each window (distance, angle, stamina and chance checks), and let an NPC in combat that is not attacking start an action every few seconds (a gap-closing lunge, say) |
+| Conditions | Play a different action by weapon, movement direction, being in the air, stamina, equipment, race, the previous action, the foot last set down (a stop for each foot), the hit just taken (normal, power attack, blocked and more), a graph variable (a value another mod sets by HKX annotation), the distance to the other actor from the weapon's tip, weather and more |
 | During an action | Invulnerability, stagger resistance, turning, time scale, stamina, magicka and health costs, strikes, firing arrows, spells, ragdoll, sounds, camera shake and more |
 | HKX events | Register features on the animation events any HKX sends (other mods' and vanilla ones too). An HKX annotation `AI.Command\|values` runs at its time with no registration |
 | Pairs | Actions two people do together. Both are lined up in position and facing when it starts, and their positions are corrected when it ends |

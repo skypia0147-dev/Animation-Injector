@@ -39,9 +39,15 @@ struct Relocation {
 };
 }
 namespace RE {
-struct BSResourceNiBinaryStream {  // the engine's file lookup: nothing is found here
-    explicit BSResourceNiBinaryStream(const std::string&) {}
-    bool good() const { return false; }
+// The engine's file lookup: no first-person copy is found here, every other file is, but those a test names in
+// `missing` (a path an animation replacer alone provides).
+struct BSResourceNiBinaryStream {
+    inline static std::vector<std::string> missing;
+    explicit BSResourceNiBinaryStream(const std::string& path)
+        : found(path.find("_1stPerson\\") == std::string::npos &&
+                std::find(missing.begin(), missing.end(), path) == missing.end()) {}
+    bool good() const { return found; }
+    bool found;
 };
 struct UI {
     inline static bool paused = false;

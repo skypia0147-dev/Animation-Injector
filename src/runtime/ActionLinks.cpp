@@ -23,6 +23,8 @@ struct Window {
     // on="move" (10-31): a movement press kept for the window (buffered), and the direction it goes with.
     int moveBuffered = -1, moveDirection = -1;
     int pressDirection = -1;  // a tap, double or hold took it: the direction of its first press
+    int index = -1;           // its link in the source's spec (a cooldown's key, 1.1.0)
+    bool npcAsked = false;    // on="npc" (1.1.0): its checks were read since the window opened
 };
 // One key of a source that has tap, double or hold transitions: its presses are told apart as a start's are.
 struct KeyPress {
@@ -70,7 +72,21 @@ struct Pending {
     bool end = false;  // <Transition end="true">: ends its source, no destination (target -1)
     ConditionValues::Request conditionRequest;
     std::vector<RouteEvent> routes;
+    int link = -1;          // the source's link it came from (1.1.0)
+    float cooldown = 0.0f;  // that link's cooldown, started once it goes
 };
+// Transitions on cooldown (1.1.0): an actor took this link of this source, and may again once `clock` reaches `until`.
+struct Cooldown {
+    RE::ActorHandle actor;
+    int action, link;
+    float until;
+};
+std::vector<Cooldown> cooldowns;
+// The mutex is held.
+bool CoolingDown(RE::ActorHandle actor, int action, int link, float now) {
+    return std::any_of(cooldowns.begin(), cooldowns.end(),
+        [&](const Cooldown& c) { return c.actor == actor && c.action == action && c.link == link && now < c.until; });
+}
 std::vector<Entry> entries;
 std::vector<Pending> pending;
 std::vector<Pending> requested;  // RequestHandoff: started on the next Update like a pressed window
@@ -112,6 +128,8 @@ PressKinds::Kinds KindsOf(const Entry& e, HeldKeys::Key key, bool closed = false
 }
 // The source is on its way out (its exit or recovery sent, its clip still blending): no transition can leave it,
 // but it holds its keys until its clip is gone.
+// A press before the window opens is kept for it (buffered), from bufferFrom on (1.1.0).
+bool Buffers(const Entry& e, const Window& w) { return w.spec.buffered && e.time >= w.spec.bufferFrom; }
 bool Leaving(const Entry& e) {
     auto actor = e.actor.get();
     auto* runner = actor ? Actions::RunnerFor(actor.get(), e.action, false) : nullptr;
@@ -134,7 +152,7 @@ void Went(Entry& e, const KeyPress& press, PressKinds::Press kind) {
     }
     bool taken = false;
     for (auto& w : e.windows)
-        if (Presses(w) && w.spec.press == kind && OnKey(w, press.key) && !w.closed && (w.opened || w.spec.buffered)) {
+        if (Presses(w) && w.spec.press == kind && OnKey(w, press.key) && !w.closed && (w.opened || Buffers(e, w))) {
             w.pressed = true;
             w.pressDirection = press.direction;
             taken = true;
@@ -220,6 +238,7 @@ void Begin(RE::ActorHandle actor, int action, bool paired, bool player, RE::Acto
         if (spec.flowParent >= 0) continue;
         Window w;
         w.spec = spec;
+        w.index = static_cast<int>(&spec - links.data());
         w.enter = RE::BSFixedString(spec.enterEvent.c_str());
         w.airEnter = RE::BSFixedString(spec.airEnterEvent.c_str());
         // An ending transition goes nowhere: only its trigger and window are kept.
@@ -317,7 +336,7 @@ void ObserveTime(RE::ActorHandle actor, int action, float time, float duration) 
             // A loop's clip time went back to its start (moving charge, 10-30): its windows open and close again.
             if (time + 1e-4f < e.time)
                 for (auto& w : e.windows) {
-                    w.closed = w.pressed = false;
+                    w.closed = w.pressed = w.npcAsked = false;
                     w.opened = w.spec.openEvent.empty() && w.spec.openAt <= 0;
                     w.moveBuffered = -1;
                 }
@@ -335,7 +354,7 @@ void ObserveEvent(RE::ActorHandle actor, const RE::BSFixedString& event) {
                     w.pressed = false;
                 }
                 if (!w.spec.openEvent.empty() && event == w.open && !w.closed) w.opened = true;
-                if (!w.spec.event.empty() && event == w.event && !w.closed && (w.opened || w.spec.buffered))
+                if (!w.spec.event.empty() && event == w.event && !w.closed && (w.opened || Buffers(e, w)))
                     w.pressed = true;
             }
 }
@@ -343,9 +362,16 @@ bool ClaimsEvent(RE::ActorHandle actor, const RE::BSFixedString& event) {
     if (!actor || event.empty()) return false;
     std::lock_guard lock(mutex);
     for (const auto& e : entries)
-        if (e.actor == actor || (e.paired && e.partner == actor))
+        if (e.actor == actor || (e.paired && e.partner == actor)) {
+            // A source on its way out (its exit sent, its clip blending out) takes nothing more (1.1.0): the event is a
+            // new start's, which waits for the source to finish (an NPC's next attack asked as the clip ends).
+            if (!e.paired)
+                if (auto owner = e.actor.get())
+                    if (const auto runner = Actions::RunnerRef(owner.get(), e.action); runner && runner->Leaving())
+                        continue;
             for (const auto& w : e.windows)
                 if (!w.spec.event.empty() && event == w.event) return true;
+        }
     return std::any_of(pending.begin(), pending.end(),
         [&](const Pending& p) { return p.actor == actor && !p.event.empty() && event == p.event; });
 }
@@ -389,7 +415,7 @@ InputResult Input(std::uint32_t code, bool gamepad, GameControl control, InputPh
                 // A closed window rejects the press; it must not turn into a new start.
                 result.claimed = true;
                 if (Presses(w)) continue;  // told apart below, by its key
-                if (down && !w.closed && (w.opened || w.spec.buffered)) {
+                if (down && !w.closed && (w.opened || Buffers(e, w))) {
                     w.pressed = true;
                     result.taken = true;
                 }
@@ -429,9 +455,12 @@ void Update(float delta) {
     if (!std::isfinite(delta) || delta < 0) return;
     std::vector<Pending> starts;
     std::vector<Pending> waiting;
+    // on="npc" (1.1.0): an NPC's transitions whose windows opened this frame, one group per source in file order.
+    std::vector<std::vector<Pending>> npcGroups;
     {
         std::lock_guard lock(mutex);
         clock += delta;
+        std::erase_if(cooldowns, [](const Cooldown& c) { return clock >= c.until; });
         // Presses being told apart: a hold reached, or a tap whose double window ran out. A press that went no way
         // is dropped (a game control's is not handed to the game late: the running action has the key).
         for (auto& e : entries)
@@ -444,6 +473,7 @@ void Update(float delta) {
             // The player's movement direction now (MoveDir 0..3), -1 with no movement key (MoveDir::kNone 4).
             const int direction = HeldKeys::Get().MoveDirection();
             const int moving = direction >= 0 && direction < 4 ? direction : -1;
+            bool took = false;
             for (auto& w : e.windows) {
                 const float close = w.spec.closeRelativeToEnd
                                         ? (e.duration > 0 ? std::max(0.0f, e.duration - w.spec.closeAt) : -1.0f)
@@ -465,8 +495,8 @@ void Update(float delta) {
                 if (w.spec.onMove && e.player && !w.closed && !w.pressed && !HeldKeys::Get().ChainHeld())
                     w.moveBuffered = -1;
                 else if (w.spec.onMove && e.player && !w.closed && !w.pressed) {
-                    if (moving >= 0 && moving != e.moveSeen && (w.opened || w.spec.buffered)) w.moveBuffered = moving;
-                    const int held = moving >= 0 && w.spec.buffered ? moving : -1;
+                    if (moving >= 0 && moving != e.moveSeen && (w.opened || Buffers(e, w))) w.moveBuffered = moving;
+                    const int held = moving >= 0 && Buffers(e, w) ? moving : -1;
                     if (w.opened && (w.moveBuffered >= 0 || held >= 0)) {
                         w.moveDirection = held >= 0 ? held : w.moveBuffered;
                         w.moveBuffered = -1;
@@ -474,7 +504,15 @@ void Update(float delta) {
                     }
                 }
                 if (w.opened && !w.closed && w.pressed) {
+                    // Taken again too soon (cooldown, 1.1.0): the press goes nowhere.
+                    if (w.spec.cooldown > 0 && CoolingDown(e.actor, e.action, w.index, clock)) {
+                        w.pressed = false;
+                        continue;
+                    }
                     Pending item{e.actor, e.action, w.target, e.paired};
+                    item.link = w.index;
+                    item.cooldown = w.spec.cooldown;
+                    took = true;
                     item.exitOnFail = w.spec.onEnd || (w.spec.onRelease && e.released);
                     item.onMove = w.spec.onMove;
                     item.end = w.spec.end;
@@ -497,10 +535,47 @@ void Update(float delta) {
                 }
             }
             e.moveSeen = moving;
+            // An NPC's own choice (on="npc", 1.1.0): once each time its window opens, unless another transition went
+            // this frame. Its checks are read below, out of the lock, with the NPC's combat target as the partner.
+            if (!took && !e.player && !e.paired) {
+                std::vector<Pending> group;
+                for (auto& w : e.windows) {
+                    if (!w.spec.onNpc || !w.opened || w.closed || w.npcAsked) continue;
+                    w.npcAsked = true;
+                    if (w.spec.cooldown > 0 && CoolingDown(e.actor, e.action, w.index, clock)) continue;
+                    Pending item{e.actor, e.action, w.target, false};
+                    item.enter = w.enter;
+                    item.airEnter = w.airEnter;
+                    item.routes = w.routes;
+                    item.explicitBlend = w.spec.blend >= 0;
+                    item.link = w.index;
+                    item.cooldown = w.spec.cooldown;
+                    group.push_back(std::move(item));
+                }
+                if (!group.empty()) npcGroups.push_back(std::move(group));
+            }
         }
         waiting.swap(pending);
         starts.insert(starts.end(), requested.begin(), requested.end());
         requested.clear();
+    }
+    // An NPC's choice: the first transition whose checks hold goes (read with its combat target as the partner).
+    for (auto& group : npcGroups) {
+        auto actor = group.front().actor.get();
+        if (!actor || !actor->Is3DLoaded() || actor->IsDead() || !actor->IsInCombat()) continue;
+        const RE::ActorHandle target = actor->GetActorRuntimeData().currentCombatTarget;
+        const auto other = target.get();
+        if (!other || other->IsDead() || !other->Is3DLoaded()) continue;
+        for (auto& item : group) {
+            item.partner = target;
+            const int selected = Actions::ResolveFlow(actor.get(), item.target, target, false, &item.conditionRequest);
+            logger::debug("[NpcChoice] actor={:08X} '{}' link {} -> '{}' {}", actor->GetFormID(),
+                Actions::Spec(item.source).id, item.link, Actions::Spec(item.target).id,
+                selected >= 0 ? "goes" : "checks do not hold");
+            if (selected < 0) continue;
+            starts.push_back(std::move(item));
+            break;
+        }
     }
     for (auto item : starts)
         if (auto actor = item.actor.get(); actor && actor->Is3DLoaded()) {
@@ -520,6 +595,19 @@ void Update(float delta) {
                         Actions::Spec(item.source).id);
                 }
             } exitOnFail{item, actor.get(), handled};
+            // A transition that went starts its cooldown (1.1.0).
+            struct CooldownOnGo {
+                const Pending& item;
+                const bool& handled;
+                ~CooldownOnGo() {
+                    if (!handled || item.cooldown <= 0 || item.link < 0) return;
+                    std::lock_guard lock(mutex);
+                    std::erase_if(cooldowns, [&](const Cooldown& c) {
+                        return c.actor == item.actor && c.action == item.source && c.link == item.link;
+                    });
+                    cooldowns.push_back({item.actor, item.source, item.link, clock + item.cooldown});
+                }
+            } cooldownOnGo{item, handled};
             // <Transition end="true">: the source leaves through its own exit, with its exit blend.
             if (item.end) {
                 auto* runner = Actions::RunnerFor(actor.get(), item.source, false);
@@ -767,6 +855,7 @@ bool ForceRelease(RE::ActorHandle actor, int action) {
 void ResetOnLoad() {
     std::lock_guard lock(mutex);
     entries.clear();
+    cooldowns.clear();
     pending.clear();
     requested.clear();
     forwards.clear();

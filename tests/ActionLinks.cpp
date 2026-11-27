@@ -865,5 +865,92 @@ int main() {
         Press();
         assert(PartRunner::calls.ends == 1 && runners[1][0].exits == 0);
     }
+    {
+        // on="npc" (1.1.0): an NPC's own choice as its window opens, read with its combat target as the partner; the
+        // first transition whose checks hold goes, once per opening. The player never takes one. And cooldowns.
+        const auto npcSetup = [] {
+            Setup("", false);
+            Actions::refusedFlows.clear();
+            specs[0].clips = {0};
+            specs[1].clips = {0};
+            specs[2].clips = {0};
+            ActionLinkSpec power;
+            power.action = "A";
+            power.onNpc = true;
+            power.openEvent = "WinOpen";
+            power.openAt = -1;  // opened by its event only, as the parser writes it
+            ActionLinkSpec light = power;
+            light.action = "B";
+            specs[0].links = {power, light};
+            RE::actors[1].combat = true;
+            RE::actors[1].runtime.currentCombatTarget = {2};
+        };
+        const auto open = [](bool player) {
+            ActionLinks::Begin({1}, 0, false, player);
+            ActionLinks::ObserveEvent({1}, RE::BSFixedString("WinOpen"));
+            ActionLinks::Update(0.01f);
+        };
+        npcSetup();
+        Actions::refusedFlows = {1};  // the power's checks do not hold
+        ActionLinks::Begin({1}, 0, false, false);
+        ActionLinks::Update(0.01f);
+        assert(runners[1][1].starts == 0 && runners[1][2].starts == 0);  // its window is not open yet
+        ActionLinks::ObserveEvent({1}, RE::BSFixedString("WinOpen"));
+        ActionLinks::Update(0.01f);
+        assert(runners[1][1].starts == 0 && runners[1][2].starts == 1);
+        assert(Actions::resolvedPartner == RE::ActorHandle{2});
+        ActionLinks::Update(0.01f);
+        assert(runners[1][2].starts == 1);  // once per opening
+        npcSetup();
+        open(true);
+        assert(runners[1][1].starts == 0 && runners[1][2].starts == 0);  // the player never takes one
+        npcSetup();
+        RE::actors[1].combat = false;
+        open(false);
+        assert(runners[1][1].starts == 0 && runners[1][2].starts == 0);  // out of combat: none
+        npcSetup();
+        specs[0].links.resize(1);
+        specs[0].links[0].cooldown = 2.0f;
+        open(false);
+        open(false);
+        assert(runners[1][1].starts == 1);  // again within its cooldown: not taken
+        ActionLinks::Update(2.5f);
+        open(false);
+        assert(runners[1][1].starts == 2);
+        // bufferFrom (1.1.0): an event before the window counts only from that clip time. The engine's power event of a
+        // held press that already chained the hit comes 0.25 s in and is dropped; a later one goes as the window opens.
+        {
+            npcSetup();
+            specs[0].links.resize(1);
+            specs[0].links[0] = {};
+            specs[0].links[0].action = "A";
+            specs[0].links[0].event = "Power";
+            specs[0].links[0].openEvent = "PowerOpen";
+            specs[0].links[0].openAt = -1;
+            specs[0].links[0].bufferFrom = 0.35f;
+            const auto run = [](float at) {
+                ActionLinks::Begin({1}, 0, false, true);
+                ActionLinks::ObserveTime({1}, 0, at);
+                ActionLinks::ObserveEvent({1}, RE::BSFixedString("Power"));
+                ActionLinks::ObserveTime({1}, 0, 0.7f);
+                ActionLinks::ObserveEvent({1}, RE::BSFixedString("PowerOpen"));
+                ActionLinks::Update(0.01f);
+            };
+            run(0.25f);
+            assert(runners[1][1].starts == 0);  // dropped
+            run(0.45f);
+            assert(runners[1][1].starts == 1);  // buffered, goes as the window opens
+        }
+        // A source on its way out claims no event: an NPC's request as the clip ends becomes a start.
+        npcSetup();
+        specs[0].links.resize(1);
+        specs[0].links[0] = {};
+        specs[0].links[0].action = "A";
+        specs[0].links[0].event = "attackStart";
+        ActionLinks::Begin({1}, 0, false, false);
+        assert(ActionLinks::ClaimsEvent({1}, RE::BSFixedString("attackStart")));
+        runners[1][0].leaving = true;
+        assert(!ActionLinks::ClaimsEvent({1}, RE::BSFixedString("attackStart")));
+    }
     std::cout << "Production ActionLinks scenarios passed\n";
 }

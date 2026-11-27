@@ -50,6 +50,10 @@ enum class EventOp : std::uint8_t {
     // kGripRelease or an automatic release (sheathing, that hand's equipment change, death, ragdoll, load).
     kGripHold,
     kGripRelease,
+    // An animation event `name` handed to the actor as if its graph had sent it (1.1.0): the engine's own handlers
+    // run, e.g. AttackWinStart / AttackWinEnd open and close the window in which a vanilla NPC asks for its next
+    // attack (a clip of another moveset carries only its own window events, MCO_WinOpen and MCO_WinClose).
+    kAnimEvent,
 };
 // The actors a function changes. A registered event's function changes its sender (kSender, 0.12.273). A pair's
 // clip-time effect names a role (0.12.275): kInitiator started the pair, kReceiver is the actor it was started on
@@ -86,7 +90,7 @@ struct EventFunctionSpec {
     // kGlobalSet: `plugin`·`form` (a global) set to `value`; `restore` = back to the value before when the run ends.
     float value = 0.0f;
     bool restore = false;
-    // kModEvent: an SKSE mod event `name` with `text` and `number`, sent as the actor's.
+    // kModEvent: an SKSE mod event `name` with `text` and `number`, sent as the actor's. kAnimEvent: `name` only.
     std::string name, text;
     float number = 0.0f;
     // kGripHold / kGripRelease: which hands and views (the registry's, what it acts with).

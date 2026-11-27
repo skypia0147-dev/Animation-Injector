@@ -70,6 +70,9 @@ With a weapon drawn, G does slash 1; pressing G again during it leads on to slas
 | `<Transition to on="end" blend>` | When this action ends (its Exit point) it moves on to `to` instead of ending. One per action, no key, `from` or `until`. Only in an action that ends at a time (not with `<Exit at="event:…">`) |
 | `<Transition to on="release" from until>` | Charge end: moves on while the key is up inside the window. A state, not a moment: let go before the window opens, it moves on as it opens. `key`, `gamepad` or `control` name the key; without them, the key that started this action (a start's or a key transition's, kept through on="end" and on="release"). An NPC counts as releasing only at a loop's `maxHold` |
 | `<Transition to on="move" from until buffer>` | Move transition: moves on when a movement key is pressed **in a charge** (while the key that started this action is down). With the charge key up a movement key does nothing and a buffered one is dropped (`on="release"` goes then). An action on a tapped key, such as a dodge, chains by a key transition on its key with a direction card (`<Transition condition="…" key=…>`). As a key transition: a press inside the window goes at once, one made before it opens is buffered and goes as it opens (`buffer="false"`: no buffer). A movement key held as the window opens counts as buffered too — held, the action plays once after another; let go, the one playing plays to its end. The card picks by the direction held (or the one pressed if it is already up), read as a movement condition reads it, TDM included. No key or event, the player only. Into the same action it plays that action again from the start; a loop choosing itself plays on (a charge keeps going). For directional dashes picked by a `movementDirection` card |
+| `<Transition to on="npc" from until>` | A transition an NPC chooses itself (1.1.0). Once each time the window opens, an NPC in combat reads its checks with its combat target as the partner and moves on when they hold. Several `on="npc"` transitions opening together are tried in file order and the first that holds goes. Never the player's. No key, event or `buffer`; full-body actions only ([NPC attack chains](#npc-attack-chains)) |
+| `<Transition … from="…" bufferFrom="seconds">` | A key pressed or an event received before the window opens (buffered) counts only from this clip time (seconds) on (1.1.0); an earlier one is dropped. Example: held in a light attack's window, the engine sends a power event 0.25 s later; with `bufferFrom="0.35"` on the next hit's power transition that event is dropped, while a power key pressed after it goes as the power window opens. Only on a key, event or move transition whose buffered window (`buffer` not false) opens later (`from`) |
+| `<Transition … cooldown="seconds">` | After this actor took this transition it does not take it again for that long (game seconds, 0~600; 1.1.0). Any transition but an ending one |
 | `<Transition end="true" …>` | Ending transition (1.0.8 or later): instead of going to another action it ends this one at once (leaving with `<Exit blend>`). Its trigger is any other transition's: a key (`key`, `gamepad`, `control`, `input`, `press`), an `event`, `on="release"`, `on="move"`, with a window (`from`, `until`, `buffer`). No `to`, condition card, `blend`, `partnerTo` or `on="end"`. Ordinary actions only. Example, a loop started by an event and ended by another: `<Action id="Loop" clip="…" loop="true" maxHold="600"><Transition end="true" event="StopLoop"/></Action>` |
 | `<MoveCancel at blend>` | After `at`, a movement key cancels the action back to walking or running. An NPC in combat gets movement back from `at` and leaves as soon as its AI moves or attacks (or plays on if it stays) |
 | `<IFrame from until>` | Invulnerable in that window |
@@ -149,7 +152,7 @@ Common conditions:
 | `movementDirection` | `option="forward\|back\|left\|right\|none"` | the movement key direction. In True Directional Movement's directional mode the character turns toward the input and runs forward, so any held movement key reads `forward` (without TDM or in its other modes, the keys as pressed) |
 | `chance` | `value` (0~100) | with that chance |
 | `magicEffect` `perk` `spell` `race` `faction` `keyword` | `plugin="Mod.esp"` `form="hex ID"` | it has that |
-| `keyword` `wornKeyword` `equippedKeyword` | `keyword="WeapTypeClaw"` (editor ID) instead of `plugin` `form`. `equippedKeyword` takes `option="left\|right\|either"` | it has that keyword (itself, the gear it wears, the gear in that hand). Names match without case; when two plugins use one name, the later loaded wins. An unknown name logs a warning and the check is unavailable |
+| `keyword` `wornKeyword` `equippedKeyword` | `keyword="WeapTypeClaw"` (editor ID) instead of `plugin` `form`. `equippedKeyword` takes `option="left\|right\|either"` | it has that keyword (itself, the gear it wears, the gear in that hand). Names match without case; when two plugins use one name, the later loaded wins. A name no loaded plugin has is carried by nothing, so the check is false (1.1.0; one info line in the log). A row naming another mod's keyword therefore just does not match for players without that mod |
 | `global` | `plugin` `form` `equals` | the global equals the value |
 | `previousAction` | `actions="A,B"` (this file's actions) `within="seconds"` | it did that action just before |
 | `weather` | `option="pleasant\|cloudy\|rainy\|snow"` | that weather |
@@ -159,6 +162,8 @@ Common conditions:
 | `gameHour` | `compare` `value` | the game hour compares so |
 | `heldTime` | `compare` `value` | how long the key that started this action was held, in seconds; when an on="release" transition chooses, from the press to the release. The player only (unknown for an NPC) |
 | `space` | `distance` `direction="selfForward\|selfBack\|selfLeft\|selfRight"` | there is that much open space that way |
+| `distance` | `compare` `value`; `measure="reach"` (1.1.0) | The distance to the partner. With `measure="reach"` it is the gap past the weapon's reach (distance − this actor's attack reach − the partner's radius): 0 puts the partner at the weapon's tip, below 0 is already within reach. One number fits a dagger and a greatsword. Only where there is a partner (pairs, combat-target starts, `on="npc"` transitions, combat starts) |
+| `graphVariable` | `variable="name"` `type="bool\|int\|float"` `compare` `value` | Compares a graph variable of the actor (1.1.0; a bool reads 0 or 1). The runtime adds every variable a check names to the third-person character graphs, so an HKX annotation (Payload Interpreter's `@SGVI\|name\|value` and the like) can set it without a behavior patch. A variable the graph already has (from that behavior mod) is used as it is |
 
 `compare` is `lt` (less) `le` (less or equal) `eq` (equal) `ge` (greater or equal) `gt` (greater) `range` (between `value` and `upper`).
 
@@ -213,6 +218,7 @@ A feature applies to the actor that sent the event (the one playing the action).
 | `sound` | Play a sound | `file="sound\…\a.wav"` or `plugin` `form`; value `volume` (0~1) |
 | `globalSet` | Change a global's value | `plugin` `form` `restore="end"` (set back when it ends); value `value` |
 | `modEvent` | Send a mod event to Papyrus | `name` `text`; value `number` |
+| `animEvent` | Hand an animation event to the actor as if its graph had sent it (1.1.0). Whatever the engine does on that name happens: `AttackWinStart`/`AttackWinEnd` open and close the window in which a vanilla NPC picks its next attack ([NPC attack chains](#npc-attack-chains)) | `name` |
 | `cancel` | End the pair | |
 | `gripHold` | Grip hold: keep the hand's weapon bone (right: Weapon, left: Shield) at its value at this moment, past the end of the action ([Grip hold](#grip-hold)) | `hand="right\|left\|both"`, `view="third\|first\|both"` (default third) |
 | `gripRelease` | End a grip hold (at once) | `hand`, `view` |
@@ -277,6 +283,45 @@ For an action that changes how the weapon is held, such as switching to a revers
 - `view`: the views it holds in (`third`, `first`, `both`). The value taken in the view the action played in is carried over to the other view, so the hold works in first person even when the action has no first-person HKX.
 - The left hand needs Left Hand Equipment Overhaul 2.0 or later: vanilla's adjustment (`DW_ShieldAdjustment`) overrides the Shield bone. Make left-hand reverse-grip HKX from the reference pose, with an `Adjustment_Additive` annotation at 0 seconds, and an `Adjustment_Off` annotation at the end of the release action. For a left-hand hold carried over to the other view, Animation Injector sends that view `Adjustment_Additive` itself, and `Adjustment_Off` when the hold ends.
 - Also usable as a registered event: `<Event name="…"><Do op="gripHold" hand="right" view="both"/></Event>`. Any HKX that sends that event name runs it, ours or another mod's, vanilla or OAR. The HKX annotation commands are `AI.GripHold|right|third` and `AI.GripRelease|right|third`.
+
+## NPC attack chains
+
+1.1.0. A vanilla NPC sends its next attack (a light `attackStart`, a power `attackPowerStart…`) inside its attack clip's `AttackWinStart`~`AttackWinEnd` window. Another mod's clips (an MCO moveset, say) carry that mod's window events instead (`MCO_WinOpen`/`MCO_WinClose`), so the NPC never sees a window and strikes once per clip end. Three things chain an NPC's attacks:
+
+1. **Tell the vanilla AI the window**: register `animEvent` on the mod's window events. The NPC's combat AI then sends its next attack inside the window, and the transition on that event takes it.
+2. **A transition the NPC chooses itself**, `on="npc"`: as the window opens the runtime reads distance, angle, chance and the target's state and goes straight to the next action, for chains the vanilla AI does not pick (a power attack up close, say).
+3. **A combat start**, `<Start combat="npc">`: an NPC that is not attacking asks it every `every` seconds, for an opener such as a gap-closing dash from afar.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<AnimationSet version="6" id="MyMoveset">
+  <EventRegistry>
+    <Event name="MCO_WinOpen"><Do op="animEvent" name="AttackWinStart"/></Event>
+    <Event name="MCO_WinClose"><Do op="animEvent" name="AttackWinEnd"/></Event>
+  </EventRegistry>
+  <Start event="attackStart" block="attackStart" to="Attack1"/>
+  <Start combat="npc" every="0.5" to="Dash">
+    <Check kind="distance" measure="reach" compare="range" value="100" upper="300"/>
+    <Check kind="chance" value="30"/>
+  </Start>
+  <Action id="Attack1" clip="Animations\MCO_attack1.hkx" attack="attackStart">
+    <Transition to="Attack2" event="attackStart" from="event:MCO_WinOpen" until="event:MCO_WinClose">
+      <Check kind="graphVariable" variable="MCO_nextattack" type="int" compare="eq" value="2"/>
+    </Transition>
+    <Transition to="Power1" on="npc" from="event:MCO_WinOpen" until="event:MCO_WinClose" cooldown="3">
+      <Check kind="distance" measure="reach" compare="le" value="40"/>
+      <Check kind="chance" value="25"/>
+    </Transition>
+  </Action>
+  <Action id="Attack2" clip="Animations\MCO_attack2.hkx" attack="attackStart"/>
+  <Action id="Power1" clip="Animations\MCO_powerattack1.hkx" attack="attackPowerStartInPlace"/>
+  <Action id="Dash" clip="Animations\MyMoveset\Dash.hkx" attack="attackPowerStartForward"/>
+</AnimationSet>
+```
+
+- A combat start is asked only by an NPC in combat with a living target in its cell, weapon drawn, not attacking, on its feet (not knocked down, staggered or ragdolled) and playing none of our full-body actions, once it has been so for `every` seconds (0.1~60, default 0.5): right after an attack it rests that long first. Its checks read the NPC's combat target as the partner. Several combat starts are tried in file order and only the first that holds starts. It takes no key, event, `actor`, `target` or `block`, and starts ordinary actions only.
+- The vanilla AI's attacks still come: event starts and transitions take them as before.
+- An event that starts an action arriving while that action is leaving (past its Exit, blending out) no longer goes to the vanilla graph from 1.1.0: the start waits and plays once the action is gone (up to a second). Before, the event reached the vanilla graph and a vanilla attack played.
 
 ## Upper body or one arm while moving (body)
 

@@ -27,7 +27,9 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
         form = data ? data->LookupForm(p.form, p.plugin) : nullptr;
         if (!form) return Value::kUnavailable;
     } else if (!p.keyword.empty()) {
-        // Named by editor ID: the keyword ActionRegistry found once the game data was in.
+        // Named by editor ID: the keyword ActionRegistry found once the game data was in. One no loaded plugin has
+        // is carried by nothing: every keyword check (equipped, worn, the actor's own) is false (1.1.0).
+        if (p.keywordMissing) return Value::kFalse;
         form = p.keywordForm ? RE::TESForm::LookupByID(p.keywordForm) : nullptr;
         if (!form) return Value::kUnavailable;
     }
@@ -259,8 +261,14 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
         if (!pairReady()) return Value::kUnavailable;
         const auto d = counterpart->GetPosition() - subject->GetPosition();
         if (!std::isfinite(d.x) || !std::isfinite(d.y) || !std::isfinite(d.z)) return Value::kUnavailable;
-        if (p.test == Test::kDistance)
-            return numeric(std::sqrt(double(d.x) * d.x + double(d.y) * d.y + double(d.z) * d.z));
+        if (p.test == Test::kDistance) {
+            const double distance = std::sqrt(double(d.x) * d.x + double(d.y) * d.y + double(d.z) * d.z);
+            if (p.measure != "reach") return numeric(distance);
+            // The gap past the subject's attack reach (1.1.0): 0 puts the other actor's edge at the weapon's tip.
+            const double reach = subject->GetReach(), radius = counterpart->GetBoundRadius();
+            if (!std::isfinite(reach) || !std::isfinite(radius)) return Value::kUnavailable;
+            return numeric(distance - reach - radius);
+        }
         if (p.test == Test::kHeightDifference) return numeric(std::abs(d.z));
         if (double(d.x) * d.x + double(d.y) * d.y < 0.000001) return Value::kUnavailable;
         const double angle =
@@ -321,6 +329,20 @@ ConditionFlow::Value Evaluate(const ConditionFlowXml::Predicate& p, RE::Actor* s
         auto* location = form ? form->As<RE::BGSLocation>() : nullptr;
         auto* current = subject->GetCurrentLocation();
         return location && current ? boolean(current == location) : Value::kUnavailable;
+    }
+    case Test::kGraphVariable: {
+        // 1.1.0. Not per frame: a condition is read when a start, a transition or an NPC's choice asks.
+        const RE::BSFixedString name(p.variable);
+        if (p.variableType == "bool") {
+            bool value = false;
+            return subject->GetGraphVariableBool(name, value) ? numeric(value ? 1.0 : 0.0) : Value::kUnavailable;
+        }
+        if (p.variableType == "int") {
+            std::int32_t value = 0;
+            return subject->GetGraphVariableInt(name, value) ? numeric(value) : Value::kUnavailable;
+        }
+        float value = 0.0f;
+        return subject->GetGraphVariableFloat(name, value) ? numeric(value) : Value::kUnavailable;
     }
     default: return Value::kUnavailable;
     }

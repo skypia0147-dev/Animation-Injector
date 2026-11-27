@@ -22,6 +22,10 @@ struct ActionLinkSpec {
     PressKinds::Press press = PressKinds::Press::kDown;
     float openAt = 0, closeAt = -1;
     bool buffered = true;
+    // bufferFrom="0.35" (1.1.0): a press (or an event) before its window opens counts only from this clip time
+    // (seconds): one in the clip's first moments is dropped, such as the power event the engine sends 0.25 s after a
+    // held light press that already moved the chain on (MCO add-on, user rule 11-25). 0 = from the start.
+    float bufferFrom = 0.0f;
     bool closeRelativeToEnd = false;
     // Charge (10-30): on="end" goes at the source's end (its Exit point) instead of exiting; on="release" goes once
     // its key is up while the window is open (key, gamepad, control; none: the key that started the action).
@@ -33,6 +37,12 @@ struct ActionLinkSpec {
     // <Transition end="true"> (1.0.8): it goes nowhere. Its trigger (a key, an event, on="release", on="move") ends
     // the action through its own exit, with the action's exit blend. `action` is empty. Ordinary actions only.
     bool end = false;
+    // on="npc" (1.1.0): an NPC's own choice. Each time its window opens on an NPC in combat with a target, the runtime
+    // reads the transition's checks with that target as the partner and goes when they hold; the on="npc" transitions
+    // whose windows open together are tried in file order and the first that holds goes. The player never takes one.
+    bool onNpc = false;
+    // cooldown="2" (1.1.0): seconds (game time) after this actor last took this transition before it may again.
+    float cooldown = 0.0f;
 };
 struct PairFeatureSpec {
     bool enabled = false;

@@ -640,6 +640,14 @@ bool InFirstPerson(const std::string& file) {
 }
 std::mutex copiesLock;
 std::unordered_map<std::string, bool> copies;  // lowercase file -> its first-person copy is installed
+// A declared clip's own file, loose or in an archive (the engine's own file lookup). An animation replacer's path
+// (OAR or DAR) may have none: an MCO moveset's Animations\MCO_attack1.hkx exists only in the replacer's condition
+// folders, and the replacer gives its file as the clip plays (1.1.0, 11-25: such paths failed four preload attempts
+// each and were logged as errors, though they played).
+bool HasBaseFile(const std::string& file) {
+    RE::BSResourceNiBinaryStream stream(std::string("Meshes\\Actors\\Character\\") + file);
+    return stream.good();
+}
 }
 bool HasFirstPersonCopy(const std::string& file) {
     std::string key = file;
@@ -677,6 +685,19 @@ void Install() {
             for (const auto& clip : spec.clips)
                 ordinary.push_back({clip.file, clip.clipName + "_Preload", spec.view.view});
         }
+    // A path with no file of its own (an animation replacer gives it as it plays): nothing to read ahead.
+    std::size_t replaced = 0;
+    std::erase_if(ordinary, [&](const OrdinaryClip& clip) {
+        if (HasBaseFile(clip.file) || (InFirst(clip.view) && HasFirstPersonCopy(clip.file))) return false;
+        if (replaced++ < 8)
+            logger::debug(
+                "[Preload] '{}' has no file of its own (an animation replacer gives it): not preloaded", clip.file);
+        return true;
+    });
+    if (replaced)
+        logger::info("[Preload] {} declared files have no file of their own (an animation replacer such as OAR gives "
+                     "them as they play): not preloaded",
+            replaced);
     const auto budget = static_cast<std::uint64_t>(settings.preloadOrdinaryBudgetMB) << 20;
     const auto left = BuildFiles(ordinary, budget, LooseFileSize, InFirstPerson);
     if (files.empty()) return;
